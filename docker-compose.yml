@@ -131,7 +131,8 @@ services:
     restart: unless-stopped
     environment:
       DOCKER_HOST: tcp://socket-proxy:2375
-      APPS_DIR: ${APPS_DIR}
+      # container-side path: APPS_DIR on the host is only used for the mounts
+      APPS_DIR: /srv/apps
       APPS_DOMAIN: ${APPS_DOMAIN}
       CADDY_CONF_DIR: /etc/caddy/conf.d
       DEPLOY_TOKEN: ${DEPLOY_TOKEN}
