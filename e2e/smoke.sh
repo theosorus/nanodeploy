@@ -55,10 +55,46 @@ EOF
 echo "<h1>smoke</h1>" > "$WORK/demo/dist/index.html"
 (cd "$WORK/demo" && zip -qr "$WORK/smoke.zip" .)
 
+mkdir -p "$WORK/reserved"
+sed 's/^slug: smoke$/slug: deploy/' "$WORK/demo/app.yaml" > "$WORK/reserved/app.yaml"
+cp "$WORK/demo/server.js" "$WORK/reserved/server.js"
+(cd "$WORK/reserved" && zip -qr "$WORK/reserved.zip" .)
+
 echo "== auth =="
 check "$(code -H "Host: deploy.$DOM" $BASE/api/apps)" "401" "sans session -> 401"
 check "$(code -H "Host: deploy.$DOM" -H 'Authorization: Bearer bogus' $BASE/api/apps)" "401" "bearer bidon -> 401"
 check "$(code -H "Host: deploy.$DOM" -H "$AUTH" $BASE/api/apps)" "200" "token exact -> 200"
+
+echo "== frontieres =="
+# the gateway owns the identity headers: a client must never be able to send one
+check "$(code -H "Host: deploy.$DOM" -H 'Remote-Sub: forged' $BASE/api/apps)" \
+  "401" "Remote-Sub forge -> 401"
+check "$(code -H "Host: deploy.$DOM" -H 'Remote-Sub: forged' -H 'Remote-Groups: admins' $BASE/api/apps)" \
+  "401" "Remote-Groups forge -> 401"
+# The cross-origin guard only matters for a request that already carries a
+# session, which caddy would never let through unauthenticated. Talk to the
+# control plane directly, injecting the identity headers forward-auth produces.
+direct() {
+  docker exec nanoploy-control-plane-1 node -e '
+    const [method, path, headers] = process.argv.slice(1);
+    fetch("http://127.0.0.1:8000" + path, { method, headers: JSON.parse(headers) })
+      .then((r) => console.log(r.status))
+      .catch(() => console.log("ERR"));
+  ' "$1" "$2" "$3" 2>/dev/null
+}
+# multipart is a CORS simple request: without this guard, any web page an admin
+# visits could deploy code here using their cookie
+check "$(direct POST /api/reconcile '{"Remote-Sub":"u1","Sec-Fetch-Site":"cross-site"}')" \
+  "403" "session + requete cross-site -> 403"
+check "$(direct POST /api/reconcile '{"Remote-Sub":"u1","Origin":"https://evil.example"}')" \
+  "403" "session + origin externe -> 403"
+S=$(direct POST /api/reconcile '{"Remote-Sub":"u1","Sec-Fetch-Site":"same-origin"}')
+if [ "$S" != "403" ]; then ok "session same-origin non bloquee"; else bad "same-origin bloque a tort"; fi
+# a slug that collides with a platform host makes every later caddy reload fail
+R=$(json -X POST -H "Host: deploy.$DOM" -H "$AUTH" -F bundle=@$WORK/reserved.zip $BASE/api/deploy)
+echo "$R" | grep -q 'reserved' && ok "slug reserve refuse" || bad "slug reserve accepte: $R"
+curl -s -D- -o /dev/null -H "Host: deploy.$DOM" -H "$AUTH" $BASE/ | grep -qi '^x-frame-options: DENY' \
+  && ok "console non affichable en iframe" || bad "en-tete X-Frame-Options absent"
 
 echo "== deploiement et sommeil =="
 R=$(json -s -X POST -H "Host: deploy.$DOM" -H "$AUTH" -F bundle=@$WORK/smoke.zip $BASE/api/deploy)
