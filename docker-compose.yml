@@ -36,7 +36,8 @@ services:
       # exact token for the CLI bypass matcher in the Caddyfile
       DEPLOY_TOKEN: ${DEPLOY_TOKEN}
     ports:
-      - "127.0.0.1:8080:80"
+      # host port is overridable: on some hosts 8080 is already taken
+      - "127.0.0.1:${CADDY_PORT:-8080}:80"
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./caddy/conf.d:/etc/caddy/conf.d
