@@ -37,6 +37,14 @@ http://id.{$APPS_DOMAIN} {
 
 http://deploy.{$APPS_DOMAIN} {
 	import nanoploy_strip
+	# the console deploys code and drives docker: never let it be framed, and
+	# never leak its url to an app the admin clicks through to
+	header {
+		X-Frame-Options DENY
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+		-Server
+	}
 	# the CLI authenticates with the exact bearer token, the browser with
 	# tinyauth. Matching the literal token (not "Bearer*") closes the bypass
 	# where any fake Authorization header skipped the forward-auth. {$DEPLOY_TOKEN}

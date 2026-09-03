@@ -9,14 +9,27 @@ import { join } from "node:path";
 import { parseManifest } from "./manifest.js";
 import * as store from "./db.js";
 import * as dk from "./docker.js";
-import { writeSite, removeSite } from "./caddy.js";
+import { writeSite, applySite, dropSite } from "./caddy.js";
 import * as people from "./people.js";
 
 const APPS_DIR = process.env.APPS_DIR ?? "/srv/apps";
-const TOKEN = process.env.DEPLOY_TOKEN!;
-// when set, only browser sessions whose Remote-Groups contain this group may
-// drive the platform. Leave empty for a single-admin setup.
-const ADMIN_GROUP = process.env.ADMIN_GROUP ?? "";
+const TOKEN = process.env.DEPLOY_TOKEN ?? "";
+// An empty token would make the caddy CLI bypass match "Bearer " and every
+// bearer check succeed on an empty string. Refuse to run rather than come up
+// wide open because someone hand-edited .env.
+if (TOKEN.length < 24) {
+  console.error(
+    "DEPLOY_TOKEN is missing or shorter than 24 characters. " +
+      "Run ./install.sh, or set a long random value in .env, then restart.",
+  );
+  process.exit(1);
+}
+
+// Group whose members may drive the platform from a browser. Pinning it in the
+// environment wins; otherwise it is a setting the dashboard can write, so
+// nobody has to ssh in to stop sharing root with every invited account.
+const ADMIN_GROUP_ENV = (process.env.ADMIN_GROUP ?? "").trim();
+let adminGroup = ADMIN_GROUP_ENV;
 const app = new Hono();
 
 // upload sanity: disk and ram are constrained on the target machine
@@ -29,8 +42,11 @@ const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 // env keys owned by the platform: not user-settable, not listed in the UI
 const PLATFORM_ENV = new Set(["DATABASE_URL"]);
 
+const GROUP_NAME_RE = /^[\p{L}\p{N}._'-]+$/u;
+
 await store.initState();
 await store.migrateState();
+if (!ADMIN_GROUP_ENV) adminGroup = (await store.getSetting("admin_group")) ?? "";
 
 /* ---------- auth ---------- */
 
@@ -48,22 +64,61 @@ const tokenOk = (c: Context) => {
 
 const sessionOk = (c: Context) => Boolean(c.req.header("remote-sub"));
 
+const sessionGroups = (c: Context) =>
+  (c.req.header("remote-groups") ?? "")
+    .split(",")
+    .map((g) => g.trim())
+    .filter(Boolean);
+
 // full platform access: the CLI token, or a browser session in the admin group.
 // A tinyauth user that is not in the group may use the apps, not the console.
-const adminOk = (c: Context) => {
+const adminOk = async (c: Context) => {
   if (tokenOk(c)) return true;
   if (!sessionOk(c)) return false;
-  if (!ADMIN_GROUP) return true;
-  const groups = (c.req.header("remote-groups") ?? "").split(",");
-  return groups.includes(ADMIN_GROUP);
+  if (!adminGroup) return true;
+  if (sessionGroups(c).includes(adminGroup)) return true;
+  // the session predates the group change: ask pocket-id rather than lock
+  // someone out of the console they just configured
+  const live = await people.groupsOf(
+    c.req.header("remote-sub") ?? "",
+    c.req.header("remote-email") ?? "",
+  );
+  return live.includes(adminGroup);
 };
 
 const isMe = (c: Context) => c.req.path === "/api/me";
 
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+// A cookie-authenticated console needs a cross-origin guard. multipart/form-data
+// is a CORS "simple request": any web page a logged-in admin visits could POST a
+// bundle to /api/deploy with their session cookie and get arbitrary code running
+// on the server, with no preflight to block it. Token callers carry no ambient
+// authority and are exempt.
+const sameOrigin = (c: Context) => {
+  const site = c.req.header("sec-fetch-site");
+  if (site) return site === "same-origin" || site === "none";
+  const origin = c.req.header("origin");
+  if (!origin) return true; // curl, the CLI, anything that is not a browser
+  try {
+    return new URL(origin).host === (c.req.header("host") ?? "");
+  } catch {
+    return false;
+  }
+};
+
 app.use("/api/*", async (c: Context, next: Next) => {
-  const ok = isMe(c) ? tokenOk(c) || sessionOk(c) : adminOk(c);
-  if (!ok) return c.json({ error: "unauthorized" }, 401);
-  await next();
+  const viaToken = tokenOk(c);
+  if (!viaToken && !SAFE_METHODS.has(c.req.method) && !sameOrigin(c)) {
+    return c.json({ error: "cross-origin request refused" }, 403);
+  }
+  if (isMe(c) ? viaToken || sessionOk(c) : await adminOk(c)) return await next();
+  // tell a signed-in non-admin apart from a stranger: the dashboard shows
+  // "you are not an administrator" instead of "your session expired"
+  if (sessionOk(c)) {
+    return c.json({ error: `this account is not in the "${adminGroup}" group`, admin: false }, 403);
+  }
+  return c.json({ error: "unauthorized" }, 401);
 });
 
 /* ---------- per-slug serialization ---------- */
@@ -101,9 +156,13 @@ app.post("/api/deploy", async (c) => {
     return c.json({ error: "bundle too large" }, 413);
   }
 
+  // read the upload once: on a 4 GB machine, holding two copies of a 100 MB
+  // bundle while apps are running is the difference between a deploy and an OOM
+  const bytes = Buffer.from(await bundle.arrayBuffer());
+
   let manifest;
   try {
-    const zip = new AdmZip(Buffer.from(await bundle.arrayBuffer()));
+    const zip = new AdmZip(bytes);
     const entries = zip.getEntries();
     if (entries.length === 0) return c.json({ error: "empty bundle" }, 400);
     if (entries.length > MAX_BUNDLE_ENTRIES) {
@@ -123,18 +182,18 @@ app.post("/api/deploy", async (c) => {
   const { slug } = manifest;
   return runLocked(slug, async () => {
     try {
-      return await c.json(await doDeploy(manifest, bundle));
+      return await c.json(await doDeploy(manifest, bytes));
     } catch (err: any) {
       return c.json({ error: err?.message ?? "deploy failed" }, 500);
     }
   });
 });
 
-async function doDeploy(manifest: ReturnType<typeof parseManifest>, bundle: File) {
+async function doDeploy(manifest: ReturnType<typeof parseManifest>, zip: Buffer) {
   const dir = join(APPS_DIR, manifest.slug);
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
-  new AdmZip(Buffer.from(await bundle.arrayBuffer())).extractAllTo(dir, true);
+  new AdmZip(zip).extractAllTo(dir, true);
   // zip headers can lie about sizes: measure the extracted bundle for real
   const { bytes, files } = await dirStats(dir);
   if (files > MAX_BUNDLE_ENTRIES || bytes > MAX_BUNDLE_UNPACKED) {
@@ -198,12 +257,12 @@ async function doDeploy(manifest: ReturnType<typeof parseManifest>, bundle: File
   };
   await store.upsertApp(row as any);
   await store.touchDeploy(manifest.slug);
-  await writeSite((await store.getApp(manifest.slug))!);
-  if (await dk.reloadCaddy()) {
-    log.push("route caddy à jour");
-  } else {
-    log.push("ATTENTION: le rechargement caddy a échoué, la nouvelle route n'est pas en service");
-  }
+  const routed = await applySite((await store.getApp(manifest.slug))!);
+  log.push(
+    routed
+      ? "caddy route is live"
+      : "WARNING: caddy refused the new route and the previous config was restored, the app is not reachable",
+  );
   await pruneAll();
 
   return {
@@ -303,7 +362,8 @@ async function reconcile() {
     });
   }
   if (apps.length) {
-    await dk.reloadCaddy().catch(() => {});
+    const reloaded = await dk.reloadCaddy().catch(() => false);
+    if (!reloaded) console.error("reconcile: caddy reload failed, routes may be stale");
     // re-list: a rebuild above changed an image tag, the keep set must be fresh
     const current = await store.listApps();
     await dk
@@ -364,22 +424,18 @@ app.post("/api/apps/:slug/access", async (c) => {
       if (cleanGroups.length === 0) {
         return c.json({ error: "groups access requires at least one group" }, 400);
       }
-      const bad = cleanGroups.find((g) => !/^[\p{L}\p{N}._'-]+$/u.test(g));
+      const bad = cleanGroups.find((g) => !GROUP_NAME_RE.test(g));
       if (bad) {
         return c.json({ error: `group name not allowed in caddy config: ${bad}` }, 400);
       }
     }
+    const rollback = { access: current.access, groups: current.groups };
     await store.setAccess(slug, access, cleanGroups);
-    const updated = (await store.getApp(slug))!;
-    await writeSite(updated);
-    const reloaded = await dk.reloadCaddy();
-    if (!reloaded) {
-      // the row and the site file changed, but caddy kept its previous config:
-      // say so instead of pretending the switch is live
-      return c.json(
-        { ok: false, error: "config written but caddy reload failed, run reconcile" },
-        502,
-      );
+    if (!(await applySite((await store.getApp(slug))!))) {
+      // caddy kept its previous config, so must the database: an app shown as
+      // public while the gateway still asks for a login is worse than an error
+      await store.setAccess(slug, rollback.access, rollback.groups);
+      return c.json({ error: "caddy refused the new access rule, nothing changed" }, 502);
     }
     return c.json({ ok: true });
   });
@@ -433,19 +489,24 @@ app.delete("/api/apps/:slug", async (c) => {
     if (!appRow) return c.json({ error: "unknown app" }, 404);
     await dk.removeContainer(slug);
     await dk.removeDataVolume(slug);
-    await removeSite(slug);
     await store.deleteApp(slug);
     await rm(join(APPS_DIR, slug), { recursive: true, force: true });
-    const reloaded = await dk.reloadCaddy();
+    const dropped = await dropSite(slug);
     await pruneAll();
-    // the database is kept on purpose, drop it by hand if you really mean it
-    if (!reloaded) {
+    // the postgres database survives on purpose, the /data volume does not:
+    // the dashboard says both out loud before asking for confirmation
+    if (!dropped) {
+      // dropping the file broke the whole config, so it was put back: the route
+      // survives the app and has to be removed by hand
       return c.json(
-        { ok: true, note: "database kept; caddy reload failed, the route may answer until reconcile" },
+        {
+          ok: true,
+          note: `app removed, but caddy refused the config without its route: delete ${slug}.caddy by hand`,
+        },
         502,
       );
     }
-    return c.json({ ok: true, note: "database kept, drop it manually if needed" });
+    return c.json({ ok: true, note: "postgres database kept, drop it manually if needed" });
   });
 });
 
@@ -490,8 +551,25 @@ app.get("/api/people", async (c) => {
 });
 
 app.post("/api/people", async (c) => {
+  // Until an admin group exists, every account that can sign in can deploy code
+  // and drive docker on this machine. Creating a second account before that is
+  // handing out root, so the invite waits for the decision.
+  if (!adminGroup) {
+    return c.json(
+      {
+        error:
+          "choose an admin group before inviting anyone: without one, every account gets full control of this server",
+        needsAdminGroup: true,
+      },
+      409,
+    );
+  }
   try {
-    return c.json(await people.invite(await c.req.json()));
+    const { username, email, firstName } = await c.req.json<Record<string, string>>();
+    if (!username?.trim() || !email?.trim()) {
+      return c.json({ error: "username and email are required" }, 400);
+    }
+    return c.json(await people.invite({ username: username.trim(), email: email.trim(), firstName }));
   } catch (err: any) {
     return c.json({ error: err.message }, 502);
   }
@@ -499,6 +577,9 @@ app.post("/api/people", async (c) => {
 
 app.post("/api/people/:id/groups", async (c) => {
   const { groupIds } = await c.req.json<{ groupIds: string[] }>();
+  if (!Array.isArray(groupIds) || groupIds.some((g) => typeof g !== "string")) {
+    return c.json({ error: "groupIds must be a list of strings" }, 400);
+  }
   await people.setGroups(c.req.param("id"), groupIds);
   return c.json({ ok: true });
 });
@@ -511,17 +592,78 @@ app.delete("/api/people/:id", async (c) => {
 app.post("/api/groups", async (c) => {
   const { name } = await c.req.json<{ name: string }>();
   const clean = String(name ?? "").replace(/[\r\n"\\]/g, "").trim().slice(0, 64);
-  if (!/^[\p{L}\p{N}._'-]+$/u.test(clean)) {
+  if (!GROUP_NAME_RE.test(clean)) {
     return c.json({ error: "group name not allowed in caddy config" }, 400);
   }
   return c.json(await people.createGroup(clean));
 });
 
-app.get("/api/me", (c) =>
+// Who may drive the console. Set from the dashboard so nobody has to ssh in and
+// restart a container to stop sharing root with the whole family.
+app.post("/api/admin-group", async (c) => {
+  if (ADMIN_GROUP_ENV) {
+    return c.json(
+      { error: "the admin group is pinned by the ADMIN_GROUP environment variable" },
+      400,
+    );
+  }
+  const { group } = await c.req.json<{ group: string }>();
+  const clean = String(group ?? "").replace(/[\r\n"\\]/g, "").trim().slice(0, 64);
+
+  if (!clean) {
+    // clearing gives every account full control again: too big a step to take
+    // from a browser session that the change itself could be locking out
+    if (!tokenOk(c)) {
+      return c.json({ error: "clearing the admin group requires the deploy token" }, 403);
+    }
+    await store.setSetting("admin_group", "");
+    adminGroup = "";
+    return c.json({ ok: true, adminGroup: null });
+  }
+
+  if (!GROUP_NAME_RE.test(clean)) {
+    return c.json({ error: "group name not allowed in caddy config" }, 400);
+  }
+  if (people.configured()) {
+    const known = await people.listGroups().catch(() => null);
+    if (known && !known.some((g) => g.name === clean)) {
+      return c.json({ error: `no group named "${clean}" in Pocket ID` }, 400);
+    }
+  }
+  // a browser admin must already be in the group, or the very next request
+  // would lock them out of their own console
+  if (!tokenOk(c)) {
+    const mine = sessionGroups(c).includes(clean)
+      ? true
+      : (
+          await people.groupsOf(
+            c.req.header("remote-sub") ?? "",
+            c.req.header("remote-email") ?? "",
+          )
+        ).includes(clean);
+    if (!mine) {
+      return c.json(
+        { error: `add your own account to "${clean}" first, then set it here` },
+        400,
+      );
+    }
+  }
+  await store.setSetting("admin_group", clean);
+  adminGroup = clean;
+  return c.json({ ok: true, adminGroup: clean });
+});
+
+app.get("/api/me", async (c) =>
   c.json({
     name: c.req.header("Remote-Name") ?? c.req.header("Remote-User") ?? "",
     email: c.req.header("Remote-Email") ?? "",
     domain: process.env.APPS_DOMAIN,
+    admin: await adminOk(c),
+    viaToken: tokenOk(c),
+    groups: sessionGroups(c),
+    adminGroup: adminGroup || null,
+    // pinned in .env: the dashboard shows it read-only
+    adminGroupLocked: Boolean(ADMIN_GROUP_ENV),
   }));
 
 app.get("/", async (c) => c.html(await readFile("./public/index.html", "utf8")));
