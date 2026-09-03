@@ -1,0 +1,49 @@
+{
+	# cloudflared terminates TLS, caddy only serves plain http internally
+	auto_https off
+	admin 0.0.0.0:2019
+}
+
+# reusable forward-auth snippet, imported by every private app
+(nanoploy_auth) {
+	forward_auth tinyauth:3000 {
+		uri /api/auth/caddy
+		copy_headers Remote-User Remote-Name Remote-Email Remote-Groups Remote-Sub
+	}
+}
+
+# identity headers are gateway-owned, never accept them from a client
+(nanoploy_strip) {
+	request_header -Remote-User
+	request_header -Remote-Name
+	request_header -Remote-Email
+	request_header -Remote-Groups
+	request_header -Remote-Sub
+}
+
+http://auth.{$APPS_DOMAIN} {
+	reverse_proxy tinyauth:3000
+}
+
+http://id.{$APPS_DOMAIN} {
+	reverse_proxy pocket-id:1411
+}
+
+http://deploy.{$APPS_DOMAIN} {
+	import nanoploy_strip
+	# the CLI authenticates with the exact bearer token, the browser with
+	# tinyauth. Matching the literal token (not "Bearer*") closes the bypass
+	# where any fake Authorization header skipped the forward-auth. {$DEPLOY_TOKEN}
+	# is resolved from the caddy container env: rotate it in .env then
+	# "docker compose up -d caddy".
+	@cli header Authorization "Bearer {$DEPLOY_TOKEN}"
+	handle @cli {
+		reverse_proxy control-plane:8000
+	}
+	handle {
+		import nanoploy_auth
+		reverse_proxy control-plane:8000
+	}
+}
+
+import /etc/caddy/conf.d/*.caddy
