@@ -21,6 +21,9 @@ export async function initState() {
       image text,
       deployed_at timestamptz not null default now()
     )`;
+  // app roles must not be able to reach the platform's own database at all
+  const dbName = new URL(process.env.POSTGRES_URL!).pathname.replace(/^\//, "");
+  await admin.unsafe(`revoke connect on database "${dbName}" from public`);
 }
 
 export type AppRow = {
@@ -36,12 +39,14 @@ export type AppRow = {
   env: Record<string, string>;
   image: string | null;
   deployed_at: string;
+  declared_env: string[];
 };
 
 // added after the first release, existing installs need the column too
 export async function migrateState() {
   try {
     await admin`alter table apps add column if not exists warm boolean not null default false`;
+    await admin`alter table apps add column if not exists declared_env text[] not null default '{}'`;
   } catch (err: any) {
     // postgres.js surfaces the "already exists" notice as an error, harmless
     if (String(err?.code) !== "42701") throw err;

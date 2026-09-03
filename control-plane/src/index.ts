@@ -191,6 +191,7 @@ async function doDeploy(manifest: ReturnType<typeof parseManifest>, bundle: File
     db_password: dbPassword,
     env,
     image,
+    declared_env: manifest.env,
   };
   await store.upsertApp(row as any);
   await store.touchDeploy(manifest.slug);
@@ -289,20 +290,23 @@ app.post("/api/reconcile", async (c) => c.json({ ok: true, apps: await reconcile
 app.get("/api/apps", async (c) => {
   const apps = await store.listApps();
   const withStatus = await Promise.all(
-    apps.map(async (a) => ({
-      slug: a.slug,
-      name: a.name,
-      access: a.access,
-      groups: a.groups,
-      hasBackend: a.port !== null,
-      hasDatabase: a.db_user !== null,
-      warm: a.warm,
-      idleTimeout: a.idle_timeout,
-      env: Object.fromEntries(Object.keys(a.env).map((k) => [k, "set"])),
-      envKeys: Object.keys(a.env),
-      status: a.port ? await dk.appStatus(a.slug) : "static",
-      deployedAt: a.deployed_at,
-    })),
+    apps.map(async (a) => {
+      const envKeys = [...new Set([...Object.keys(a.env), ...(a.declared_env ?? [])])];
+      return {
+        slug: a.slug,
+        name: a.name,
+        access: a.access,
+        groups: a.groups,
+        hasBackend: a.port !== null,
+        hasDatabase: a.db_user !== null,
+        warm: a.warm,
+        idleTimeout: a.idle_timeout,
+        env: Object.fromEntries(envKeys.map((k) => [k, k in a.env ? "set" : "unset"])),
+        envKeys,
+        status: a.port ? await dk.appStatus(a.slug) : "static",
+        deployedAt: a.deployed_at,
+      };
+    }),
   );
   return c.json({ apps: withStatus, host: await dk.hostMemory() });
 });
@@ -351,10 +355,11 @@ app.post("/api/apps/:slug/env", async (c) => {
       ([k, v]) => ENV_KEY_RE.test(k) && typeof v === "string" && v.length <= 16_384,
     );
     if (!valid) return c.json({ error: "invalid env key or value" }, 400);
-    // only declared variables can be written: replacing DATABASE_URL or any
-    // platform-managed variable from the dashboard would be an attack
-    const declared = new Set(Object.keys(current.env));
-    if (!Object.keys(patch).every((k) => declared.has(k))) {
+    // only declared variables can be written (a manifest-declared key is
+    // writable even before its first value exists): replacing DATABASE_URL or
+    // injecting a platform-managed variable would be an attack
+    const allowed = new Set([...Object.keys(current.env), ...(current.declared_env ?? [])]);
+    if (!Object.keys(patch).every((k) => allowed.has(k))) {
       return c.json({ error: "env key is not declared in the manifest" }, 400);
     }
     const env = { ...current.env, ...patch };
