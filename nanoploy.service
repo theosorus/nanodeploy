@@ -1,0 +1,22 @@
+# Boot unit for Nanoploy.
+# Install:
+#   sudo cp nanoploy.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable nanoploy
+# Edit WorkingDirectory and RequiresMountsFor to match your setup.
+[Unit]
+Description=Nanoploy platform
+Requires=docker.service
+After=docker.service network-online.target
+# do not start before the external storage holding docker data-root is mounted
+RequiresMountsFor=/mnt/ssd
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/nanoploy
+ExecStart=/usr/bin/docker compose up -d
+ExecStop=/usr/bin/docker compose stop
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

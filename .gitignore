@@ -1,0 +1,7 @@
+.env
+node_modules
+dist
+*.zip
+server.js
+var/
+.DS_Store
