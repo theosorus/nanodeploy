@@ -148,7 +148,12 @@ const api = async (path, opts = {}) => {
     ...opts,
     headers: opts.body ? { "content-type": "application/json" } : undefined,
   });
-  const data = await res.json().catch(() => ({}));
+  const type = res.headers.get("content-type") || "";
+  if (!type.includes("json")) {
+    // session expirée ou gateway: le corps est du HTML, pas une erreur JSON
+    throw new Error(res.status === 401 ? "session expirée, reconnectez-vous" : `réponse inattendue (${res.status})`);
+  }
+  const data = await res.json();
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
 };
@@ -223,14 +228,22 @@ function renderDetail(a, host) {
 
     <div class="actions">
       <a class="act" href="https://${esc(host)}" target="_blank" rel="noopener" style="text-decoration:none">Ouvrir</a>
-      ${a.status === "sleeping" ? `<button class="act" data-wake="${a.slug}">Réveiller</button>` : ""}
+      ${a.status === "sleeping" && a.warm ? `<button class="act" data-wake="${a.slug}">Réveiller</button>` : ""}
       <button class="act danger" data-delete="${a.slug}">Supprimer</button>
     </div>
-    <p class="row-sub" style="font-size:13px;margin:12px 0 0">La base de données est conservée à la suppression.</p>
+    <p class="row-sub" style="font-size:13px;margin:12px 0 0">Les apps froides se réveillent toutes seules à la première visite. La base de données est conservée à la suppression.</p>
   </div>`;
 }
 
 function bindApps() {
+  const fail = (fn) => async (...args) => {
+    try {
+      await fn(...args);
+    } catch (err) {
+      toast("Échec: " + err.message);
+    }
+  };
+
   document.querySelectorAll("[data-open]").forEach((el) => {
     el.onclick = () => {
       state.open = state.open === el.dataset.open ? null : el.dataset.open;
@@ -240,7 +253,7 @@ function bindApps() {
   });
 
   document.querySelectorAll("[data-access]").forEach((el) => {
-    el.onchange = async (e) => {
+    el.onchange = fail(async (e) => {
       e.stopPropagation();
       const app = state.apps.find((a) => a.slug === el.dataset.access);
       await api(`/api/apps/${app.slug}/access`, {
@@ -249,12 +262,12 @@ function bindApps() {
       });
       if (el.value === "public") toast("Cette app est maintenant ouverte à tout internet.");
       loadApps();
-    };
+    });
     el.onclick = (e) => e.stopPropagation();
   });
 
   document.querySelectorAll("[data-group]").forEach((el) => {
-    el.onclick = async (e) => {
+    el.onclick = fail(async (e) => {
       e.stopPropagation();
       const app = state.apps.find((a) => a.slug === el.dataset.slug);
       const name = el.dataset.group;
@@ -266,13 +279,13 @@ function bindApps() {
         body: JSON.stringify({ access: "groups", groups }),
       });
       loadApps();
-    };
+    });
   });
 
   document.querySelectorAll("[data-env]").forEach((el) => (el.onclick = (e) => e.stopPropagation()));
 
   document.querySelectorAll("[data-saveenv]").forEach((el) => {
-    el.onclick = async (e) => {
+    el.onclick = fail(async (e) => {
       e.stopPropagation();
       const slug = el.dataset.saveenv;
       const patch = {};
@@ -281,21 +294,21 @@ function bindApps() {
       });
       if (!Object.keys(patch).length) return toast("Rien à enregistrer.");
       await api(`/api/apps/${slug}/env`, { method: "POST", body: JSON.stringify(patch) });
-      toast("Variables enregistrées, l'app a redémarré.");
+      toast("Variables enregistrées.");
       loadApps();
-    };
+    });
   });
 
   document.querySelectorAll("[data-wake]").forEach((el) => {
-    el.onclick = async (e) => {
+    el.onclick = fail(async (e) => {
       e.stopPropagation();
       await api(`/api/apps/${el.dataset.wake}/wake`, { method: "POST" });
       loadApps();
-    };
+    });
   });
 
   document.querySelectorAll("[data-delete]").forEach((el) => {
-    el.onclick = async (e) => {
+    el.onclick = fail(async (e) => {
       e.stopPropagation();
       const slug = el.dataset.delete;
       if (!confirm(`Supprimer ${slug} ? La base de données sera conservée.`)) return;
@@ -303,7 +316,7 @@ function bindApps() {
       state.open = null;
       toast(slug + " supprimée.");
       loadApps();
-    };
+    });
   });
 }
 
