@@ -3,6 +3,9 @@ const KEY = process.env.POCKETID_API_KEY ?? "";
 
 export const configured = () => KEY.length > 0;
 
+// ids come from the client: never let one steer the request to another endpoint
+const enc = (s: string) => encodeURIComponent(String(s));
+
 async function call(path: string, init: RequestInit = {}) {
   const res = await fetch(`${BASE}/api${path}`, {
     ...init,
@@ -49,6 +52,29 @@ export async function listPeople(): Promise<Person[]> {
   }));
 }
 
+// A tinyauth session carries the groups the person had when they signed in.
+// Adding yourself to the admin group and then naming it would therefore lock
+// you out of your own console until you signed out and back in. Ask the
+// identity provider instead, cached so this stays cheap on a per-request path.
+let cache: { at: number; people: Person[] } | null = null;
+const CACHE_MS = 60_000;
+
+export async function groupsOf(sub: string, email: string): Promise<string[]> {
+  if (!configured()) return [];
+  if (!cache || Date.now() - cache.at > CACHE_MS) {
+    const list = await listPeople().catch(() => null);
+    if (!list) return [];
+    cache = { at: Date.now(), people: list };
+  }
+  const found = cache.people.find(
+    (p) => p.id === sub || (email && p.email.toLowerCase() === email.toLowerCase()),
+  );
+  return found?.groups ?? [];
+}
+
+// group edits must be visible on the next request, not up to a minute later
+export const forgetGroups = () => (cache = null);
+
 export async function listGroups(): Promise<{ id: string; name: string }[]> {
   const payload = await call("/user-groups?pagination[limit]=200");
   return rows(payload).map((g: any) => ({ id: g.id, name: g.name ?? g.friendlyName }));
@@ -71,7 +97,7 @@ export async function invite(input: {
       isAdmin: false,
     }),
   });
-  const token = await call(`/users/${user.id}/one-time-access-token`, {
+  const token = await call(`/users/${enc(user.id)}/one-time-access-token`, {
     method: "POST",
     body: JSON.stringify({
       expiresAt: new Date(Date.now() + 7 * 864e5).toISOString(),
@@ -86,7 +112,8 @@ export async function invite(input: {
 }
 
 export async function setGroups(userId: string, groupIds: string[]) {
-  return call(`/users/${userId}/user-groups`, {
+  forgetGroups();
+  return call(`/users/${enc(userId)}/user-groups`, {
     method: "PUT",
     body: JSON.stringify({ userGroupIds: groupIds }),
   });
@@ -100,5 +127,6 @@ export async function createGroup(name: string) {
 }
 
 export async function removePerson(userId: string) {
-  return call(`/users/${userId}`, { method: "DELETE" });
+  forgetGroups();
+  return call(`/users/${enc(userId)}`, { method: "DELETE" });
 }
