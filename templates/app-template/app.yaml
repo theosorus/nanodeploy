@@ -1,0 +1,16 @@
+# Nanoploy manifest. This file is the whole contract with the platform.
+name: Mon app
+slug: mon-app            # becomes mon-app.<APPS_DOMAIN>, [a-z0-9-] only
+access: private          # public | private | groups
+groups: []               # only used when access is groups
+frontend: true
+backend:
+  entry: server.js       # bundled by npm run build, never a folder
+  port: 3000
+database:
+  enabled: true
+  migrations: ./migrations
+idle:
+  timeout: 10m           # scale to zero after this much inactivity
+  warm: false            # true = always running, restarts with the machine, ~40 Mo
+env: []                  # names only, values are set in the dashboard
