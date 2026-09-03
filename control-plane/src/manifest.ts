@@ -18,6 +18,11 @@ const SLUG_RE = /^[a-z][a-z0-9-]{1,30}$/;
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 const IDLE_RE = /^\d+(ms|s|m|h)$/;
 const NAME_MAX = 60;
+const ENV_MAX = 64;
+// These subdomains belong to the platform. An app that claimed one would emit a
+// site file with an address caddy already serves: the config becomes invalid,
+// every reload fails from then on, and the gateway can no longer be updated.
+export const RESERVED_SLUGS = new Set(["deploy", "auth", "id", "www"]);
 
 const bad = (msg: string): never => {
   throw new Error(msg);
@@ -28,6 +33,9 @@ export function parseManifest(raw: string): Manifest {
   if (!m || typeof m !== "object") bad("manifest must be a yaml object");
   if (!m.slug || !SLUG_RE.test(m.slug)) {
     bad("slug must match [a-z][a-z0-9-]{1,30}");
+  }
+  if (RESERVED_SLUGS.has(m.slug)) {
+    bad(`slug "${m.slug}" is reserved by the platform, pick another one`);
   }
   const access: Access = m.access ?? "private";
   if (!["public", "private", "groups"].includes(access)) {
@@ -76,6 +84,7 @@ export function parseManifest(raw: string): Manifest {
   // env keys become container env names: keep them strict so a manifest cannot
   // smuggle extra KEY=VALUE pairs into the container through a newline
   const env = [...new Set(Array.isArray(m.env) ? m.env : [])];
+  if (env.length > ENV_MAX) bad(`at most ${ENV_MAX} env names, got ${env.length}`);
   for (const key of env) {
     if (typeof key !== "string" || !ENV_KEY_RE.test(key)) {
       bad(`env names must match [A-Za-z_][A-Za-z0-9_]* , got: ${String(key).slice(0, 40)}`);
