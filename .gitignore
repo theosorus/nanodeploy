@@ -5,3 +5,6 @@ dist
 server.js
 var/
 .DS_Store
+
+# sites générés par le control plane à l'exécution
+caddy/conf.d/*.caddy

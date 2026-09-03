@@ -1,7 +1,9 @@
 FROM node:20-slim AS build
 WORKDIR /app
-COPY package.json ./
-RUN npm install
+# the lockfile keeps the image build reproducible: dockerode's dependency tree
+# moved to native modules (cpu-features via ssh2) and silently broke the bundle
+COPY package.json package-lock.json ./
+RUN npm ci
 COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build

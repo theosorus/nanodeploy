@@ -50,6 +50,7 @@ source_env
 mkdir -p "$APPS_DIR"
 docker network create nanoploy_edge 2>/dev/null && ok "network nanoploy_edge" || ok "network nanoploy_edge exists"
 docker network create --internal nanoploy_data 2>/dev/null && ok "network nanoploy_data" || ok "network nanoploy_data exists"
+docker network create nanoploy_apps 2>/dev/null && ok "network nanoploy_apps" || ok "network nanoploy_apps exists"
 ok "apps dir $APPS_DIR"
 
 say "3/5 building the caddy image with the sablier plugin"

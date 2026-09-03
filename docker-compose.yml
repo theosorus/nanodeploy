@@ -9,6 +9,12 @@ networks:
   data:
     name: nanoploy_data
     external: true
+  # app containers join this one: it only carries caddy and postgres. The
+  # platform services on nanoploy_edge (socket-proxy especially) must stay
+  # unreachable from an app, which is arbitrary code.
+  apps:
+    name: nanoploy_apps
+    external: true
 
 volumes:
   caddy_data:
@@ -37,7 +43,8 @@ services:
       - ${APPS_DIR}:/srv/apps:ro
       - caddy_data:/data
       - caddy_config:/config
-    networks: [edge]
+    # edge for tinyauth/sablier/pocket-id, apps for the reverse_proxy targets
+    networks: [edge, apps]
 
   sablier:
     image: sablierapp/sablier:1.17.0
@@ -60,6 +67,7 @@ services:
       INFO: 1
       BUILD: 1
       EXEC: 1
+      VOLUMES: 1
       POST: 1
       ALLOW_START: 1
       ALLOW_STOP: 1
@@ -136,6 +144,9 @@ services:
       APPS_DOMAIN: ${APPS_DOMAIN}
       CADDY_CONF_DIR: /etc/caddy/conf.d
       DEPLOY_TOKEN: ${DEPLOY_TOKEN}
+      # optional: browser sessions must be in this tinyauth group to drive the
+      # platform. Leave empty for a single-admin setup.
+      ADMIN_GROUP: ${ADMIN_GROUP:-}
       POSTGRES_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/nanoploy
       DEFAULT_APP_MEMORY_MB: 256
       POCKETID_URL: http://pocket-id:1411
