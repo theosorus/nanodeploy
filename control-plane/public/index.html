@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nanoploy</title>
+<style>
+  :root {
+    --board: #0f2f26;
+    --board-deep: #071a15;
+    --panel: #123a2f;
+    --silk: #eaf0ea;
+    --silk-dim: #8ea89b;
+    --copper: #c9a227;
+    --rail: #1c4a3d;
+    --alert: #d4614a;
+    --radius: 5px;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--board-deep);
+    color: var(--silk);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 24px 18px 80px; }
+
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+  h1 { font-size: 19px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+  header .who { color: var(--silk-dim); font-size: 13px; }
+
+  nav { display: flex; margin-bottom: 24px; }
+  nav button {
+    background: transparent; border: 0; border-bottom: 2px solid transparent;
+    color: var(--silk-dim); font: inherit; padding: 6px 2px; margin-right: 20px; cursor: pointer;
+  }
+  nav button[aria-selected="true"] { color: var(--silk); border-color: var(--copper); }
+
+  .gauge { background: var(--board); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 20px; }
+  .gauge-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+  .gauge-value { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; }
+  .gauge-value small { font-size: 14px; font-weight: 400; color: var(--silk-dim); margin-left: 5px; }
+  .bar { height: 8px; background: var(--rail); border-radius: 99px; overflow: hidden; }
+  .bar span { display: block; height: 100%; background: var(--copper); transition: width .4s ease; }
+  .gauge-note { color: var(--silk-dim); font-size: 13px; margin-top: 10px; }
+
+  .drop {
+    border: 1px dashed var(--rail); border-radius: var(--radius); padding: 18px;
+    text-align: center; color: var(--silk-dim); margin-bottom: 24px; cursor: pointer;
+  }
+  .drop.over { border-color: var(--copper); color: var(--silk); background: var(--board); }
+
+  .row { display: flex; align-items: center; gap: 12px; padding: 13px 0; border-top: 1px solid var(--rail); cursor: pointer; }
+  .row:last-of-type { border-bottom: 1px solid var(--rail); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--silk-dim); }
+  .dot.awake { background: var(--copper); box-shadow: 0 0 0 3px rgba(201,162,39,.15); }
+  .dot.missing { background: var(--alert); }
+  .row-main { flex: 1; min-width: 0; }
+  .row-title { font-weight: 500; }
+  .row-sub { color: var(--silk-dim); }
+  .tag { color: var(--silk-dim); font-size: 12px; border: 1px solid var(--rail); border-radius: 99px; padding: 2px 9px; white-space: nowrap; }
+
+  .detail { background: var(--board); border-radius: var(--radius); padding: 16px; margin: 4px 0 12px; }
+  .detail h3 { font-size: 13px; font-weight: 500; color: var(--silk-dim); margin: 18px 0 8px; }
+  .detail h3:first-child { margin-top: 0; }
+  .field { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
+
+  input, select {
+    font: inherit; font-size: 14px; color: var(--silk); background: var(--board-deep);
+    border: 1px solid var(--rail); border-radius: 4px; padding: 7px 9px; min-width: 0; flex: 1;
+  }
+  input::placeholder { color: var(--silk-dim); }
+  button.act {
+    font: inherit; font-size: 13px; color: var(--silk); background: transparent;
+    border: 1px solid var(--rail); border-radius: 4px; padding: 7px 12px; cursor: pointer;
+  }
+  button.act:hover { border-color: var(--copper); }
+  button.act.danger:hover { border-color: var(--alert); color: var(--alert); }
+  button.act.primary { border-color: var(--copper); color: var(--copper); }
+  :focus-visible { outline: 2px solid var(--copper); outline-offset: 2px; }
+
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { font: inherit; font-size: 12px; background: transparent; border: 1px solid var(--rail); border-radius: 99px; padding: 3px 10px; cursor: pointer; color: var(--silk-dim); }
+  .chip[aria-pressed="true"] { border-color: var(--copper); color: var(--copper); }
+
+  pre.logs { background: var(--board-deep); border-radius: 4px; padding: 12px; overflow-x: auto; max-height: 240px; margin: 0; font-size: 12px; color: var(--silk-dim); }
+  .empty { color: var(--silk-dim); padding: 26px 0; }
+  .toast {
+    position: fixed; left: 50%; transform: translateX(-50%); bottom: 20px;
+    background: var(--panel); border: 1px solid var(--rail); border-radius: var(--radius);
+    padding: 12px 16px; max-width: 92vw; white-space: pre-wrap; font-size: 14px;
+  }
+  .toast[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Nanoploy</h1>
+    <span class="who" id="who"></span>
+  </header>
+
+  <nav role="tablist">
+    <button role="tab" data-view="apps" aria-selected="true">Apps</button>
+    <button role="tab" data-view="people" aria-selected="false">Comptes</button>
+  </nav>
+
+  <section id="view-apps">
+    <div class="gauge">
+      <div class="gauge-top">
+        <div class="gauge-value" id="awake">0<small>app réveillée</small></div>
+        <div class="mono" id="sleeping" style="color:var(--silk-dim)"></div>
+      </div>
+      <div class="bar"><span id="fill" style="width:0%"></span></div>
+      <div class="gauge-note">Une app en veille ne consomme rien. La première requête la réveille en une seconde.</div>
+    </div>
+
+    <div class="drop" id="drop">
+      Glissez un bundle <span class="mono">.zip</span> ici, ou cliquez pour choisir
+      <input type="file" id="file" accept=".zip" hidden>
+    </div>
+
+    <div id="apps"><p class="empty">Aucune app déployée. Lancez <span class="mono">npm run deploy</span> depuis un projet.</p></div>
+  </section>
+
+  <section id="view-people" hidden></section>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
+const state = { apps: [], open: null, domain: "", people: [], groups: [], peopleReady: false };
+let toastTimer;
+
+function toast(msg, sticky) {
+  clearTimeout(toastTimer);
+  $("toast").textContent = msg;
+  $("toast").hidden = false;
+  if (!sticky) toastTimer = setTimeout(() => ($("toast").hidden = true), 5000);
+}
+
+const api = async (path, opts = {}) => {
+  const res = await fetch(path, {
+    ...opts,
+    headers: opts.body ? { "content-type": "application/json" } : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+};
+
+/* ---------- apps ---------- */
+
+async function loadApps() {
+  const data = await api("/api/apps").catch(() => null);
+  if (!data) return toast("Control plane injoignable.");
+  state.apps = data.apps;
+  renderApps();
+}
+
+function renderApps() {
+  const awake = state.apps.filter((a) => a.status === "awake").length;
+  $("awake").innerHTML = awake + "<small>" + (awake === 1 ? "app réveillée" : "apps réveillées") + "</small>";
+  $("sleeping").textContent = state.apps.filter((a) => a.status === "sleeping").length + " en veille";
+  $("fill").style.width = (state.apps.length ? (awake / state.apps.length) * 100 : 0) + "%";
+
+  if (!state.apps.length) return;
+  $("apps").innerHTML = state.apps.map(renderApp).join("");
+  bindApps();
+}
+
+function accessLabel(a) {
+  if (a.access === "public") return "public";
+  if (a.access === "groups") return a.groups.join(", ") || "groupes";
+  return "privé";
+}
+
+function renderApp(a) {
+  const host = a.slug + "." + state.domain;
+  return `
+    <div class="row" data-open="${a.slug}">
+      <span class="dot ${a.status}"></span>
+      <div class="row-main">
+        <div class="row-title">${esc(a.name)}</div>
+        <div class="row-sub mono">${esc(host)}</div>
+      </div>
+      ${a.warm ? '<span class="tag">toujours active</span>' : ""}
+      <span class="tag">${esc(accessLabel(a))}</span>
+    </div>
+    ${state.open === a.slug ? renderDetail(a, host) : ""}`;
+}
+
+function renderDetail(a, host) {
+  const groupChips = state.groups
+    .map((g) => `<button class="chip" data-group="${esc(g.name)}" data-slug="${a.slug}"
+        aria-pressed="${a.groups.includes(g.name)}">${esc(g.name)}</button>`)
+    .join("");
+
+  return `<div class="detail">
+    <h3>Accès</h3>
+    <div class="field">
+      <select data-access="${a.slug}">
+        <option value="private" ${a.access === "private" ? "selected" : ""}>Privé, comptes autorisés seulement</option>
+        <option value="groups" ${a.access === "groups" ? "selected" : ""}>Réservé à des groupes</option>
+        <option value="public" ${a.access === "public" ? "selected" : ""}>Public, ouvert à tout internet</option>
+      </select>
+    </div>
+    ${a.access === "groups" ? `<div class="chips">${groupChips || '<span class="row-sub">Créez un groupe dans Comptes.</span>'}</div>` : ""}
+
+    ${a.envKeys.length ? `<h3>Variables</h3>${a.envKeys.map((k) => `
+      <div class="field">
+        <input class="mono" value="${esc(k)}" readonly style="max-width:210px">
+        <input type="password" placeholder="saisir pour remplacer" data-env="${a.slug}" data-key="${esc(k)}">
+      </div>`).join("")}
+      <button class="act" data-saveenv="${a.slug}">Enregistrer</button>` : ""}
+
+    <h3>Journal</h3>
+    <pre class="logs" data-logs="${a.slug}">chargement</pre>
+
+    <div class="actions">
+      <a class="act" href="https://${esc(host)}" target="_blank" rel="noopener" style="text-decoration:none">Ouvrir</a>
+      ${a.status === "sleeping" ? `<button class="act" data-wake="${a.slug}">Réveiller</button>` : ""}
+      <button class="act danger" data-delete="${a.slug}">Supprimer</button>
+    </div>
+    <p class="row-sub" style="font-size:13px;margin:12px 0 0">La base de données est conservée à la suppression.</p>
+  </div>`;
+}
+
+function bindApps() {
+  document.querySelectorAll("[data-open]").forEach((el) => {
+    el.onclick = () => {
+      state.open = state.open === el.dataset.open ? null : el.dataset.open;
+      renderApps();
+      if (state.open) loadLogs(state.open);
+    };
+  });
+
+  document.querySelectorAll("[data-access]").forEach((el) => {
+    el.onchange = async (e) => {
+      e.stopPropagation();
+      const app = state.apps.find((a) => a.slug === el.dataset.access);
+      await api(`/api/apps/${app.slug}/access`, {
+        method: "POST",
+        body: JSON.stringify({ access: el.value, groups: app.groups }),
+      });
+      if (el.value === "public") toast("Cette app est maintenant ouverte à tout internet.");
+      loadApps();
+    };
+    el.onclick = (e) => e.stopPropagation();
+  });
+
+  document.querySelectorAll("[data-group]").forEach((el) => {
+    el.onclick = async (e) => {
+      e.stopPropagation();
+      const app = state.apps.find((a) => a.slug === el.dataset.slug);
+      const name = el.dataset.group;
+      const groups = app.groups.includes(name)
+        ? app.groups.filter((g) => g !== name)
+        : [...app.groups, name];
+      await api(`/api/apps/${app.slug}/access`, {
+        method: "POST",
+        body: JSON.stringify({ access: "groups", groups }),
+      });
+      loadApps();
+    };
+  });
+
+  document.querySelectorAll("[data-env]").forEach((el) => (el.onclick = (e) => e.stopPropagation()));
+
+  document.querySelectorAll("[data-saveenv]").forEach((el) => {
+    el.onclick = async (e) => {
+      e.stopPropagation();
+      const slug = el.dataset.saveenv;
+      const patch = {};
+      document.querySelectorAll(`[data-env="${slug}"]`).forEach((i) => {
+        if (i.value) patch[i.dataset.key] = i.value;
+      });
+      if (!Object.keys(patch).length) return toast("Rien à enregistrer.");
+      await api(`/api/apps/${slug}/env`, { method: "POST", body: JSON.stringify(patch) });
+      toast("Variables enregistrées, l'app a redémarré.");
+      loadApps();
+    };
+  });
+
+  document.querySelectorAll("[data-wake]").forEach((el) => {
+    el.onclick = async (e) => {
+      e.stopPropagation();
+      await api(`/api/apps/${el.dataset.wake}/wake`, { method: "POST" });
+      loadApps();
+    };
+  });
+
+  document.querySelectorAll("[data-delete]").forEach((el) => {
+    el.onclick = async (e) => {
+      e.stopPropagation();
+      const slug = el.dataset.delete;
+      if (!confirm(`Supprimer ${slug} ? La base de données sera conservée.`)) return;
+      await api(`/api/apps/${slug}`, { method: "DELETE" });
+      state.open = null;
+      toast(slug + " supprimée.");
+      loadApps();
+    };
+  });
+}
+
+async function loadLogs(slug) {
+  const el = document.querySelector(`[data-logs="${slug}"]`);
+  if (!el) return;
+  try {
+    const { lines } = await api(`/api/apps/${slug}/logs`);
+    el.textContent = lines.slice(-40).join("\n") || "aucun log";
+  } catch (err) {
+    el.textContent = "journal indisponible: " + err.message;
+  }
+}
+
+/* ---------- comptes ---------- */
+
+async function loadPeople() {
+  const data = await api("/api/people").catch((e) => ({ error: e.message, configured: true, people: [], groups: [] }));
+  state.people = data.people ?? [];
+  state.groups = data.groups ?? [];
+  state.peopleReady = data.configured !== false;
+  renderPeople(data.error);
+}
+
+function renderPeople(error) {
+  const view = $("view-people");
+
+  if (!state.peopleReady) {
+    view.innerHTML = `<p class="empty">La gestion des comptes n'est pas branchée. Créez une clé API
+      dans Pocket ID, mettez-la dans <span class="mono">POCKETID_API_KEY</span>, puis relancez le
+      control plane.</p>
+      <a class="act" href="https://id.${esc(state.domain)}" target="_blank" rel="noopener"
+         style="text-decoration:none">Ouvrir Pocket ID</a>`;
+    return;
+  }
+
+  view.innerHTML = `
+    <h3 style="font-size:13px;font-weight:500;color:var(--silk-dim);margin:0 0 10px">Inviter quelqu'un</h3>
+    <div class="field">
+      <input id="new-username" placeholder="identifiant" autocomplete="off">
+      <input id="new-email" type="email" placeholder="email" autocomplete="off">
+      <button class="act primary" id="invite">Inviter</button>
+    </div>
+    <p class="row-sub" style="font-size:13px;margin:0 0 24px">
+      Pas de mot de passe: la personne reçoit un lien et enregistre une clé d'accès.</p>
+
+    ${error ? `<p class="empty">Pocket ID a répondu: ${esc(error)}</p>` : ""}
+
+    ${state.people.map((p) => `
+      <div class="row" style="cursor:default">
+        <span class="dot ${p.isAdmin ? "awake" : ""}"></span>
+        <div class="row-main">
+          <div class="row-title">${esc(p.displayName)}</div>
+          <div class="row-sub mono">${esc(p.email || p.username)}</div>
+        </div>
+        <div class="chips">
+          ${state.groups.map((g) => `<button class="chip" data-person="${p.id}" data-gid="${g.id}"
+              aria-pressed="${p.groups.includes(g.name)}">${esc(g.name)}</button>`).join("")}
+        </div>
+      </div>`).join("") || '<p class="empty">Vous êtes seul pour le moment.</p>'}
+
+    <h3 style="font-size:13px;font-weight:500;color:var(--silk-dim);margin:24px 0 10px">Groupes</h3>
+    <div class="field">
+      <input id="new-group" placeholder="nom du groupe, par exemple famille">
+      <button class="act" id="add-group">Créer</button>
+    </div>
+    <p class="row-sub" style="font-size:13px;margin:0">
+      Un groupe ouvre une app à certaines personnes sans la rendre publique.</p>`;
+
+  $("invite").onclick = async () => {
+    const username = $("new-username").value.trim();
+    const email = $("new-email").value.trim();
+    if (!username || !email) return toast("Identifiant et email sont requis.");
+    try {
+      const res = await api("/api/people", { method: "POST", body: JSON.stringify({ username, email }) });
+      toast(res.link ? "Lien d'invitation à transmettre:\n" + res.link : "Compte créé.", true);
+      loadPeople();
+    } catch (err) {
+      toast("Échec: " + err.message);
+    }
+  };
+
+  $("add-group").onclick = async () => {
+    const name = $("new-group").value.trim();
+    if (!name) return;
+    try {
+      await api("/api/groups", { method: "POST", body: JSON.stringify({ name }) });
+      loadPeople();
+    } catch (err) {
+      toast("Échec: " + err.message);
+    }
+  };
+
+  document.querySelectorAll("[data-person]").forEach((el) => {
+    el.onclick = async () => {
+      const person = state.people.find((p) => p.id === el.dataset.person);
+      const group = state.groups.find((g) => g.id === el.dataset.gid);
+      const names = person.groups.includes(group.name)
+        ? person.groups.filter((n) => n !== group.name)
+        : [...person.groups, group.name];
+      const ids = state.groups.filter((g) => names.includes(g.name)).map((g) => g.id);
+      await api(`/api/people/${person.id}/groups`, { method: "POST", body: JSON.stringify({ groupIds: ids }) });
+      loadPeople();
+    };
+  });
+}
+
+/* ---------- déploiement ---------- */
+
+async function upload(file) {
+  toast("Déploiement de " + file.name, true);
+  const form = new FormData();
+  form.append("bundle", file);
+  const res = await fetch("/api/deploy", { method: "POST", body: form });
+  const data = await res.json().catch(() => ({}));
+  toast(res.ok ? [data.url, ...(data.log || [])].join("\n") : "Échec: " + (data.error || res.statusText), true);
+  loadApps();
+}
+
+const drop = $("drop");
+drop.onclick = () => $("file").click();
+$("file").onchange = (e) => e.target.files[0] && upload(e.target.files[0]);
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = (e) => {
+  e.preventDefault();
+  drop.classList.remove("over");
+  if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]);
+};
+
+/* ---------- démarrage ---------- */
+
+document.querySelectorAll("[data-view]").forEach((tab) => {
+  tab.onclick = () => {
+    document.querySelectorAll("[data-view]").forEach((t) =>
+      t.setAttribute("aria-selected", String(t === tab)));
+    $("view-apps").hidden = tab.dataset.view !== "apps";
+    $("view-people").hidden = tab.dataset.view !== "people";
+    if (tab.dataset.view === "people") loadPeople();
+  };
+});
+
+api("/api/me").then((me) => {
+  state.domain = me.domain || location.hostname.split(".").slice(1).join(".");
+  $("who").textContent = me.name || me.email || "";
+  loadApps();
+  loadPeople();
+});
+
+// refresh the list, but never while a detail panel is open
+setInterval(() => { if (!state.open) loadApps(); }, 6000);
+</script>
+</body>
+</html>
