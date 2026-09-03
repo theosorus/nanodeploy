@@ -7,120 +7,177 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#071a15">
+<meta name="theme-color" content="#eaedeb">
+<meta name="color-scheme" content="light">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Nanoploy">
 <style>
+  /* VEILLE.
+     This machine is asleep almost all of the time, and its scarce resource is
+     memory. So: a pale, quiet ground where sleeping looks restful, one ochre
+     reserved for what is actually consuming something, and every countable
+     thing set in mono. The signature is the memory meter: discrete cells you
+     can count, not a percentage bar you have to interpret. */
   :root {
-    --board: #0f2f26;
-    --board-deep: #071a15;
-    --panel: #123a2f;
-    --silk: #eaf0ea;
-    --silk-dim: #8ea89b;
-    --copper: #c9a227;
-    --rail: #1c4a3d;
-    --alert: #d4614a;
-    --radius: 5px;
+    --paper: #eaedeb;
+    --surface: #f5f7f6;
+    --ink: #161b19;
+    --soft: #58635e;
+    --rule: #ccd3d0;
+    --cell: #d7dcd9;
+    --live: #7a5610;      /* text and borders, contrast-safe on paper */
+    --live-fill: #c9a227; /* solid marks only */
+    --danger: #8c2f24;
+    --radius: 2px;
+
+    --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px;
+    --ui: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
   }
+
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
   body {
     margin: 0;
-    background: var(--board-deep);
-    color: var(--silk);
-    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    font: 15px/1.5 var(--ui);
   }
-  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; }
-  .wrap { max-width: 760px; margin: 0 auto; padding: 24px 18px 80px; }
+  .wrap { max-width: 680px; margin: 0 auto; padding: var(--s6) var(--s4) var(--s7); }
 
-  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
-  h1 { font-size: 19px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
-  h1 img { vertical-align: -3px; margin-right: 8px; border-radius: 6px; }
-  header .side { display: flex; align-items: center; gap: 10px; }
-  header .who { color: var(--silk-dim); font-size: 13px; }
+  /* Every countable thing is mono: hosts, sizes, counts, dates. Prose is not.
+     That split is the whole type personality, no webfont needed. */
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .label {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.09em;
+    text-transform: uppercase; color: var(--soft);
+  }
+
+  header { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin-bottom: var(--s6); }
+  h1 { font-size: 16px; font-weight: 600; margin: 0; letter-spacing: -0.01em; display: flex; align-items: center; gap: var(--s2); }
+  h1 img { border-radius: 3px; }
+  .side { display: flex; align-items: center; gap: var(--s3); }
+  .who { color: var(--soft); font-size: 13px; }
   .langbtn {
-    background: transparent; color: var(--silk-dim); border: 1px solid var(--rail);
-    border-radius: 4px; font: inherit; font-size: 12px; padding: 2px 8px; cursor: pointer;
+    background: none; border: 1px solid var(--rule); border-radius: var(--radius);
+    font: inherit; font-size: 11px; font-family: var(--mono); letter-spacing: 0.08em;
+    padding: 4px 8px; color: var(--soft); cursor: pointer; min-height: 28px;
   }
-  .langbtn:hover { color: var(--copper); border-color: var(--copper); }
+  .langbtn:hover { color: var(--live); border-color: var(--live); }
 
-  nav { display: flex; margin-bottom: 24px; }
+  nav { display: flex; gap: var(--s5); border-bottom: 1px solid var(--rule); margin-bottom: var(--s6); }
   nav button {
-    background: transparent; border: 0; border-bottom: 2px solid transparent;
-    color: var(--silk-dim); font: inherit; padding: 6px 2px; margin-right: 20px; cursor: pointer;
+    background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--soft); padding: 0 0 var(--s3); cursor: pointer; min-height: 32px;
   }
-  nav button[aria-selected="true"] { color: var(--silk); border-color: var(--copper); }
+  nav button[aria-selected="true"] { color: var(--ink); border-color: var(--live-fill); }
 
-  .gauge { background: var(--board); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 20px; }
-  .gauge-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
-  .gauge-value { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; }
-  .gauge-value small { font-size: 14px; font-weight: 400; color: var(--silk-dim); margin-left: 5px; }
-  .bar { height: 8px; background: var(--rail); border-radius: 99px; overflow: hidden; }
-  .bar span { display: block; height: 100%; background: var(--copper); transition: width .4s ease; }
-  .gauge-note { color: var(--silk-dim); font-size: 13px; margin-top: 10px; }
+  /* the meter: a budget you can count, so it is drawn as countable cells */
+  .meter { margin-bottom: var(--s6); }
+  .meter-figure { display: flex; align-items: baseline; gap: var(--s2); margin: var(--s2) 0 var(--s3); }
+  .meter-big { font-family: var(--mono); font-size: 32px; font-weight: 500; letter-spacing: -0.03em; line-height: 1; }
+  .meter-of { color: var(--soft); font-size: 13px; }
+  .cells { display: flex; gap: 2px; height: 22px; }
+  .cells i { flex: 1; background: var(--cell); border-radius: 1px; }
+  .cells i[data-on] { background: var(--ink); }
+  .meter-note { color: var(--soft); font-size: 13px; margin: var(--s3) 0 0; }
+  .meter-count { margin-top: var(--s2); }
 
   .drop {
-    border: 1px dashed var(--rail); border-radius: var(--radius); padding: 18px;
-    text-align: center; color: var(--silk-dim); margin-bottom: 24px; cursor: pointer;
+    border: 1px dashed var(--rule); border-radius: var(--radius); padding: var(--s4);
+    text-align: center; color: var(--soft); font-size: 14px; margin-bottom: var(--s6);
+    cursor: pointer; background: none; width: 100%; font-family: inherit; min-height: 56px;
   }
-  .drop.over { border-color: var(--copper); color: var(--silk); background: var(--board); }
+  .drop:hover, .drop.over { border-color: var(--live); color: var(--ink); background: var(--surface); }
 
-  .row { display: flex; align-items: center; gap: 12px; padding: 13px 0; border-top: 1px solid var(--rail); cursor: pointer; }
-  .row:last-of-type { border-bottom: 1px solid var(--rail); }
-  .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--silk-dim); }
-  .dot.awake { background: var(--copper); box-shadow: 0 0 0 3px rgba(201,162,39,.15); }
-  .dot.missing { background: var(--alert); }
-  .row-main { flex: 1; min-width: 0; }
-  .row-title { font-weight: 500; }
-  .row-sub { color: var(--silk-dim); }
-  .tag { color: var(--silk-dim); font-size: 12px; border: 1px solid var(--rail); border-radius: 99px; padding: 2px 9px; white-space: nowrap; }
+  .app {
+    display: flex; align-items: center; gap: var(--s3); width: 100%; text-align: left;
+    background: none; border: 0; border-top: 1px solid var(--rule); font: inherit;
+    padding: var(--s3) 0; cursor: pointer; color: inherit; min-height: 60px;
+  }
+  #apps > .app:last-of-type { border-bottom: 1px solid var(--rule); }
+  /* the mark means "consuming something": filled when awake, hollow when not */
+  .mark { width: 8px; height: 8px; flex: none; border: 1px solid var(--rule); border-radius: 1px; }
+  .mark.awake { background: var(--live-fill); border-color: var(--live-fill); }
+  .mark.missing { background: var(--danger); border-color: var(--danger); }
+  .app-main { flex: 1; min-width: 0; }
+  .app-name { display: block; font-weight: 500; }
+  .app-host { display: block; font-size: 12px; color: var(--soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* the right column never squeezes the app name: it truncates first */
+  .app-meta { text-align: right; flex: none; max-width: 45%; min-width: 0; }
+  .app-state { display: block; font-size: 13px; }
+  .app-state.awake { color: var(--live); }
+  .app-state.sleeping { color: var(--soft); }
+  .app-state.missing { color: var(--danger); }
+  .app-tags { display: block; font-size: 12px; color: var(--soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  .detail { background: var(--board); border-radius: var(--radius); padding: 16px; margin: 4px 0 12px; }
-  .detail h3 { font-size: 13px; font-weight: 500; color: var(--silk-dim); margin: 18px 0 8px; }
+  .detail { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius); padding: var(--s4); margin-bottom: var(--s3); }
+  .detail h3 { margin: var(--s5) 0 var(--s2); }
   .detail h3:first-child { margin-top: 0; }
-  .field { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
+  .field { display: flex; gap: var(--s2); margin-bottom: var(--s2); flex-wrap: wrap; }
+  .actions { display: flex; gap: var(--s2); flex-wrap: wrap; margin-top: var(--s5); }
 
   input, select {
-    font: inherit; font-size: 14px; color: var(--silk); background: var(--board-deep);
-    border: 1px solid var(--rail); border-radius: 4px; padding: 7px 9px; min-width: 0; flex: 1;
+    font: inherit; font-size: 14px; color: var(--ink); background: var(--paper);
+    border: 1px solid var(--rule); border-radius: var(--radius);
+    padding: var(--s2) var(--s3); min-height: 44px; min-width: 0; flex: 1;
   }
-  input::placeholder { color: var(--silk-dim); }
-  button.act {
-    font: inherit; font-size: 13px; color: var(--silk); background: transparent;
-    border: 1px solid var(--rail); border-radius: 4px; padding: 7px 12px; cursor: pointer;
+  input::placeholder { color: var(--soft); }
+  .act {
+    font: inherit; font-size: 14px; color: var(--ink); background: none;
+    border: 1px solid var(--rule); border-radius: var(--radius);
+    padding: var(--s2) var(--s4); min-height: 44px; cursor: pointer;
+    display: inline-flex; align-items: center;
   }
-  button.act:hover { border-color: var(--copper); }
-  button.act.danger:hover { border-color: var(--alert); color: var(--alert); }
-  button.act.primary { border-color: var(--copper); color: var(--copper); }
-  :focus-visible { outline: 2px solid var(--copper); outline-offset: 2px; }
+  .act:hover { border-color: var(--live); }
+  .act.danger:hover { border-color: var(--danger); color: var(--danger); }
+  .act.primary { background: var(--live-fill); border-color: var(--live-fill); color: #1c1503; }
+  :focus-visible { outline: 2px solid var(--live); outline-offset: 2px; }
 
-  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
-  .chip { font: inherit; font-size: 12px; background: transparent; border: 1px solid var(--rail); border-radius: 99px; padding: 3px 10px; cursor: pointer; color: var(--silk-dim); }
-  .chip[aria-pressed="true"] { border-color: var(--copper); color: var(--copper); }
-
-  .warn {
-    border: 1px solid var(--alert); border-radius: var(--radius);
-    padding: 14px 16px; margin: 0 0 20px; color: var(--silk); font-size: 14px;
+  .chips { display: flex; gap: var(--s2); flex-wrap: wrap; }
+  .chip {
+    font: inherit; font-size: 13px; background: none; border: 1px solid var(--rule);
+    border-radius: 99px; padding: 6px 12px; cursor: pointer; color: var(--soft); min-height: 34px;
   }
-  .warn h3 { margin: 0 0 6px; font-size: 14px; font-weight: 600; color: var(--alert); }
-  .note { color: var(--silk-dim); font-size: 13px; }
+  .chip[aria-pressed="true"] { border-color: var(--live); color: var(--live); }
 
-  pre.logs { background: var(--board-deep); border-radius: 4px; padding: 12px; overflow-x: auto; max-height: 240px; margin: 0; font-size: 12px; color: var(--silk-dim); }
-  .empty { color: var(--silk-dim); padding: 26px 0; }
+  pre.logs {
+    background: var(--paper); border: 1px solid var(--rule); border-radius: var(--radius);
+    padding: var(--s3); overflow-x: auto; max-height: 240px; margin: 0;
+    font-family: var(--mono); font-size: 12px; color: var(--soft); line-height: 1.45;
+  }
+  .empty { color: var(--soft); padding: var(--s6) 0; }
+  .note { color: var(--soft); font-size: 13px; }
+
+  .warn { border: 1px solid var(--danger); border-radius: var(--radius); padding: var(--s4); margin-bottom: var(--s5); }
+  .warn h3 { margin: 0 0 var(--s2); color: var(--danger); font-size: 14px; }
+
   .toast {
-    position: fixed; left: 50%; transform: translateX(-50%); bottom: 20px;
-    background: var(--panel); border: 1px solid var(--rail); border-radius: var(--radius);
-    padding: 12px 16px; max-width: 92vw; white-space: pre-wrap; font-size: 14px;
+    position: fixed; left: 50%; transform: translateX(-50%); bottom: var(--s4);
+    background: var(--ink); color: var(--surface); border-radius: var(--radius);
+    padding: var(--s3) var(--s4); max-width: min(92vw, 560px); white-space: pre-wrap; font-size: 14px;
   }
   .toast[hidden] { display: none; }
+
+  @media (max-width: 420px) {
+    .meter-big { font-size: 26px; }
+    .cells { height: 18px; }
+    .wrap { padding: var(--s5) var(--s4) var(--s6); }
+    /* two inputs and a button never share a line on a phone: they each end up
+       too narrow to read their own placeholder */
+    .field { flex-direction: column; align-items: stretch; }
+    .field input { max-width: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1><img src="/favicon.svg" width="22" height="22" alt="">Nanoploy</h1>
+    <h1><img src="/favicon.svg" width="20" height="20" alt="">Nanoploy</h1>
     <div class="side">
       <span class="who" id="who"></span>
       <button class="langbtn" id="lang" title="Switch language"></button>
@@ -133,19 +190,21 @@
   </nav>
 
   <section id="view-apps">
-    <div class="gauge">
-      <div class="gauge-top">
-        <div class="gauge-value" id="awake">0<small></small></div>
-        <div class="mono" id="sleeping" style="color:var(--silk-dim)"></div>
+    <div class="meter">
+      <div class="label" id="memory-label"></div>
+      <div class="meter-figure">
+        <span class="meter-big" id="used"></span>
+        <span class="meter-of" id="total"></span>
       </div>
-      <div class="bar"><span id="fill" style="width:0%"></span></div>
-      <div class="gauge-note" id="gauge-note"></div>
+      <div class="cells" id="cells" role="img" aria-labelledby="memory-label"></div>
+      <div class="label meter-count" id="counts"></div>
+      <p class="meter-note" id="gauge-note"></p>
     </div>
 
-    <div class="drop" id="drop">
+    <button class="drop" id="drop">
       <span id="drop-text"></span>
-      <input type="file" id="file" accept=".zip" hidden>
-    </div>
+    </button>
+    <input type="file" id="file" accept=".zip" hidden>
 
     <div id="apps"></div>
   </section>
@@ -166,24 +225,18 @@ const I18N = {
     title: "Nanoploy",
     navApps: "Apps",
     navPeople: "Comptes",
-    awakeOne: "app réveillée",
-    awakeMany: "apps réveillées",
-    asleepSuffix: "en veille",
+    memoryLabel: "Mémoire",
     ramUnit: "Go",
-    ramLabel: "de RAM utilisée",
+    ramOf: "sur {total} Go",
+    mbUnit: "Mo",
+    awakeOne: "réveillée",
+    awakeMany: "réveillées",
+    asleepSuffix: "en veille",
+    stateAsleep: "veille",
+    stateMissing: "manquante",
     gaugeNote: "Une app en veille ne consomme rien. La première requête la réveille en une seconde.",
-    notAdminTitle: "Ce compte n'administre pas le serveur",
-    notAdminBody: "Vous pouvez utiliser les apps auxquelles vous avez accès, mais pas piloter la plateforme. Demandez à l'administrateur de vous ajouter au groupe {group}.",
-    adminTitle: "Administration de la console",
-    adminOpen: "Attention : tout compte capable de se connecter contrôle ce serveur. Il peut déployer du code et piloter Docker. Choisissez un groupe d'administrateurs.",
-    adminSet: "Console réservée au groupe {group}.",
-    adminPinned: "Défini par ADMIN_GROUP dans .env, non modifiable ici.",
-    adminSave: "Appliquer",
-    adminNoGroup: "Créez d'abord un groupe ci-dessous, puis ajoutez-vous dedans.",
-    inviteNeedsAdmin: "Choisissez un groupe d'administrateurs avant d'inviter quelqu'un : sinon le nouveau compte contrôlerait aussi le serveur.",
-    deployedAt: "déployée {when}",
-    dropHtml: 'Glissez un bundle <span class="mono">.zip</span> ici, ou cliquez pour choisir',
-    appsEmptyHtml: 'Aucune app déployée. Lancez <span class="mono">npm run deploy</span> depuis un projet.',
+    dropHtml: 'Glissez un bundle <span class="num">.zip</span> ici, ou cliquez pour choisir',
+    appsEmptyHtml: 'Aucune app déployée. Lancez <span class="num">npm run deploy</span> depuis un projet.',
     alwaysOn: "toujours active",
     tagPrivate: "privé",
     tagGroups: "groupes",
@@ -215,8 +268,19 @@ const I18N = {
     deploying: "Déploiement de {name}",
     deployFailed: "Échec du déploiement: ",
     accessDenied: "Accès refusé: ",
-    peopleOffHtml: 'La gestion des comptes n\'est pas branchée. Créez une clé API dans Pocket ID, mettez-la dans <span class="mono">POCKETID_API_KEY</span>, puis relancez le control plane.',
+    deployedAt: "déployée {when}",
+    notAdminTitle: "Ce compte n'administre pas le serveur",
+    notAdminBody: "Vous pouvez utiliser les apps auxquelles vous avez accès, mais pas piloter la plateforme. Demandez à l'administrateur de vous ajouter au groupe {group}.",
+    adminTitle: "Administration de la console",
+    adminOpen: "Attention : tout compte capable de se connecter contrôle ce serveur. Il peut déployer du code et piloter Docker. Choisissez un groupe d'administrateurs.",
+    adminSet: "Console réservée au groupe {group}.",
+    adminPinned: "Défini par ADMIN_GROUP dans .env, non modifiable ici.",
+    adminSave: "Appliquer",
+    adminNoGroup: "Créez d'abord un groupe ci-dessous, puis ajoutez-vous dedans.",
+    inviteNeedsAdmin: "Choisissez un groupe d'administrateurs avant d'inviter quelqu'un : sinon le nouveau compte contrôlerait aussi le serveur.",
+    peopleOffHtml: 'La gestion des comptes n\'est pas branchée. Créez une clé API dans Pocket ID, mettez-la dans <span class="num">POCKETID_API_KEY</span>, puis relancez le control plane.',
     openPocketId: "Ouvrir Pocket ID",
+    idAdmin: "admin Pocket ID",
     inviteTitle: "Inviter quelqu'un",
     usernamePh: "identifiant",
     emailPh: "email",
@@ -236,24 +300,18 @@ const I18N = {
     title: "Nanoploy",
     navApps: "Apps",
     navPeople: "People",
-    awakeOne: "app awake",
-    awakeMany: "apps awake",
-    asleepSuffix: "asleep",
+    memoryLabel: "Memory",
     ramUnit: "GB",
-    ramLabel: "of RAM in use",
+    ramOf: "of {total} GB",
+    mbUnit: "MB",
+    awakeOne: "awake",
+    awakeMany: "awake",
+    asleepSuffix: "asleep",
+    stateAsleep: "asleep",
+    stateMissing: "missing",
     gaugeNote: "A sleeping app costs nothing. The first request wakes it within a second.",
-    notAdminTitle: "This account does not administer the server",
-    notAdminBody: "You can use the apps you have access to, but not drive the platform. Ask the administrator to add you to the {group} group.",
-    adminTitle: "Console administration",
-    adminOpen: "Warning: every account that can sign in controls this server. It can deploy code and drive Docker. Pick an admin group.",
-    adminSet: "Console restricted to the {group} group.",
-    adminPinned: "Set by ADMIN_GROUP in .env, not editable here.",
-    adminSave: "Apply",
-    adminNoGroup: "Create a group below first, then add yourself to it.",
-    inviteNeedsAdmin: "Pick an admin group before inviting anyone, otherwise the new account would control this server too.",
-    deployedAt: "deployed {when}",
-    dropHtml: 'Drop a <span class="mono">.zip</span> bundle here, or click to choose one',
-    appsEmptyHtml: 'No app deployed yet. Run <span class="mono">npm run deploy</span> from a project.',
+    dropHtml: 'Drop a <span class="num">.zip</span> bundle here, or click to choose one',
+    appsEmptyHtml: 'No app deployed yet. Run <span class="num">npm run deploy</span> from a project.',
     alwaysOn: "always on",
     tagPrivate: "private",
     tagGroups: "groups",
@@ -285,8 +343,19 @@ const I18N = {
     deploying: "Deploying {name}",
     deployFailed: "Deploy failed: ",
     accessDenied: "Access denied: ",
-    peopleOffHtml: 'Account management is not wired up. Create an API key in Pocket ID, put it in <span class="mono">POCKETID_API_KEY</span> and restart the control plane.',
+    deployedAt: "deployed {when}",
+    notAdminTitle: "This account does not administer the server",
+    notAdminBody: "You can use the apps you have access to, but not drive the platform. Ask the administrator to add you to the {group} group.",
+    adminTitle: "Console administration",
+    adminOpen: "Warning: every account that can sign in controls this server. It can deploy code and drive Docker. Pick an admin group.",
+    adminSet: "Console restricted to the {group} group.",
+    adminPinned: "Set by ADMIN_GROUP in .env, not editable here.",
+    adminSave: "Apply",
+    adminNoGroup: "Create a group below first, then add yourself to it.",
+    inviteNeedsAdmin: "Pick an admin group before inviting anyone, otherwise the new account would control this server too.",
+    peopleOffHtml: 'Account management is not wired up. Create an API key in Pocket ID, put it in <span class="num">POCKETID_API_KEY</span> and restart the control plane.',
     openPocketId: "Open Pocket ID",
+    idAdmin: "Pocket ID admin",
     inviteTitle: "Invite someone",
     usernamePh: "username",
     emailPh: "email",
@@ -316,11 +385,11 @@ const t = (key, vars) => {
 function renderStatic() {
   document.documentElement.lang = LANG === "fr" ? "fr" : "en";
   document.title = t("title");
-  const langBtn = $("lang");
-  if (langBtn) langBtn.textContent = LANG === "fr" ? "EN" : "FR";
+  $("lang").textContent = LANG === "fr" ? "EN" : "FR";
   document.querySelectorAll("[data-view]").forEach((b) => {
     b.textContent = t(b.dataset.view === "apps" ? "navApps" : "navPeople");
   });
+  $("memory-label").textContent = t("memoryLabel");
   $("gauge-note").textContent = t("gaugeNote");
   $("drop-text").innerHTML = t("dropHtml");
 }
@@ -347,6 +416,7 @@ const state = {
 let toastTimer;
 
 const gb = (bytes) => (bytes / 1e9).toLocaleString(LANG, { maximumFractionDigits: 1 });
+const mb = (bytes) => Math.round(bytes / 1e6).toLocaleString(LANG);
 
 // "il y a 3 h" / "3 hr ago", without pulling in a date library
 function ago(iso) {
@@ -401,25 +471,36 @@ async function loadApps() {
   }
 }
 
+// One cell per ~100 MB of the machine. A budget you can count beats a
+// percentage you have to interpret, and on a 4 GB box the whole point is
+// knowing whether one more app fits.
+function renderCells(used, total) {
+  const count = Math.max(12, Math.min(42, Math.round(total / 1e8)));
+  const on = Math.min(count, Math.round((used / total) * count));
+  $("cells").innerHTML = Array.from(
+    { length: count },
+    (_, i) => `<i${i < on ? " data-on" : ""}></i>`,
+  ).join("");
+  $("cells").setAttribute("aria-label", `${gb(used)} / ${gb(total)} ${t("ramUnit")}`);
+}
+
 function renderApps() {
   const awake = state.apps.filter((a) => a.status === "awake").length;
   const asleep = state.apps.filter((a) => a.status === "sleeping").length;
   const host = state.host;
 
   if (host && host.total && host.used) {
-    // real host memory: the number that decides whether one more app fits
-    $("awake").innerHTML =
-      gb(host.used) + " / " + gb(host.total) + " " + t("ramUnit") +
-      "<small>" + t("ramLabel") + "</small>";
-    $("sleeping").textContent =
-      awake + " " + (awake === 1 ? t("awakeOne") : t("awakeMany")) + " · " + asleep + " " + t("asleepSuffix");
-    $("fill").style.width = Math.min(100, (host.used / host.total) * 100) + "%";
+    $("used").textContent = gb(host.used) + " " + t("ramUnit");
+    $("total").textContent = t("ramOf", { total: gb(host.total) });
+    renderCells(host.used, host.total);
   } else {
-    // no /proc/meminfo (control plane running outside linux): app counts only
-    $("awake").innerHTML = awake + "<small>" + (awake === 1 ? t("awakeOne") : t("awakeMany")) + "</small>";
-    $("sleeping").textContent = asleep + " " + t("asleepSuffix");
-    $("fill").style.width = (state.apps.length ? (awake / state.apps.length) * 100 : 0) + "%";
+    // no /proc/meminfo (control plane running outside linux): counts only
+    $("used").textContent = String(awake);
+    $("total").textContent = awake === 1 ? t("awakeOne") : t("awakeMany");
+    $("cells").innerHTML = "";
   }
+  $("counts").textContent =
+    awake + " " + (awake === 1 ? t("awakeOne") : t("awakeMany")) + " · " + asleep + " " + t("asleepSuffix");
 
   if (!state.apps.length) {
     $("apps").innerHTML = '<p class="empty">' + t("appsEmptyHtml") + "</p>";
@@ -435,20 +516,35 @@ function accessLabel(a) {
   return t("tagPrivate");
 }
 
+// What an app costs right now, which is the only number worth a colour here.
+function stateLabel(a) {
+  if (a.status === "awake") {
+    return a.memory ? mb(a.memory) + " " + t("mbUnit") : t("awakeOne");
+  }
+  if (a.status === "missing") return t("stateMissing");
+  if (a.status === "static") return "";
+  return t("stateAsleep");
+}
+
 function renderApp(a) {
   const host = a.slug + "." + state.domain;
+  const tags = [accessLabel(a), a.warm ? t("alwaysOn") : null, a.deployedAt ? ago(a.deployedAt) : null]
+    .filter(Boolean)
+    .join(" · ");
+  const open = state.open === a.slug;
   return `
-    <div class="row" data-open="${a.slug}">
-      <span class="dot ${a.status}"></span>
-      <div class="row-main">
-        <div class="row-title">${esc(a.name)}</div>
-        <div class="row-sub mono">${esc(host)}</div>
-        ${a.deployedAt ? `<div class="row-sub" style="font-size:12px">${esc(t("deployedAt", { when: ago(a.deployedAt) }))}</div>` : ""}
-      </div>
-      ${a.warm ? `<span class="tag">${t("alwaysOn")}</span>` : ""}
-      <span class="tag">${esc(accessLabel(a))}</span>
-    </div>
-    ${state.open === a.slug ? renderDetail(a, host) : ""}`;
+    <button class="app" data-open="${a.slug}" aria-expanded="${open}">
+      <span class="mark ${a.status}"></span>
+      <span class="app-main">
+        <span class="app-name">${esc(a.name)}</span>
+        <span class="app-host num">${esc(host)}</span>
+      </span>
+      <span class="app-meta">
+        <span class="app-state num ${a.status}">${esc(stateLabel(a))}</span>
+        <span class="app-tags">${esc(tags)}</span>
+      </span>
+    </button>
+    ${open ? renderDetail(a, host) : ""}`;
 }
 
 function renderDetail(a, host) {
@@ -460,7 +556,7 @@ function renderDetail(a, host) {
     .join("");
 
   return `<div class="detail">
-    <h3>${t("accessTitle")}</h3>
+    <h3 class="label">${t("accessTitle")}</h3>
     <div class="field">
       <select data-access="${a.slug}">
         <option value="private" ${a.access === "private" && !picking ? "selected" : ""}>${t("accessPrivate")}</option>
@@ -468,16 +564,16 @@ function renderDetail(a, host) {
         <option value="public" ${a.access === "public" ? "selected" : ""}>${t("accessPublic")}</option>
       </select>
     </div>
-    ${showGroups ? `<div class="chips">${groupChips || `<span class="row-sub">${t("groupsHint")}</span>`}</div>` : ""}
+    ${showGroups ? `<div class="chips">${groupChips || `<span class="note">${t("groupsHint")}</span>`}</div>` : ""}
 
-    ${a.envKeys.length ? `<h3>${t("envTitle")}</h3>${a.envKeys.map((k) => `
+    ${a.envKeys.length ? `<h3 class="label">${t("envTitle")}</h3>${a.envKeys.map((k) => `
       <div class="field">
-        <input class="mono" value="${esc(k)}" readonly style="max-width:210px">
+        <input class="num" value="${esc(k)}" readonly style="max-width:210px">
         <input type="password" placeholder="${t("envPlaceholder")}" data-env="${a.slug}" data-key="${esc(k)}">
       </div>`).join("")}
       <button class="act" data-saveenv="${a.slug}">${t("envSave")}</button>` : ""}
 
-    <h3>${t("logsTitle")}</h3>
+    <h3 class="label">${t("logsTitle")}</h3>
     <pre class="logs" data-logs="${a.slug}">${t("logsLoading")}</pre>
 
     <div class="actions">
@@ -485,7 +581,8 @@ function renderDetail(a, host) {
       ${a.status === "sleeping" && a.warm ? `<button class="act" data-wake="${a.slug}">${t("wake")}</button>` : ""}
       <button class="act danger" data-delete="${a.slug}">${t("delete")}</button>
     </div>
-    <p class="row-sub" style="font-size:13px;margin:12px 0 0">${t("detailNote")}</p>
+    ${a.deployedAt ? `<p class="note" style="margin:16px 0 0">${esc(t("deployedAt", { when: ago(a.deployedAt) }))}</p>` : ""}
+    <p class="note" style="margin:8px 0 0">${t("detailNote")}</p>
   </div>`;
 }
 
@@ -615,7 +712,7 @@ function adminBlock() {
   const me = state.me;
   if (!me) return "";
   if (me.adminGroup) {
-    return `<p class="note" style="margin:0 0 20px">${esc(t("adminSet", { group: me.adminGroup }))}
+    return `<p class="note" style="margin:0 0 24px">${esc(t("adminSet", { group: me.adminGroup }))}
       ${me.adminGroupLocked ? esc(t("adminPinned")) : ""}</p>`;
   }
 
@@ -629,7 +726,7 @@ function adminBlock() {
 
   return `<div class="warn">
     <h3>${t("adminTitle")}</h3>
-    <p style="margin:0 0 10px">${t("adminOpen")}</p>
+    <p style="margin:0 0 12px">${t("adminOpen")}</p>
     ${options.length
       ? `<div class="field" style="margin:0">
            <select id="admin-group">${options
@@ -653,35 +750,34 @@ function renderPeople(error) {
 
   view.innerHTML = `
     ${adminBlock()}
-    <h3 style="font-size:13px;font-weight:500;color:var(--silk-dim);margin:0 0 10px">${t("inviteTitle")}</h3>
+    <div class="label" style="margin-bottom:8px">${t("inviteTitle")}</div>
     <div class="field">
       <input id="new-username" placeholder="${t("usernamePh")}" autocomplete="off">
       <input id="new-email" type="email" placeholder="${t("emailPh")}" autocomplete="off">
-      <button class="act primary" id="invite">${t("invite")}</button>
+      <button class="act${state.me?.adminGroup ? " primary" : ""}" id="invite">${t("invite")}</button>
     </div>
-    <p class="row-sub" style="font-size:13px;margin:0 0 24px">${t("inviteHint")}</p>
+    <p class="note" style="margin:0 0 32px">${t("inviteHint")}</p>
 
     ${error ? `<p class="empty">${t("peopleError")}${esc(error)}</p>` : ""}
 
     ${state.people.map((p) => `
-      <div class="row" style="cursor:default">
-        <span class="dot ${p.isAdmin ? "awake" : ""}"></span>
-        <div class="row-main">
-          <div class="row-title">${esc(p.displayName)}</div>
-          <div class="row-sub mono">${esc(p.email || p.username)}</div>
-        </div>
-        <div class="chips">
+      <div class="app" style="cursor:default">
+        <span class="app-main">
+          <span class="app-name">${esc(p.displayName)}${p.isAdmin ? ` <span class="note" style="font-weight:400">${t("idAdmin")}</span>` : ""}</span>
+          <span class="app-host num">${esc(p.email || p.username)}</span>
+        </span>
+        <span class="chips">
           ${state.groups.map((g) => `<button class="chip" data-person="${p.id}" data-gid="${g.id}"
               aria-pressed="${p.groups.includes(g.name)}">${esc(g.name)}</button>`).join("")}
-        </div>
+        </span>
       </div>`).join("") || `<p class="empty">${t("alone")}</p>`}
 
-    <h3 style="font-size:13px;font-weight:500;color:var(--silk-dim);margin:24px 0 10px">${t("groupsTitle")}</h3>
+    <div class="label" style="margin:32px 0 8px">${t("groupsTitle")}</div>
     <div class="field">
       <input id="new-group" placeholder="${t("groupPh")}">
       <button class="act" id="add-group">${t("create")}</button>
     </div>
-    <p class="row-sub" style="font-size:13px;margin:0">${t("groupNote")}</p>`;
+    <p class="note" style="margin:0">${t("groupNote")}</p>`;
 
   const setAdmin = $("set-admin");
   if (setAdmin) {
@@ -781,8 +877,8 @@ renderStatic();
 
 document.querySelectorAll("[data-view]").forEach((tab) => {
   tab.onclick = () => {
-    document.querySelectorAll("[data-view]").forEach((t) =>
-      t.setAttribute("aria-selected", String(t === tab)));
+    document.querySelectorAll("[data-view]").forEach((other) =>
+      other.setAttribute("aria-selected", String(other === tab)));
     $("view-apps").hidden = tab.dataset.view !== "apps";
     $("view-people").hidden = tab.dataset.view !== "people";
     if (tab.dataset.view === "people") loadPeople();

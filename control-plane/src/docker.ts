@@ -173,6 +173,46 @@ export async function tailLogs(slug: string, tail = 200) {
   }
 }
 
+// Live memory of one running app, the number that answers "which app is heavy".
+// Docker normally samples twice to be able to compute CPU, so ask for one shot:
+// without it every poll blocks for a second per container. Never let a slow or
+// hung stats call hold up the app list.
+export async function appMemory(slug: string): Promise<number | null> {
+  try {
+    // the typings only know the callback overload for a non-empty options object
+    const call = docker
+      .getContainer(containerName(slug))
+      .stats({ stream: false, "one-shot": true } as any) as unknown as Promise<any>;
+    const raw: any = await withTimeout(call, 3000);
+    const text = typeof raw?.on === "function" ? await readStream(raw) : raw;
+    const s = typeof text === "string" || Buffer.isBuffer(text) ? JSON.parse(String(text)) : text;
+    const usage = s?.memory_stats?.usage;
+    if (!usage) return null;
+    // usage counts the page cache, which is the machine's, not the app's
+    const st = s.memory_stats.stats ?? {};
+    const cache = st.inactive_file ?? st.total_inactive_file ?? st.cache ?? 0;
+    return Math.max(0, usage - cache);
+  } catch {
+    return null;
+  }
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error("timeout")), ms)),
+  ]);
+}
+
+function readStream(stream: any): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    stream.on("data", (c: Buffer) => chunks.push(c));
+    stream.once("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    stream.once("error", reject);
+  });
+}
+
 // The control plane runs with no memory limit of its own, so /proc/meminfo
 // inside it is the host's. That is the only honest number to show: the docker
 // API reports total memory but never what is actually in use.

@@ -385,6 +385,7 @@ app.get("/api/apps", async (c) => {
       const envKeys = [...new Set([...Object.keys(a.env), ...(a.declared_env ?? [])])].filter(
         (k) => !PLATFORM_ENV.has(k),
       );
+      const status = a.port ? await dk.appStatus(a.slug) : "static";
       return {
         slug: a.slug,
         name: a.name,
@@ -396,7 +397,10 @@ app.get("/api/apps", async (c) => {
         idleTimeout: a.idle_timeout,
         env: Object.fromEntries(envKeys.map((k) => [k, k in a.env ? "set" : "unset"])),
         envKeys,
-        status: a.port ? await dk.appStatus(a.slug) : "static",
+        status,
+        // only a running container has stats, and only then is the call worth
+        // making: on this platform most apps are asleep most of the time
+        memory: status === "awake" ? await dk.appMemory(a.slug) : null,
         deployedAt: a.deployed_at,
       };
     }),
