@@ -20,7 +20,10 @@ const DOCKERFILE = (entry: string, port: number) => `FROM node:20-slim
 WORKDIR /app
 ENV NODE_ENV=production
 COPY ${entry} ./${entry}
-# the app runs unprivileged and writes files only to /data (a named volume)
+# the app runs unprivileged and writes files only to /data. A named volume is
+# created root-owned on first mount: pre-create the directory in the image so
+# docker copies its ownership over to a fresh volume.
+RUN mkdir -p /data && chown node:node /data
 USER node
 EXPOSE ${port}
 CMD ["node", "${entry}"]

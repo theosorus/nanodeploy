@@ -4,8 +4,8 @@ import { Hono } from "hono";
 import type { Context, Next } from "hono";
 import AdmZip from "adm-zip";
 import { timingSafeEqual } from "node:crypto";
-import { readFile, rm, mkdir } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { readFile, rm, mkdir, readdir, stat } from "node:fs/promises";
+import { join } from "node:path";
 import { parseManifest } from "./manifest.js";
 import * as store from "./db.js";
 import * as dk from "./docker.js";
@@ -26,6 +26,8 @@ const MAX_BUNDLE_ENTRIES = 5000;
 
 const SLUG_RE = /^[a-z][a-z0-9-]{1,30}$/;
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+// env keys owned by the platform: not user-settable, not listed in the UI
+const PLATFORM_ENV = new Set(["DATABASE_URL"]);
 
 await store.initState();
 await store.migrateState();
@@ -133,6 +135,12 @@ async function doDeploy(manifest: ReturnType<typeof parseManifest>, bundle: File
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
   new AdmZip(Buffer.from(await bundle.arrayBuffer())).extractAllTo(dir, true);
+  // zip headers can lie about sizes: measure the extracted bundle for real
+  const { bytes, files } = await dirStats(dir);
+  if (files > MAX_BUNDLE_ENTRIES || bytes > MAX_BUNDLE_UNPACKED) {
+    await rm(dir, { recursive: true, force: true });
+    throw new Error("bundle exceeds the unpacked size limits");
+  }
 
   const log: string[] = [];
   const env: Record<string, string> = {};
@@ -152,13 +160,8 @@ async function doDeploy(manifest: ReturnType<typeof parseManifest>, bundle: File
     dbUser = creds.user;
     dbPassword = creds.password;
     env.DATABASE_URL = store.databaseUrl(creds.user, creds.password);
-    // the manifest chooses the folder, but it must stay inside the bundle
-    const base = resolve(dir);
-    const migrationsDir = resolve(dir, manifest.database.migrations);
-    if (!migrationsDir.startsWith(base + "/")) {
-      throw new Error("database.migrations must stay inside the bundle");
-    }
-    const applied = await store.runMigrations(migrationsDir, env.DATABASE_URL);
+    // parseManifest already jailed the migrations path inside the bundle
+    const applied = await store.runMigrations(join(dir, manifest.database.migrations), env.DATABASE_URL);
     log.push(applied.length ? `applied ${applied.length} migration(s)` : "no new migrations");
   }
 
@@ -196,7 +199,11 @@ async function doDeploy(manifest: ReturnType<typeof parseManifest>, bundle: File
   await store.upsertApp(row as any);
   await store.touchDeploy(manifest.slug);
   await writeSite((await store.getApp(manifest.slug))!);
-  await dk.reloadCaddy();
+  if (await dk.reloadCaddy()) {
+    log.push("route caddy à jour");
+  } else {
+    log.push("ATTENTION: le rechargement caddy a échoué, la nouvelle route n'est pas en service");
+  }
   await pruneAll();
 
   return {
@@ -204,6 +211,24 @@ async function doDeploy(manifest: ReturnType<typeof parseManifest>, bundle: File
     url: `https://${manifest.slug}.${process.env.APPS_DOMAIN}`,
     log,
   };
+}
+
+async function dirStats(dir: string): Promise<{ bytes: number; files: number }> {
+  let bytes = 0;
+  let files = 0;
+  const stack = [dir];
+  while (stack.length) {
+    const current = stack.pop()!;
+    for (const e of await readdir(current, { withFileTypes: true })) {
+      const p = join(current, e.name);
+      if (e.isDirectory()) stack.push(p);
+      else if (e.isFile()) {
+        bytes += (await stat(p)).size;
+        files++;
+      }
+    }
+  }
+  return { bytes, files };
 }
 
 async function pruneAll() {
@@ -237,36 +262,41 @@ async function reconcile() {
   for (const a of apps) {
     await runLocked(a.slug, async () => {
       try {
-        await writeSite(a);
-        if (!a.image || !a.port) return;
-        const status = await dk.appStatus(a.slug);
+        // re-read under the lock: a deploy that ran while we waited changed the
+        // row, and acting on the stale snapshot would roll it back
+        const fresh = await store.getApp(a.slug);
+        if (!fresh) return;
+        await writeSite(fresh);
+        if (!fresh.image || !fresh.port) return;
+        const status = await dk.appStatus(fresh.slug);
 
-        let image = a.image;
+        let image = fresh.image;
         let rebuilt = false;
         // an image removed by hand while its cold app was asleep would never
         // be healed: no container recreate is needed, but sablier cannot start
         // a container whose image is gone either.
         if (!(await dk.imageExists(image))) {
-          image = await rebuildImage(a);
-          await store.upsertApp({ slug: a.slug, image } as any);
+          image = await rebuildImage(fresh);
+          await store.upsertApp({ slug: fresh.slug, image } as any);
           rebuilt = true;
-          console.log(`reconcile: rebuilt image for ${a.slug}`);
+          console.log(`reconcile: rebuilt image for ${fresh.slug}`);
         }
-        const needsRecreate = rebuilt || status === "missing" || (a.warm && status === "sleeping");
+        const needsRecreate =
+          rebuilt || status === "missing" || (fresh.warm && status === "sleeping");
         if (!needsRecreate) return;
 
         await dk.runContainer({
-          slug: a.slug,
+          slug: fresh.slug,
           image,
-          port: a.port,
-          idleTimeout: a.idle_timeout,
-          warm: a.warm,
-          env: a.env,
+          port: fresh.port,
+          idleTimeout: fresh.idle_timeout,
+          warm: fresh.warm,
+          env: fresh.env,
         });
         // a cold app that lost its container was asleep: put it back to sleep
         // instead of leaving it awake with no sablier session to stop it
-        if (!a.warm) await dk.stopContainer(a.slug);
-        console.log(`reconcile: recreated ${a.slug}`);
+        if (!fresh.warm) await dk.stopContainer(fresh.slug);
+        console.log(`reconcile: recreated ${fresh.slug}`);
       } catch (err) {
         console.error(`reconcile: ${a.slug} failed`, err);
       }
@@ -291,7 +321,10 @@ app.get("/api/apps", async (c) => {
   const apps = await store.listApps();
   const withStatus = await Promise.all(
     apps.map(async (a) => {
-      const envKeys = [...new Set([...Object.keys(a.env), ...(a.declared_env ?? [])])];
+      // platform-managed keys (DATABASE_URL) are not user-settable nor listed
+      const envKeys = [...new Set([...Object.keys(a.env), ...(a.declared_env ?? [])])].filter(
+        (k) => !PLATFORM_ENV.has(k),
+      );
       return {
         slug: a.slug,
         name: a.name,
@@ -337,9 +370,17 @@ app.post("/api/apps/:slug/access", async (c) => {
       }
     }
     await store.setAccess(slug, access, cleanGroups);
-    const updated = await store.getApp(slug)!;
+    const updated = (await store.getApp(slug))!;
     await writeSite(updated);
-    await dk.reloadCaddy();
+    const reloaded = await dk.reloadCaddy();
+    if (!reloaded) {
+      // the row and the site file changed, but caddy kept its previous config:
+      // say so instead of pretending the switch is live
+      return c.json(
+        { ok: false, error: "config written but caddy reload failed, run reconcile" },
+        502,
+      );
+    }
     return c.json({ ok: true });
   });
 });
@@ -355,10 +396,10 @@ app.post("/api/apps/:slug/env", async (c) => {
       ([k, v]) => ENV_KEY_RE.test(k) && typeof v === "string" && v.length <= 16_384,
     );
     if (!valid) return c.json({ error: "invalid env key or value" }, 400);
-    // only declared variables can be written (a manifest-declared key is
-    // writable even before its first value exists): replacing DATABASE_URL or
-    // injecting a platform-managed variable would be an attack
-    const allowed = new Set([...Object.keys(current.env), ...(current.declared_env ?? [])]);
+    // only manifest-declared variables can be written (a key is writable even
+    // before its first value exists). Platform-managed keys like DATABASE_URL
+    // are never declared, so they cannot be replaced.
+    const allowed = new Set(current.declared_env ?? []);
     if (!Object.keys(patch).every((k) => allowed.has(k))) {
       return c.json({ error: "env key is not declared in the manifest" }, 400);
     }
@@ -395,9 +436,15 @@ app.delete("/api/apps/:slug", async (c) => {
     await removeSite(slug);
     await store.deleteApp(slug);
     await rm(join(APPS_DIR, slug), { recursive: true, force: true });
-    await dk.reloadCaddy();
+    const reloaded = await dk.reloadCaddy();
     await pruneAll();
     // the database is kept on purpose, drop it by hand if you really mean it
+    if (!reloaded) {
+      return c.json(
+        { ok: true, note: "database kept; caddy reload failed, the route may answer until reconcile" },
+        502,
+      );
+    }
     return c.json({ ok: true, note: "database kept, drop it manually if needed" });
   });
 });

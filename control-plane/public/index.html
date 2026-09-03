@@ -161,10 +161,13 @@ const api = async (path, opts = {}) => {
 /* ---------- apps ---------- */
 
 async function loadApps() {
-  const data = await api("/api/apps").catch(() => null);
-  if (!data) return toast("Control plane injoignable.");
-  state.apps = data.apps;
-  renderApps();
+  try {
+    const data = await api("/api/apps");
+    state.apps = data.apps;
+    renderApps();
+  } catch (err) {
+    toast("Control plane injoignable: " + err.message);
+  }
 }
 
 function renderApps() {
@@ -256,9 +259,17 @@ function bindApps() {
     el.onchange = fail(async (e) => {
       e.stopPropagation();
       const app = state.apps.find((a) => a.slug === el.dataset.access);
+      let groups = app.groups;
+      if (el.value === "groups" && !groups.length) {
+        // first time in groups mode: ask for a group name, otherwise the API
+        // would reject the empty list and the select would snap back
+        const name = prompt("Nom du groupe autorisé (créé dans Comptes)");
+        if (!name) return renderApps();
+        groups = [name];
+      }
       await api(`/api/apps/${app.slug}/access`, {
         method: "POST",
-        body: JSON.stringify({ access: el.value, groups: app.groups }),
+        body: JSON.stringify({ access: el.value, groups }),
       });
       if (el.value === "public") toast("Cette app est maintenant ouverte à tout internet.");
       loadApps();
@@ -412,14 +423,21 @@ function renderPeople(error) {
 
   document.querySelectorAll("[data-person]").forEach((el) => {
     el.onclick = async () => {
-      const person = state.people.find((p) => p.id === el.dataset.person);
-      const group = state.groups.find((g) => g.id === el.dataset.gid);
-      const names = person.groups.includes(group.name)
-        ? person.groups.filter((n) => n !== group.name)
-        : [...person.groups, group.name];
-      const ids = state.groups.filter((g) => names.includes(g.name)).map((g) => g.id);
-      await api(`/api/people/${person.id}/groups`, { method: "POST", body: JSON.stringify({ groupIds: ids }) });
-      loadPeople();
+      try {
+        const person = state.people.find((p) => p.id === el.dataset.person);
+        const group = state.groups.find((g) => g.id === el.dataset.gid);
+        const names = person.groups.includes(group.name)
+          ? person.groups.filter((n) => n !== group.name)
+          : [...person.groups, group.name];
+        const ids = state.groups.filter((g) => names.includes(g.name)).map((g) => g.id);
+        await api(`/api/people/${person.id}/groups`, {
+          method: "POST",
+          body: JSON.stringify({ groupIds: ids }),
+        });
+        loadPeople();
+      } catch (err) {
+        toast("Échec: " + err.message);
+      }
     };
   });
 }
@@ -430,9 +448,14 @@ async function upload(file) {
   toast("Déploiement de " + file.name, true);
   const form = new FormData();
   form.append("bundle", file);
-  const res = await fetch("/api/deploy", { method: "POST", body: form });
-  const data = await res.json().catch(() => ({}));
-  toast(res.ok ? [data.url, ...(data.log || [])].join("\n") : "Échec: " + (data.error || res.statusText), true);
+  try {
+    const res = await fetch("/api/deploy", { method: "POST", body: form });
+    const type = res.headers.get("content-type") || "";
+    const data = type.includes("json") ? await res.json() : {};
+    toast(res.ok ? [data.url, ...(data.log || [])].join("\n") : "Échec: " + (data.error || res.statusText), true);
+  } catch (err) {
+    toast("Échec du déploiement: " + err.message, true);
+  }
   loadApps();
 }
 
@@ -459,12 +482,14 @@ document.querySelectorAll("[data-view]").forEach((tab) => {
   };
 });
 
-api("/api/me").then((me) => {
-  state.domain = me.domain || location.hostname.split(".").slice(1).join(".");
-  $("who").textContent = me.name || me.email || "";
-  loadApps();
-  loadPeople();
-});
+api("/api/me")
+  .then((me) => {
+    state.domain = me.domain || location.hostname.split(".").slice(1).join(".");
+    $("who").textContent = me.name || me.email || "";
+    loadApps();
+    loadPeople();
+  })
+  .catch((err) => toast("Accès refusé: " + err.message, true));
 
 // refresh the list, but never while a detail panel is open
 setInterval(() => { if (!state.open) loadApps(); }, 6000);

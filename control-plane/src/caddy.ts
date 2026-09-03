@@ -5,11 +5,10 @@ import type { AppRow } from "./db.js";
 const CONF_DIR = process.env.CADDY_CONF_DIR ?? "/etc/caddy/conf.d";
 const DOMAIN = process.env.APPS_DOMAIN!;
 
-// app.name lands inside a double-quoted caddyfile string, and groups land in a
-// header_regexp alternation. One bad character breaks the whole caddy config at
-// reload, so strip control chars and escape regex metacharacters. A single bad
-// site file used to take every app down with it.
-const cleanName = (s: string) => s.replace(/[\r\n"\\]/g, "").slice(0, 60);
+// app.name lands inside an unquoted caddyfile value (sablier display_name):
+// braces, $, quotes, backslash and newlines would break the whole config at
+// reload. A single bad site file used to take every app down with it.
+const cleanName = (s: string) => s.replace(/[\r\n"{}$\\]/g, "").slice(0, 60);
 const cleanGroups = (groups: string[]) =>
   groups
     .map((g) => g.replace(/[\r\n"]/g, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&").slice(0, 64))
