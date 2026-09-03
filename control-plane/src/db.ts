@@ -21,9 +21,28 @@ export async function initState() {
       image text,
       deployed_at timestamptz not null default now()
     )`;
-  // app roles must not be able to reach the platform's own database at all
+  await admin`
+    create table if not exists settings (
+      key text primary key,
+      value text not null
+    )`;
+  // app roles must not be able to reach the platform's own database at all,
+  // nor the maintenance database, where they could at least enumerate every
+  // other app through pg_database
   const dbName = new URL(process.env.POSTGRES_URL!).pathname.replace(/^\//, "");
   await admin.unsafe(`revoke connect on database "${dbName}" from public`);
+  await admin.unsafe(`revoke connect on database "postgres" from public`).catch(() => {});
+}
+
+export const getSetting = (key: string) =>
+  admin<{ value: string }[]>`select value from settings where key = ${key}`.then(
+    (r) => r[0]?.value ?? null,
+  );
+
+export async function setSetting(key: string, value: string) {
+  await admin`
+    insert into settings (key, value) values (${key}, ${value})
+    on conflict (key) do update set value = excluded.value`;
 }
 
 export type AppRow = {
