@@ -39,7 +39,11 @@ services:
       # host port is overridable: on some hosts 8080 is already taken
       - "127.0.0.1:${CADDY_PORT:-8080}:80"
     volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # the directory, not the file: git and rsync replace a file by renaming a
+      # new inode over it, and a single-file bind mount keeps showing the old
+      # one until the container is recreated. A Caddyfile edit that silently
+      # does nothing after "git pull" is the worst kind of upgrade bug.
+      - ./caddy:/etc/caddy:ro
       - ./caddy/conf.d:/etc/caddy/conf.d
       - ${APPS_DIR}:/srv/apps:ro
       - caddy_data:/data
@@ -48,17 +52,39 @@ services:
     networks: [edge, apps]
 
   sablier:
-    image: sablierapp/sablier:1.17.0
+    image: sablierapp/sablier:${SABLIER_VERSION:-1.17.0}
     restart: unless-stopped
     command:
       - start
       - --provider.name=docker
+    environment:
+      # never the raw socket: sablier only has to start and stop containers, and
+      # ":ro" on a socket mount restricts nothing at all (it is the API that
+      # writes, not the file). Its own proxy cannot build images or exec.
+      DOCKER_HOST: tcp://sablier-socket:2375
+    networks: [edge]
+    depends_on: [sablier-socket]
+
+  # least privilege for sablier: list, inspect, start, stop, watch events
+  sablier-socket:
+    image: tecnativa/docker-socket-proxy:${SOCKET_PROXY_VERSION:-0.3.0}
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      EVENTS: 1
+      INFO: 1
+      POST: 1
+      ALLOW_START: 1
+      ALLOW_STOP: 1
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks: [edge]
 
+  # the control plane's own proxy: it builds images, so this one is powerful.
+  # Nothing on nanoploy_apps can reach it, which is the whole point of the
+  # network split: reaching :2375 is equivalent to root on the host.
   socket-proxy:
-    image: tecnativa/docker-socket-proxy:0.3.0
+    image: tecnativa/docker-socket-proxy:${SOCKET_PROXY_VERSION:-0.3.0}
     restart: unless-stopped
     environment:
       # least privilege: only what the control plane actually needs
@@ -78,7 +104,7 @@ services:
     networks: [edge]
 
   postgres:
-    image: postgres:16-alpine
+    image: postgres:${POSTGRES_VERSION:-16-alpine}
     restart: unless-stopped
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -102,8 +128,10 @@ services:
       timeout: 5s
       retries: 5
 
+  # pinned on purpose: pocket-id migrates its database forward on start and does
+  # not migrate back, so an unattended jump to a new major is a one-way trip
   pocket-id:
-    image: ghcr.io/pocket-id/pocket-id:latest
+    image: ghcr.io/pocket-id/pocket-id:${POCKETID_VERSION:-v2.14.0}
     restart: unless-stopped
     environment:
       APP_URL: https://id.${APPS_DOMAIN}
@@ -117,7 +145,7 @@ services:
   # v5: env vars are prefixed TINYAUTH_ (v3 env names are gone), sessions live
   # in a sqlite database under /data, SECRET no longer exists
   tinyauth:
-    image: ghcr.io/tinyauthapp/tinyauth:v5
+    image: ghcr.io/tinyauthapp/tinyauth:${TINYAUTH_VERSION:-v5.1.3}
     restart: unless-stopped
     environment:
       TINYAUTH_APPURL: https://auth.${APPS_DOMAIN}
