@@ -38,8 +38,16 @@ export function parseManifest(raw: string): Manifest {
   if (!name) bad("name must not be empty");
 
   // groups and name eventually land in a Caddyfile, strip the characters that
-  // could break out of a line. Regex metacharacters are escaped at render time.
-  const cleanGroup = (g: unknown) => String(g).replace(/[\r\n"\\]/g, "").trim().slice(0, 64);
+  // could break out of a line. Group names are further restricted: they become
+  // regex alternation tokens and must not contain spaces or metacharacters.
+  const GROUP_RE = /^[\p{L}\p{N}._'-]+$/u;
+  const cleanGroup = (g: unknown) => {
+    const clean = String(g).replace(/[\r\n"\\]/g, "").trim().slice(0, 64);
+    if (clean && !GROUP_RE.test(clean)) {
+      bad(`group name contains characters caddy cannot handle: ${clean}`);
+    }
+    return clean;
+  };
   const groups = (Array.isArray(m.groups) ? m.groups : [])
     .map(cleanGroup)
     .filter((g) => g.length > 0)

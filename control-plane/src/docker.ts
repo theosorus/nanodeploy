@@ -5,6 +5,13 @@ import { join } from "node:path";
 
 const docker = new Docker();
 const MEM_MB = Number(process.env.DEFAULT_APP_MEMORY_MB ?? 256);
+// app containers only share a network with caddy and postgres. The platform
+// services (socket-proxy, sablier, tinyauth, control plane) live on
+// nanoploy_edge and must stay unreachable from an app: an app is arbitrary
+// code, and socket-proxy:2375 is a root escape by design.
+export const APPS_NETWORK = "nanoploy_apps";
+export const DATA_NETWORK = "nanoploy_data";
+export const dataVolume = (slug: string) => `nanoploy_data_${slug}`;
 
 export const containerName = (slug: string) => `app-${slug}`;
 
@@ -13,6 +20,8 @@ const DOCKERFILE = (entry: string, port: number) => `FROM node:20-slim
 WORKDIR /app
 ENV NODE_ENV=production
 COPY ${entry} ./${entry}
+# the app runs unprivileged and writes files only to /data (a named volume)
+USER node
 EXPOSE ${port}
 CMD ["node", "${entry}"]
 `;
@@ -49,8 +58,18 @@ export async function removeContainer(slug: string) {
   }
 }
 
+export async function removeDataVolume(slug: string) {
+  try {
+    await docker.getVolume(dataVolume(slug)).remove();
+  } catch {
+    // already gone
+  }
+}
+
 export async function stopContainer(slug: string) {
-  await docker.getContainer(containerName(slug)).stop().catch(() => {});
+  // 2s grace: a node app dies on SIGTERM anyway, and a long grace would stall
+  // deploys whenever an app handles SIGTERM and takes its time
+  await docker.getContainer(containerName(slug)).stop({ t: 2 }).catch(() => {});
 }
 
 export async function runContainer(opts: {
@@ -79,11 +98,17 @@ export async function runContainer(opts: {
       // not resurrect it at boot. A warm one is the opposite case.
       RestartPolicy: { Name: opts.warm ? "unless-stopped" : "no" },
       Memory: MEM_MB * 1024 * 1024,
-      NetworkMode: "nanoploy_edge",
+      PidsLimit: 128,
+      // hardening: an app runs arbitrary code, keep it unprivileged
+      CapDrop: ["ALL"],
+      SecurityOpt: ["no-new-privileges:true"],
+      Tmpfs: { "/tmp": "rw,noexec,nosuid,size=16m" },
+      Binds: [`${dataVolume(opts.slug)}:/data`],
+      NetworkMode: APPS_NETWORK,
       // no PortBindings: the app must only be reachable through caddy
     },
   });
-  await docker.getNetwork("nanoploy_data").connect({ Container: container.id });
+  await docker.getNetwork(DATA_NETWORK).connect({ Container: container.id });
   await container.start();
   return container.id;
 }
