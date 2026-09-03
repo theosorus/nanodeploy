@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  control-plane:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: control-plane/package-lock.json
+      - run: npm ci
+        working-directory: control-plane
+      - run: npm run typecheck
+        working-directory: control-plane
+      - run: npm run build
+        working-directory: control-plane
+
+  dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # the dashboard has no build step, so its only guards are that the script
+      # parses and that both translation tables carry the same keys
+      - name: parse and check translations
+        run: node scripts/check-dashboard.mjs
+
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash -n install.sh e2e/smoke.sh
+      - uses: ludeeus/action-shellcheck@master
+        with:
+          severity: warning
+
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: validate the compose file
+        run: |
+          cp .env.example .env
+          sed -i 's/^APPS_DOMAIN=.*/APPS_DOMAIN=apps.ci.test/' .env
+          sed -i 's/^DEPLOY_TOKEN=.*/DEPLOY_TOKEN=ci/' .env
+          docker compose config -q

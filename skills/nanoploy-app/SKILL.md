@@ -40,7 +40,9 @@ Donc, dans le code généré :
    migration au démarrage.
 5. **Pool Postgres à `max: 3`.** La base est partagée par toutes les apps et
    chaque connexion est un process forké côté serveur.
-6. **Fichiers uploadés dans `/data`**, jamais dans le conteneur.
+6. **Fichiers uploadés dans `/data`**, jamais ailleurs. Le système de fichiers
+   du conteneur est monté en lecture seule ; seuls `/data` (volume dédié,
+   persistant) et `/tmp` (16 Mo, effacé à chaque réveil) sont inscriptibles.
 
 Le redémarrage de la machine n'est pas un cas particulier : une app endormie et
 une app arrêtée par une coupure de courant sont le même état. Le code doit
@@ -85,6 +87,7 @@ de gestion de mot de passe ou de JWT dans une app.
 ```yaml
 name: Suivi de dépenses
 slug: depenses          # devient depenses.<domaine>, [a-z0-9-] uniquement
+                        # deploy, auth, id et www sont réservés par la plateforme
 access: private         # public | private | groups
 groups: []
 frontend: true
