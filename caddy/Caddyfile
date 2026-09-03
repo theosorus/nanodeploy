@@ -1,7 +1,13 @@
 {
 	# cloudflared terminates TLS, caddy only serves plain http internally
 	auto_https off
-	admin 0.0.0.0:2019
+	# loopback only: the admin API has no auth, and apps share a network with
+	# caddy. The control plane reloads caddy by docker exec, not through this.
+	admin localhost:2019
+	# identity headers must be stripped BEFORE forward_auth re-injects them.
+	# Default order does the opposite, which silently removed the identity from
+	# every request that reached an app.
+	order request_header before forward_auth
 }
 
 # reusable forward-auth snippet, imported by every private app
