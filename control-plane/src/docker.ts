@@ -143,7 +143,9 @@ export async function pruneImages(keep: Set<string>) {
   }
 }
 
-// caddy reads its config from a file, so reload it in place after a route change
+// caddy reads its config from a file, so reload it in place after a route
+// change. A failed reload silently keeps the previous config: surface it, or a
+// bad site file would disable every new app with no trace anywhere.
 export async function reloadCaddy() {
   const caddy = docker.getContainer("nanoploy-caddy-1");
   const exec = await caddy.exec({
@@ -151,5 +153,16 @@ export async function reloadCaddy() {
     AttachStdout: true,
     AttachStderr: true,
   });
-  await exec.start({});
+  const stream = await exec.start({ hijack: true, stdin: false });
+  const chunks: string[] = [];
+  (stream as any).on("data", (c: Buffer) => chunks.push(c.toString("utf8")));
+  await new Promise<void>((resolve) => {
+    (stream as any).once("close", resolve);
+    (stream as any).once("end", resolve);
+  });
+  const result = await exec.inspect();
+  if (result.ExitCode !== 0) {
+    console.error(`caddy reload failed:\n${chunks.join("").slice(-1000)}`);
+  }
+  return result.ExitCode === 0;
 }

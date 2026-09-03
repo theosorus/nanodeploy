@@ -171,8 +171,10 @@ async function reconcile() {
   }
   if (apps.length) {
     await dk.reloadCaddy().catch(() => {});
+    // re-list: a rebuild above changed an image tag, the keep set must be fresh
+    const current = await store.listApps();
     await dk
-      .pruneImages(new Set(apps.map((a) => a.image).filter(Boolean) as string[]))
+      .pruneImages(new Set(current.map((a) => a.image).filter(Boolean) as string[]))
       .catch(() => {});
   }
   return apps.length;
