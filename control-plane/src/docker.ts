@@ -1,6 +1,6 @@
 import Docker from "dockerode";
 import tar from "tar-fs";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const docker = new Docker();
@@ -105,6 +105,9 @@ export async function runContainer(opts: {
       // hardening: an app runs arbitrary code, keep it unprivileged
       CapDrop: ["ALL"],
       SecurityOpt: ["no-new-privileges:true"],
+      // the image holds the whole app and nothing writes to it at runtime: the
+      // only writable paths are the /data volume and a small noexec /tmp
+      ReadonlyRootfs: true,
       Tmpfs: { "/tmp": "rw,noexec,nosuid,size=16m" },
       Binds: [`${dataVolume(opts.slug)}:/data`],
       NetworkMode: APPS_NETWORK,
@@ -131,26 +134,69 @@ export async function startContainer(slug: string) {
   await docker.getContainer(containerName(slug)).start();
 }
 
-export async function tailLogs(slug: string, tail = 80) {
+// Without a TTY, docker frames every chunk with an 8 byte header: 1 byte for
+// the stream, 3 zero bytes, then a big endian payload length. Stripping control
+// characters instead of demultiplexing leaves the printable bytes of those
+// headers glued to the log lines ("A" is a perfectly valid length byte).
+function demux(buf: Buffer): string {
+  if (buf.length < 8 || buf[0] > 2 || buf[1] !== 0 || buf[2] !== 0 || buf[3] !== 0) {
+    return buf.toString("utf8"); // tty mode: the stream is already plain text
+  }
+  const parts: string[] = [];
+  let at = 0;
+  while (at + 8 <= buf.length) {
+    const size = buf.readUInt32BE(at + 4);
+    parts.push(buf.subarray(at + 8, at + 8 + size).toString("utf8"));
+    at += 8 + size;
+  }
+  return parts.join("");
+}
+
+// CSI and OSC colour sequences survive a plain control-character filter as
+// visible noise ("[32m"), so drop the whole escape sequence first.
+const ANSI_RE = /\u001b\[[0-9;?]*[ -\/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)/g;
+
+export async function tailLogs(slug: string, tail = 200) {
   try {
     const buf = await docker
       .getContainer(containerName(slug))
       .logs({ stdout: true, stderr: true, tail });
-    // docker multiplexes streams with an 8 byte header per frame
-    return Buffer.from(buf as any)
-      .toString("utf8")
+    return demux(Buffer.from(buf as any))
+      .replace(ANSI_RE, "")
       .replace(/[\u0000-\u0008\u000b-\u001f]/g, "")
       .split("\n")
       .filter(Boolean);
   } catch {
-    return ["aucun log, le conteneur n'a jamais démarré"];
+    // never started, or removed by hand: no logs is a state, not an error.
+    // The dashboard words it, the API stays language neutral.
+    return [];
   }
 }
 
+// The control plane runs with no memory limit of its own, so /proc/meminfo
+// inside it is the host's. That is the only honest number to show: the docker
+// API reports total memory but never what is actually in use.
 export async function hostMemory() {
-  const info = await docker.info();
-  const containers = await docker.listContainers();
-  return { total: info.MemTotal as number, running: containers.length };
+  const containers = await docker.listContainers().catch(() => []);
+  let total = 0;
+  let available = 0;
+  try {
+    const meminfo = await readFile("/proc/meminfo", "utf8");
+    const kb = (key: string) =>
+      Number(new RegExp(`^${key}:\\s+(\\d+) kB`, "m").exec(meminfo)?.[1] ?? 0) * 1024;
+    total = kb("MemTotal");
+    available = kb("MemAvailable");
+  } catch {
+    // not linux (a developer running the control plane on macOS)
+    const info: any = await docker.info().catch(() => ({}));
+    total = Number(info.MemTotal ?? 0);
+  }
+  return {
+    total,
+    available,
+    used: total && available ? total - available : 0,
+    running: containers.length,
+  };
 }
 
 // Deploys tag images nanoploy/<slug>:<timestamp>, one per deploy. Old tags are
@@ -174,8 +220,12 @@ export async function pruneImages(keep: Set<string>) {
 // caddy reads its config from a file, so reload it in place after a route
 // change. A failed reload silently keeps the previous config: surface it, or a
 // bad site file would disable every new app with no trace anywhere.
+// compose names it <project>-caddy-1 and the project name is pinned in
+// docker-compose.yml, but a fork that renames the project needs a way out
+const CADDY_CONTAINER = process.env.CADDY_CONTAINER ?? "nanoploy-caddy-1";
+
 export async function reloadCaddy() {
-  const caddy = docker.getContainer("nanoploy-caddy-1");
+  const caddy = docker.getContainer(CADDY_CONTAINER);
   const exec = await caddy.exec({
     Cmd: ["caddy", "reload", "--config", "/etc/caddy/Caddyfile"],
     AttachStdout: true,
