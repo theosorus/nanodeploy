@@ -100,6 +100,13 @@
   .chip { font: inherit; font-size: 12px; background: transparent; border: 1px solid var(--rail); border-radius: 99px; padding: 3px 10px; cursor: pointer; color: var(--silk-dim); }
   .chip[aria-pressed="true"] { border-color: var(--copper); color: var(--copper); }
 
+  .warn {
+    border: 1px solid var(--alert); border-radius: var(--radius);
+    padding: 14px 16px; margin: 0 0 20px; color: var(--silk); font-size: 14px;
+  }
+  .warn h3 { margin: 0 0 6px; font-size: 14px; font-weight: 600; color: var(--alert); }
+  .note { color: var(--silk-dim); font-size: 13px; }
+
   pre.logs { background: var(--board-deep); border-radius: 4px; padding: 12px; overflow-x: auto; max-height: 240px; margin: 0; font-size: 12px; color: var(--silk-dim); }
   .empty { color: var(--silk-dim); padding: 26px 0; }
   .toast {
@@ -144,6 +151,7 @@
   </section>
 
   <section id="view-people" hidden></section>
+  <section id="view-denied" hidden></section>
 </div>
 <div class="toast" id="toast" hidden></div>
 
@@ -161,7 +169,19 @@ const I18N = {
     awakeOne: "app réveillée",
     awakeMany: "apps réveillées",
     asleepSuffix: "en veille",
+    ramUnit: "Go",
+    ramLabel: "de RAM utilisée",
     gaugeNote: "Une app en veille ne consomme rien. La première requête la réveille en une seconde.",
+    notAdminTitle: "Ce compte n'administre pas le serveur",
+    notAdminBody: "Vous pouvez utiliser les apps auxquelles vous avez accès, mais pas piloter la plateforme. Demandez à l'administrateur de vous ajouter au groupe {group}.",
+    adminTitle: "Administration de la console",
+    adminOpen: "Attention : tout compte capable de se connecter contrôle ce serveur. Il peut déployer du code et piloter Docker. Choisissez un groupe d'administrateurs.",
+    adminSet: "Console réservée au groupe {group}.",
+    adminPinned: "Défini par ADMIN_GROUP dans .env, non modifiable ici.",
+    adminSave: "Appliquer",
+    adminNoGroup: "Créez d'abord un groupe ci-dessous, puis ajoutez-vous dedans.",
+    inviteNeedsAdmin: "Choisissez un groupe d'administrateurs avant d'inviter quelqu'un : sinon le nouveau compte contrôlerait aussi le serveur.",
+    deployedAt: "déployée {when}",
     dropHtml: 'Glissez un bundle <span class="mono">.zip</span> ici, ou cliquez pour choisir',
     appsEmptyHtml: 'Aucune app déployée. Lancez <span class="mono">npm run deploy</span> depuis un projet.',
     alwaysOn: "toujours active",
@@ -172,7 +192,6 @@ const I18N = {
     accessGroups: "Réservé à des groupes",
     accessPublic: "Public, ouvert à tout internet",
     groupsHint: "Créez un groupe dans Comptes.",
-    groupPrompt: "Nom du groupe autorisé (créé dans Comptes)",
     madePublic: "Cette app est maintenant ouverte à tout internet.",
     envTitle: "Variables",
     envPlaceholder: "saisir pour remplacer",
@@ -186,8 +205,8 @@ const I18N = {
     open: "Ouvrir",
     wake: "Réveiller",
     delete: "Supprimer",
-    detailNote: "Les apps froides se réveillent toutes seules à la première visite. La base de données est conservée à la suppression.",
-    confirmDelete: "Supprimer {slug} ? La base de données sera conservée.",
+    detailNote: "Les apps froides se réveillent toutes seules à la première visite. À la suppression, la base Postgres est conservée mais les fichiers de /data sont effacés.",
+    confirmDelete: "Supprimer {slug} ?\n\nLes fichiers stockés dans /data seront effacés.\nLa base Postgres de l'app, elle, est conservée.",
     deleted: "{slug} supprimée.",
     fail: "Échec: ",
     cpDown: "Control plane injoignable: ",
@@ -220,7 +239,19 @@ const I18N = {
     awakeOne: "app awake",
     awakeMany: "apps awake",
     asleepSuffix: "asleep",
+    ramUnit: "GB",
+    ramLabel: "of RAM in use",
     gaugeNote: "A sleeping app costs nothing. The first request wakes it within a second.",
+    notAdminTitle: "This account does not administer the server",
+    notAdminBody: "You can use the apps you have access to, but not drive the platform. Ask the administrator to add you to the {group} group.",
+    adminTitle: "Console administration",
+    adminOpen: "Warning: every account that can sign in controls this server. It can deploy code and drive Docker. Pick an admin group.",
+    adminSet: "Console restricted to the {group} group.",
+    adminPinned: "Set by ADMIN_GROUP in .env, not editable here.",
+    adminSave: "Apply",
+    adminNoGroup: "Create a group below first, then add yourself to it.",
+    inviteNeedsAdmin: "Pick an admin group before inviting anyone, otherwise the new account would control this server too.",
+    deployedAt: "deployed {when}",
     dropHtml: 'Drop a <span class="mono">.zip</span> bundle here, or click to choose one',
     appsEmptyHtml: 'No app deployed yet. Run <span class="mono">npm run deploy</span> from a project.',
     alwaysOn: "always on",
@@ -231,7 +262,6 @@ const I18N = {
     accessGroups: "Restricted to groups",
     accessPublic: "Public, open to the whole internet",
     groupsHint: "Create a group in People first.",
-    groupPrompt: "Name of the allowed group (created in People)",
     madePublic: "This app is now open to the whole internet.",
     envTitle: "Variables",
     envPlaceholder: "type to replace",
@@ -245,8 +275,8 @@ const I18N = {
     open: "Open",
     wake: "Wake",
     delete: "Delete",
-    detailNote: "Cold apps wake up on their own at the first visit. The database is kept when you delete an app.",
-    confirmDelete: "Delete {slug}? The database will be kept.",
+    detailNote: "Cold apps wake up on their own at the first visit. Deleting an app keeps its Postgres database but erases the files in /data.",
+    confirmDelete: "Delete {slug}?\n\nFiles stored in /data will be erased.\nThe app's Postgres database is kept.",
     deleted: "{slug} deleted.",
     fail: "Failed: ",
     cpDown: "Control plane unreachable: ",
@@ -306,8 +336,29 @@ function setLang(lang) {
 
 /* ---------- état ---------- */
 
-const state = { apps: [], open: null, domain: "", people: [], groups: [], peopleReady: false, peopleError: null };
+const state = {
+  apps: [], open: null, domain: "", people: [], groups: [],
+  peopleReady: false, peopleError: null,
+  host: null, me: null,
+  // slug whose access select was just moved to "groups" but which has no group
+  // yet: show the chips and only call the API once one is picked
+  pendingGroups: null,
+};
 let toastTimer;
+
+const gb = (bytes) => (bytes / 1e9).toLocaleString(LANG, { maximumFractionDigits: 1 });
+
+// "il y a 3 h" / "3 hr ago", without pulling in a date library
+function ago(iso) {
+  const seconds = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (!Number.isFinite(seconds)) return "";
+  const rtf = new Intl.RelativeTimeFormat(LANG, { numeric: "auto" });
+  const steps = [["day", 86400], ["hour", 3600], ["minute", 60]];
+  for (const [unit, size] of steps) {
+    if (seconds >= size) return rtf.format(-Math.floor(seconds / size), unit);
+  }
+  return rtf.format(0, "minute");
+}
 
 function toast(msg, sticky) {
   clearTimeout(toastTimer);
@@ -327,7 +378,13 @@ const api = async (path, opts = {}) => {
     throw new Error(res.status === 401 ? t("sessionExpired") : t("unexpected", { status: res.status }));
   }
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || res.statusText);
+  if (!res.ok) {
+    // keep the payload: some errors carry a flag the UI words differently
+    const err = new Error(data.error || res.statusText);
+    err.data = data;
+    err.status = res.status;
+    throw err;
+  }
   return data;
 };
 
@@ -337,6 +394,7 @@ async function loadApps() {
   try {
     const data = await api("/api/apps");
     state.apps = data.apps;
+    state.host = data.host ?? null;
     renderApps();
   } catch (err) {
     toast(t("cpDown") + err.message);
@@ -345,9 +403,23 @@ async function loadApps() {
 
 function renderApps() {
   const awake = state.apps.filter((a) => a.status === "awake").length;
-  $("awake").innerHTML = awake + "<small>" + (awake === 1 ? t("awakeOne") : t("awakeMany")) + "</small>";
-  $("sleeping").textContent = state.apps.filter((a) => a.status === "sleeping").length + " " + t("asleepSuffix");
-  $("fill").style.width = (state.apps.length ? (awake / state.apps.length) * 100 : 0) + "%";
+  const asleep = state.apps.filter((a) => a.status === "sleeping").length;
+  const host = state.host;
+
+  if (host && host.total && host.used) {
+    // real host memory: the number that decides whether one more app fits
+    $("awake").innerHTML =
+      gb(host.used) + " / " + gb(host.total) + " " + t("ramUnit") +
+      "<small>" + t("ramLabel") + "</small>";
+    $("sleeping").textContent =
+      awake + " " + (awake === 1 ? t("awakeOne") : t("awakeMany")) + " · " + asleep + " " + t("asleepSuffix");
+    $("fill").style.width = Math.min(100, (host.used / host.total) * 100) + "%";
+  } else {
+    // no /proc/meminfo (control plane running outside linux): app counts only
+    $("awake").innerHTML = awake + "<small>" + (awake === 1 ? t("awakeOne") : t("awakeMany")) + "</small>";
+    $("sleeping").textContent = asleep + " " + t("asleepSuffix");
+    $("fill").style.width = (state.apps.length ? (awake / state.apps.length) * 100 : 0) + "%";
+  }
 
   if (!state.apps.length) {
     $("apps").innerHTML = '<p class="empty">' + t("appsEmptyHtml") + "</p>";
@@ -371,6 +443,7 @@ function renderApp(a) {
       <div class="row-main">
         <div class="row-title">${esc(a.name)}</div>
         <div class="row-sub mono">${esc(host)}</div>
+        ${a.deployedAt ? `<div class="row-sub" style="font-size:12px">${esc(t("deployedAt", { when: ago(a.deployedAt) }))}</div>` : ""}
       </div>
       ${a.warm ? `<span class="tag">${t("alwaysOn")}</span>` : ""}
       <span class="tag">${esc(accessLabel(a))}</span>
@@ -379,6 +452,8 @@ function renderApp(a) {
 }
 
 function renderDetail(a, host) {
+  const picking = state.pendingGroups === a.slug;
+  const showGroups = a.access === "groups" || picking;
   const groupChips = state.groups
     .map((g) => `<button class="chip" data-group="${esc(g.name)}" data-slug="${a.slug}"
         aria-pressed="${a.groups.includes(g.name)}">${esc(g.name)}</button>`)
@@ -388,12 +463,12 @@ function renderDetail(a, host) {
     <h3>${t("accessTitle")}</h3>
     <div class="field">
       <select data-access="${a.slug}">
-        <option value="private" ${a.access === "private" ? "selected" : ""}>${t("accessPrivate")}</option>
-        <option value="groups" ${a.access === "groups" ? "selected" : ""}>${t("accessGroups")}</option>
+        <option value="private" ${a.access === "private" && !picking ? "selected" : ""}>${t("accessPrivate")}</option>
+        <option value="groups" ${showGroups ? "selected" : ""}>${t("accessGroups")}</option>
         <option value="public" ${a.access === "public" ? "selected" : ""}>${t("accessPublic")}</option>
       </select>
     </div>
-    ${a.access === "groups" ? `<div class="chips">${groupChips || `<span class="row-sub">${t("groupsHint")}</span>`}</div>` : ""}
+    ${showGroups ? `<div class="chips">${groupChips || `<span class="row-sub">${t("groupsHint")}</span>`}</div>` : ""}
 
     ${a.envKeys.length ? `<h3>${t("envTitle")}</h3>${a.envKeys.map((k) => `
       <div class="field">
@@ -435,17 +510,20 @@ function bindApps() {
     el.onchange = fail(async (e) => {
       e.stopPropagation();
       const app = state.apps.find((a) => a.slug === el.dataset.access);
-      let groups = app.groups;
-      if (el.value === "groups" && !groups.length) {
-        // first time in groups mode: ask for a group name, otherwise the API
-        // would reject the empty list and the select would snap back
-        const name = prompt(t("groupPrompt"));
-        if (!name) return renderApps();
-        groups = [name];
+      state.pendingGroups = null;
+      if (el.value === "groups" && !app.groups.length) {
+        // an empty group list is refused by the API: show the chips and wait for
+        // a pick instead of inventing a group name nobody belongs to
+        if (!state.groups.length) {
+          toast(t("groupsHint"));
+          return renderApps();
+        }
+        state.pendingGroups = app.slug;
+        return renderApps();
       }
       await api(`/api/apps/${app.slug}/access`, {
         method: "POST",
-        body: JSON.stringify({ access: el.value, groups }),
+        body: JSON.stringify({ access: el.value, groups: app.groups }),
       });
       if (el.value === "public") toast(t("madePublic"));
       loadApps();
@@ -461,10 +539,12 @@ function bindApps() {
       const groups = app.groups.includes(name)
         ? app.groups.filter((g) => g !== name)
         : [...app.groups, name];
+      if (!groups.length) return; // the last group cannot be removed in place
       await api(`/api/apps/${app.slug}/access`, {
         method: "POST",
         body: JSON.stringify({ access: "groups", groups }),
       });
+      state.pendingGroups = null;
       loadApps();
     });
   });
@@ -529,6 +609,38 @@ async function loadPeople() {
   renderPeople(state.peopleError);
 }
 
+// Who may drive this console. While it is unset, anyone who can sign in can
+// deploy code here, so this block is a warning, not a preference.
+function adminBlock() {
+  const me = state.me;
+  if (!me) return "";
+  if (me.adminGroup) {
+    return `<p class="note" style="margin:0 0 20px">${esc(t("adminSet", { group: me.adminGroup }))}
+      ${me.adminGroupLocked ? esc(t("adminPinned")) : ""}</p>`;
+  }
+
+  // only a group the current account belongs to can be chosen, otherwise the
+  // next request would lock this very session out
+  const mine = state.people.find(
+    (p) => me.email && p.email && p.email.toLowerCase() === me.email.toLowerCase(),
+  );
+  const owned = new Set([...(me.groups ?? []), ...(mine?.groups ?? [])]);
+  const options = state.groups.filter((g) => owned.has(g.name));
+
+  return `<div class="warn">
+    <h3>${t("adminTitle")}</h3>
+    <p style="margin:0 0 10px">${t("adminOpen")}</p>
+    ${options.length
+      ? `<div class="field" style="margin:0">
+           <select id="admin-group">${options
+             .map((g) => `<option value="${esc(g.name)}">${esc(g.name)}</option>`)
+             .join("")}</select>
+           <button class="act primary" id="set-admin">${t("adminSave")}</button>
+         </div>`
+      : `<p class="note" style="margin:0">${t("adminNoGroup")}</p>`}
+  </div>`;
+}
+
 function renderPeople(error) {
   const view = $("view-people");
 
@@ -540,6 +652,7 @@ function renderPeople(error) {
   }
 
   view.innerHTML = `
+    ${adminBlock()}
     <h3 style="font-size:13px;font-weight:500;color:var(--silk-dim);margin:0 0 10px">${t("inviteTitle")}</h3>
     <div class="field">
       <input id="new-username" placeholder="${t("usernamePh")}" autocomplete="off">
@@ -570,6 +683,24 @@ function renderPeople(error) {
     </div>
     <p class="row-sub" style="font-size:13px;margin:0">${t("groupNote")}</p>`;
 
+  const setAdmin = $("set-admin");
+  if (setAdmin) {
+    setAdmin.onclick = async () => {
+      const group = $("admin-group").value;
+      try {
+        const res = await api("/api/admin-group", {
+          method: "POST",
+          body: JSON.stringify({ group }),
+        });
+        state.me.adminGroup = res.adminGroup;
+        toast(t("adminSet", { group: res.adminGroup }));
+        loadPeople();
+      } catch (err) {
+        toast(t("fail") + err.message);
+      }
+    };
+  }
+
   $("invite").onclick = async () => {
     const username = $("new-username").value.trim();
     const email = $("new-email").value.trim();
@@ -579,7 +710,7 @@ function renderPeople(error) {
       toast(res.link ? t("inviteLink") + res.link : t("created"), true);
       loadPeople();
     } catch (err) {
-      toast(t("fail") + err.message);
+      toast(err.data?.needsAdminGroup ? t("inviteNeedsAdmin") : t("fail") + err.message, true);
     }
   };
 
@@ -658,17 +789,36 @@ document.querySelectorAll("[data-view]").forEach((tab) => {
   };
 });
 
+function renderDenied() {
+  document.querySelector("nav").hidden = true;
+  $("view-apps").hidden = true;
+  $("view-people").hidden = true;
+  const view = $("view-denied");
+  view.hidden = false;
+  view.innerHTML = `<div class="warn">
+    <h3>${t("notAdminTitle")}</h3>
+    <p style="margin:0">${esc(t("notAdminBody", { group: state.me?.adminGroup ?? "admin" }))}</p>
+  </div>`;
+}
+
 api("/api/me")
   .then((me) => {
+    state.me = me;
     state.domain = me.domain || location.hostname.split(".").slice(1).join(".");
     $("who").textContent = me.name || me.email || "";
+    // signed in, but not an administrator: say so instead of showing a console
+    // whose every action answers 403
+    if (me.admin === false) return renderDenied();
     loadApps();
     loadPeople();
   })
   .catch((err) => toast(t("accessDenied") + err.message, true));
 
-// refresh the list, but never while a detail panel is open
-setInterval(() => { if (!state.open) loadApps(); }, 6000);
+// refresh the list, but never while a detail panel is open, and never for a
+// session that is not allowed to see it in the first place
+setInterval(() => {
+  if (!state.open && state.me && state.me.admin !== false) loadApps();
+}, 6000);
 </script>
 </body>
 </html>
