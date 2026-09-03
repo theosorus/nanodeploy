@@ -62,8 +62,14 @@ L'app ne gère pas le login. Caddy authentifie, puis injecte les headers
 `server/auth.ts`, jamais à la main.
 
 ```typescript
-const user = getUser(c);        // throws if the request bypassed the gateway
+const user = tryGetUser(c);   // null si la requête n'a pas d'identité
 ```
+
+Une app basculée `public` depuis le dashboard ne reçoit plus aucun header
+d'identité. Toute route qui a besoin d'un utilisateur renvoie donc 401 quand
+`tryGetUser` retourne null : c'est ce qui évite les 500 en cascade. `getUser(c)`
+(qui jette une erreur) ne se justifie que dans une app qui restera toujours
+privée.
 
 Toute table appartenant à un utilisateur porte une colonne `ownerId` remplie avec
 `user.id`, et toute requête de lecture filtre dessus. C'est ça qui rend le compte
