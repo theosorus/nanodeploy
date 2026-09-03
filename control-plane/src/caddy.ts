@@ -34,16 +34,23 @@ export function renderSite(app: AppRow) {
   if (app.port) {
     body.push(`\t\thandle /api/* {`);
     if (!app.warm) {
-      body.push(`\t\t\tsablier http://sablier:10000 {`);
-      body.push(`\t\t\t\tgroup ${app.slug}`);
-      body.push(`\t\t\t\tsession_duration ${app.idle_timeout}`);
-      body.push(`\t\t\t\tdynamic {`);
-      body.push(`\t\t\t\t\tdisplay_name ${name}`);
-      body.push(`\t\t\t\t\ttheme ghost`);
+      // sablier is an unordered directive: it must live inside a route block or
+      // the whole site fails to parse (caddy then keeps its previous config and
+      // the app silently never gets routed)
+      body.push(`\t\t\troute {`);
+      body.push(`\t\t\t\tsablier http://sablier:10000 {`);
+      body.push(`\t\t\t\t\tgroup ${app.slug}`);
+      body.push(`\t\t\t\t\tsession_duration ${app.idle_timeout}`);
+      body.push(`\t\t\t\t\tdynamic {`);
+      body.push(`\t\t\t\t\t\tdisplay_name ${name}`);
+      body.push(`\t\t\t\t\t\ttheme ghost`);
+      body.push(`\t\t\t\t\t}`);
       body.push(`\t\t\t\t}`);
+      body.push(`\t\t\t\treverse_proxy app-${app.slug}:${app.port}`);
       body.push(`\t\t\t}`);
+    } else {
+      body.push(`\t\t\treverse_proxy app-${app.slug}:${app.port}`);
     }
-    body.push(`\t\t\treverse_proxy app-${app.slug}:${app.port}`);
     body.push(`\t\t}`);
   }
   body.push(`\t\thandle {`);

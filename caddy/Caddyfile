@@ -47,3 +47,9 @@ http://deploy.{$APPS_DOMAIN} {
 }
 
 import /etc/caddy/conf.d/*.caddy
+
+# caddy 2.11 answers 200 empty for hosts it does not know: without this,
+# a deleted app or a typo in a subdomain would silently return an empty page
+http:// {
+	respond "no such app" 404
+}
