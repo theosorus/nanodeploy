@@ -78,8 +78,14 @@ compiles from source: about 10 minutes on a Jetson.
 Then:
 
 1. Point your tunnel or reverse proxy at `http://localhost:8080` (change with
-   `CADDY_PORT`), with a wildcard hostname `*.apps.example.com` and
-   `apps.example.com` itself.
+   `CADDY_PORT`), with a **wildcard** hostname `*.apps.example.com` and
+   `apps.example.com` itself. With a Cloudflare tunnel that is one entry under
+   *Public Hostname* with the subdomain set to `*`, service `HTTP` →
+   `localhost:8080`.
+
+   Do not skip the wildcard. Without it, every app deploys and runs perfectly
+   and none of them resolves: the browser says "server not found" and nothing in
+   the dashboard explains why. Deploys warn about it, but only after the fact.
 2. Open `https://id.apps.example.com` and create the Pocket ID admin account.
 3. In Pocket ID, create an OIDC client for tinyauth with callback
    `https://auth.apps.example.com/api/oauth/callback/generic`. Put the client id

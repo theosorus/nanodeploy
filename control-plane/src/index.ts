@@ -5,6 +5,7 @@ import type { Context, Next } from "hono";
 import AdmZip from "adm-zip";
 import { timingSafeEqual } from "node:crypto";
 import { readFile, rm, mkdir, readdir, stat } from "node:fs/promises";
+import { lookup } from "node:dns/promises";
 import { join } from "node:path";
 import { parseManifest } from "./manifest.js";
 import * as store from "./db.js";
@@ -141,6 +142,19 @@ async function runLocked<T>(slug: string, fn: () => Promise<T>): Promise<T> {
   }
 }
 
+// A route caddy serves is useless if the name never reaches the machine. When
+// the tunnel or the DNS zone has no wildcard, a freshly deployed app fails as a
+// browser "server not found" with nothing anywhere to explain it, so say it at
+// deploy time instead.
+async function hostResolves(host: string): Promise<boolean> {
+  try {
+    await lookup(host);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const slugParam = (c: Context): string | null => {
   const slug = c.req.param("slug") as string;
   return SLUG_RE.test(slug) ? slug : null;
@@ -265,9 +279,18 @@ async function doDeploy(manifest: ReturnType<typeof parseManifest>, zip: Buffer)
   );
   await pruneAll();
 
+  const host = `${manifest.slug}.${process.env.APPS_DOMAIN}`;
+  if (!(await hostResolves(host))) {
+    log.push(
+      `WARNING: ${host} does not resolve. The app is running but nothing on the ` +
+        `internet can reach it: add a wildcard *.${process.env.APPS_DOMAIN} ` +
+        `hostname to your tunnel or DNS zone.`,
+    );
+  }
+
   return {
     ok: true,
-    url: `https://${manifest.slug}.${process.env.APPS_DOMAIN}`,
+    url: `https://${host}`,
     log,
   };
 }

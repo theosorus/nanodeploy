@@ -92,9 +92,12 @@ say "5/5 next steps"
 PORT=${CADDY_PORT:-8080}
 cat <<TXT
 
-  1. Point a reverse proxy or tunnel at http://localhost:$PORT with a wildcard
+  1. Point a reverse proxy or tunnel at http://localhost:$PORT with a WILDCARD
      hostname *.$APPS_DOMAIN plus $APPS_DOMAIN itself. It must terminate TLS:
      caddy speaks plain http behind it.
+     Without the wildcard, apps deploy and run but no browser can resolve them.
+     Cloudflare tunnel: one Public Hostname entry, subdomain "*", service
+     HTTP -> localhost:$PORT.
   2. Open https://id.$APPS_DOMAIN and create your Pocket ID admin account.
   3. In Pocket ID, create an OIDC client for tinyauth with callback
      https://auth.$APPS_DOMAIN/api/oauth/callback/generic

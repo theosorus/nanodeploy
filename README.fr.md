@@ -79,8 +79,15 @@ compile depuis les sources : environ 10 minutes sur un Jetson.
 Ensuite :
 
 1. Pointer le tunnel ou le reverse proxy vers `http://localhost:8080`
-   (modifiable par `CADDY_PORT`), avec un hostname générique
-   `*.apps.exemple.com` et `apps.exemple.com`.
+   (modifiable par `CADDY_PORT`), avec un hostname **générique**
+   `*.apps.exemple.com` et `apps.exemple.com`. Avec un tunnel Cloudflare, c'est
+   une seule entrée dans *Public Hostname*, sous-domaine `*`, service `HTTP` →
+   `localhost:8080`.
+
+   Ne sautez pas le générique. Sans lui, chaque app se déploie et tourne
+   parfaitement mais aucune ne résout : le navigateur dit « serveur
+   introuvable » et rien dans le dashboard ne l'explique. Le déploiement le
+   signale, mais seulement après coup.
 2. Ouvrir `https://id.apps.exemple.com` et créer le compte administrateur
    Pocket ID.
 3. Créer un client OIDC pour tinyauth, callback
