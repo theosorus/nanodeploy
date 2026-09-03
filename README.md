@@ -95,10 +95,23 @@ son API. Sans `POCKETID_API_KEY`, l'onglet renvoie simplement vers Pocket ID.
 Les chemins d'API utilisés (`/api/users`, `/api/user-groups`) dépendent de la
 version de Pocket ID, à vérifier si l'onglet renvoie une erreur.
 
-Recommandé : protéger `deploy.apps.exemple.com` avec Cloudflare Access, en plus
-de tinyauth. C'est la seule surface qui pilote Docker. Toutes les routes
-`/api/*` exigent de toute façon un token valide ou une session, un en-tête
-`Authorization` inventé ne suffit plus depuis que Caddy compare le token exact.
+**Qui a le droit de piloter la console ?** Le dashboard déploie du code
+arbitraire et pilote Docker : il doit rester personnel. Par défaut, toute
+session tinyauth est administratrice (vous êtes seul). Dès que vous invitez des
+tiers via l'onglet Comptes, mettez un nom de groupe dans `ADMIN_GROUP` (`.env`,
+puis `docker compose up -d control-plane`) et ajoutez ce groupe à votre compte
+dans Pocket ID : les autres comptes gardent l'accès aux apps, pas à la console.
+
+Recommandé en plus : protéger `deploy.apps.exemple.com` avec Cloudflare Access.
+Toutes les routes `/api/*` exigent de toute façon un token exact ou une session
+du groupe admin ; un en-tête `Authorization` inventé ne suffit plus.
+
+**Isolation** : chaque app tourne en conteneur non-root (capabilities retirées,
+`/data` sur un volume dédié, RAM plafonnée) sur un réseau qui ne contient que
+Caddy et Postgres. Le socket Docker, Sablier, tinyauth et le control plane ne
+sont pas joignables depuis une app : une app est du code arbitraire, elle ne
+doit pas pouvoir escalader. Seule limite assumée : les apps se voient entre
+elles sur ce réseau partagé.
 
 ## Déployer une app
 
@@ -118,8 +131,11 @@ Ou, sans terminal : glisser le zip dans le dashboard.
 
 Une app "froide" (le cas par défaut) est **remise en veille immédiatement après
 le déploiement** : un conteneur lancé hors d'une session Sablier ne se serait
-jamais arrêté tout seul. La première visite affiche la page d'attente une
-seconde, puis répond. Seules les apps `idle.warm: true` tournent en permanence.
+jamais arrêté tout seul. Le HTML et les assets sont servis instantanément par
+Caddy sans réveiller l'app ; seule la première requête `/api/*` déclenche le
+réveil, avec une page d'attente d'une seconde (le wrapper `src/client.ts` la
+retente en silence, elle est presque invisible). Seules les apps
+`idle.warm: true` tournent en permanence.
 
 ## La skill
 
@@ -147,9 +163,10 @@ Ce qui se passe au redémarrage :
 2. Les conteneurs d'apps sont toujours là, simplement arrêtés. Les routes Caddy
    aussi, ce sont des fichiers. La première requête sur une app la réveille.
 3. Le control plane se réconcilie au démarrage : il relit la table `apps` dans
-   Postgres et recrée tout conteneur ou route manquants. Si le data-root Docker
-   a été vidé, **les images sont reconstruites depuis le bundle stocké** dans
-   `APPS_DIR` (le zip y est conservé), puis les apps froides sont rendormies.
+   Postgres et recrée tout conteneur, image ou route manquant. Les images sont
+   reconstruites depuis le bundle stocké dans `APPS_DIR` (les fichiers extraits
+   y vivent, pas le zip), puis les apps froides sont rendormies. Le heal couvre
+   aussi le cas d'une image supprimée à la main pendant que l'app dormait.
 
 Pour forcer une réconciliation à la main :
 
@@ -186,7 +203,12 @@ ne sont supprimés que lorsqu'on supprime l'app.
 
 - Pas de rollback automatique : un déploiement remplace le conteneur.
 - Pas de logs centralisés, `docker logs app-<slug>` fait le travail.
+- Les variables d'env et le mot de passe de base d'une app dorment en clair
+  dans la table `apps` du Postgres de contrôle (acceptable sur un homelab,
+  à garder en tête pour les sauvegardes).
 - Le premier réveil d'une app affiche une page d'attente pendant une seconde
   environ (un fetch SPA la contourne via `src/client.ts`, qui retente).
 - Les websockets ne survivent pas à une mise en veille, par conception.
 - Caddy répond 404 pour tout sous-domaine inconnu, y compris une app supprimée.
+- Les apps se voient entre elles sur le réseau partagé : ne pas y héberger de
+  données sensibles dans une app multi-utilisateurs ouverte à des inconnus.
