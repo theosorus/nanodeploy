@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nanoploy</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#071a15">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Nanoploy">
 <style>
   :root {
     --board: #0f2f26;
@@ -29,7 +36,14 @@
 
   header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
   h1 { font-size: 19px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+  h1 img { vertical-align: -3px; margin-right: 8px; border-radius: 6px; }
+  header .side { display: flex; align-items: center; gap: 10px; }
   header .who { color: var(--silk-dim); font-size: 13px; }
+  .langbtn {
+    background: transparent; color: var(--silk-dim); border: 1px solid var(--rail);
+    border-radius: 4px; font: inherit; font-size: 12px; padding: 2px 8px; cursor: pointer;
+  }
+  .langbtn:hover { color: var(--copper); border-color: var(--copper); }
 
   nav { display: flex; margin-bottom: 24px; }
   nav button {
@@ -99,31 +113,34 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>Nanoploy</h1>
-    <span class="who" id="who"></span>
+    <h1><img src="/favicon.svg" width="22" height="22" alt="">Nanoploy</h1>
+    <div class="side">
+      <span class="who" id="who"></span>
+      <button class="langbtn" id="lang" title="Switch language"></button>
+    </div>
   </header>
 
   <nav role="tablist">
-    <button role="tab" data-view="apps" aria-selected="true">Apps</button>
-    <button role="tab" data-view="people" aria-selected="false">Comptes</button>
+    <button role="tab" data-view="apps" aria-selected="true"></button>
+    <button role="tab" data-view="people" aria-selected="false"></button>
   </nav>
 
   <section id="view-apps">
     <div class="gauge">
       <div class="gauge-top">
-        <div class="gauge-value" id="awake">0<small>app réveillée</small></div>
+        <div class="gauge-value" id="awake">0<small></small></div>
         <div class="mono" id="sleeping" style="color:var(--silk-dim)"></div>
       </div>
       <div class="bar"><span id="fill" style="width:0%"></span></div>
-      <div class="gauge-note">Une app en veille ne consomme rien. La première requête la réveille en une seconde.</div>
+      <div class="gauge-note" id="gauge-note"></div>
     </div>
 
     <div class="drop" id="drop">
-      Glissez un bundle <span class="mono">.zip</span> ici, ou cliquez pour choisir
+      <span id="drop-text"></span>
       <input type="file" id="file" accept=".zip" hidden>
     </div>
 
-    <div id="apps"><p class="empty">Aucune app déployée. Lancez <span class="mono">npm run deploy</span> depuis un projet.</p></div>
+    <div id="apps"></div>
   </section>
 
   <section id="view-people" hidden></section>
@@ -133,7 +150,163 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
-const state = { apps: [], open: null, domain: "", people: [], groups: [], peopleReady: false };
+
+/* ---------- i18n ---------- */
+
+const I18N = {
+  fr: {
+    title: "Nanoploy",
+    navApps: "Apps",
+    navPeople: "Comptes",
+    awakeOne: "app réveillée",
+    awakeMany: "apps réveillées",
+    asleepSuffix: "en veille",
+    gaugeNote: "Une app en veille ne consomme rien. La première requête la réveille en une seconde.",
+    dropHtml: 'Glissez un bundle <span class="mono">.zip</span> ici, ou cliquez pour choisir',
+    appsEmptyHtml: 'Aucune app déployée. Lancez <span class="mono">npm run deploy</span> depuis un projet.',
+    alwaysOn: "toujours active",
+    tagPrivate: "privé",
+    tagGroups: "groupes",
+    accessTitle: "Accès",
+    accessPrivate: "Privé, comptes autorisés seulement",
+    accessGroups: "Réservé à des groupes",
+    accessPublic: "Public, ouvert à tout internet",
+    groupsHint: "Créez un groupe dans Comptes.",
+    groupPrompt: "Nom du groupe autorisé (créé dans Comptes)",
+    madePublic: "Cette app est maintenant ouverte à tout internet.",
+    envTitle: "Variables",
+    envPlaceholder: "saisir pour remplacer",
+    envSave: "Enregistrer",
+    nothingToSave: "Rien à enregistrer.",
+    envSaved: "Variables enregistrées.",
+    logsTitle: "Journal",
+    logsLoading: "chargement",
+    logsNone: "aucun log",
+    logsError: "journal indisponible: ",
+    open: "Ouvrir",
+    wake: "Réveiller",
+    delete: "Supprimer",
+    detailNote: "Les apps froides se réveillent toutes seules à la première visite. La base de données est conservée à la suppression.",
+    confirmDelete: "Supprimer {slug} ? La base de données sera conservée.",
+    deleted: "{slug} supprimée.",
+    fail: "Échec: ",
+    cpDown: "Control plane injoignable: ",
+    sessionExpired: "session expirée, reconnectez-vous",
+    unexpected: "réponse inattendue ({status})",
+    deploying: "Déploiement de {name}",
+    deployFailed: "Échec du déploiement: ",
+    accessDenied: "Accès refusé: ",
+    peopleOffHtml: 'La gestion des comptes n\'est pas branchée. Créez une clé API dans Pocket ID, mettez-la dans <span class="mono">POCKETID_API_KEY</span>, puis relancez le control plane.',
+    openPocketId: "Ouvrir Pocket ID",
+    inviteTitle: "Inviter quelqu'un",
+    usernamePh: "identifiant",
+    emailPh: "email",
+    invite: "Inviter",
+    inviteHint: "Pas de mot de passe : la personne reçoit un lien et enregistre une clé d'accès.",
+    peopleError: "Pocket ID a répondu: ",
+    alone: "Vous êtes seul pour le moment.",
+    groupsTitle: "Groupes",
+    groupPh: "nom du groupe, par exemple famille",
+    create: "Créer",
+    groupNote: "Un groupe ouvre une app à certaines personnes sans la rendre publique.",
+    inviteRequired: "Identifiant et email sont requis.",
+    inviteLink: "Lien d'invitation à transmettre :\n",
+    created: "Compte créé.",
+  },
+  en: {
+    title: "Nanoploy",
+    navApps: "Apps",
+    navPeople: "People",
+    awakeOne: "app awake",
+    awakeMany: "apps awake",
+    asleepSuffix: "asleep",
+    gaugeNote: "A sleeping app costs nothing. The first request wakes it within a second.",
+    dropHtml: 'Drop a <span class="mono">.zip</span> bundle here, or click to choose one',
+    appsEmptyHtml: 'No app deployed yet. Run <span class="mono">npm run deploy</span> from a project.',
+    alwaysOn: "always on",
+    tagPrivate: "private",
+    tagGroups: "groups",
+    accessTitle: "Access",
+    accessPrivate: "Private, allowed accounts only",
+    accessGroups: "Restricted to groups",
+    accessPublic: "Public, open to the whole internet",
+    groupsHint: "Create a group in People first.",
+    groupPrompt: "Name of the allowed group (created in People)",
+    madePublic: "This app is now open to the whole internet.",
+    envTitle: "Variables",
+    envPlaceholder: "type to replace",
+    envSave: "Save",
+    nothingToSave: "Nothing to save.",
+    envSaved: "Variables saved.",
+    logsTitle: "Logs",
+    logsLoading: "loading",
+    logsNone: "no logs",
+    logsError: "logs unavailable: ",
+    open: "Open",
+    wake: "Wake",
+    delete: "Delete",
+    detailNote: "Cold apps wake up on their own at the first visit. The database is kept when you delete an app.",
+    confirmDelete: "Delete {slug}? The database will be kept.",
+    deleted: "{slug} deleted.",
+    fail: "Failed: ",
+    cpDown: "Control plane unreachable: ",
+    sessionExpired: "session expired, please sign in again",
+    unexpected: "unexpected response ({status})",
+    deploying: "Deploying {name}",
+    deployFailed: "Deploy failed: ",
+    accessDenied: "Access denied: ",
+    peopleOffHtml: 'Account management is not wired up. Create an API key in Pocket ID, put it in <span class="mono">POCKETID_API_KEY</span> and restart the control plane.',
+    openPocketId: "Open Pocket ID",
+    inviteTitle: "Invite someone",
+    usernamePh: "username",
+    emailPh: "email",
+    invite: "Invite",
+    inviteHint: "No password: the person gets a link and enrolls a passkey.",
+    peopleError: "Pocket ID answered: ",
+    alone: "You are alone for now.",
+    groupsTitle: "Groups",
+    groupPh: "group name, e.g. family",
+    create: "Create",
+    groupNote: "A group opens an app to specific people without making it public.",
+    inviteRequired: "Username and email are required.",
+    inviteLink: "Invitation link to share:\n",
+    created: "Account created.",
+  },
+};
+
+const savedLang = (() => { try { return localStorage.getItem("nanoploy.lang"); } catch { return null; } })();
+let LANG = savedLang === "fr" || savedLang === "en" ? savedLang : (navigator.language || "").toLowerCase().startsWith("fr") ? "fr" : "en";
+let T = I18N[LANG];
+const t = (key, vars) => {
+  let s = T[key] ?? I18N.fr[key] ?? key;
+  if (vars) for (const [k, v] of Object.entries(vars)) s = s.split("{" + k + "}").join(String(v));
+  return s;
+};
+
+function renderStatic() {
+  document.documentElement.lang = LANG === "fr" ? "fr" : "en";
+  document.title = t("title");
+  const langBtn = $("lang");
+  if (langBtn) langBtn.textContent = LANG === "fr" ? "EN" : "FR";
+  document.querySelectorAll("[data-view]").forEach((b) => {
+    b.textContent = t(b.dataset.view === "apps" ? "navApps" : "navPeople");
+  });
+  $("gauge-note").textContent = t("gaugeNote");
+  $("drop-text").innerHTML = t("dropHtml");
+}
+
+function setLang(lang) {
+  LANG = lang;
+  T = I18N[LANG];
+  try { localStorage.setItem("nanoploy.lang", lang); } catch {}
+  renderStatic();
+  renderApps();
+  if (!$("view-people").hidden) renderPeople(state.peopleError);
+}
+
+/* ---------- état ---------- */
+
+const state = { apps: [], open: null, domain: "", people: [], groups: [], peopleReady: false, peopleError: null };
 let toastTimer;
 
 function toast(msg, sticky) {
@@ -150,8 +323,8 @@ const api = async (path, opts = {}) => {
   });
   const type = res.headers.get("content-type") || "";
   if (!type.includes("json")) {
-    // session expirée ou gateway: le corps est du HTML, pas une erreur JSON
-    throw new Error(res.status === 401 ? "session expirée, reconnectez-vous" : `réponse inattendue (${res.status})`);
+    // expired session or gateway answer: the body is HTML, not a JSON error
+    throw new Error(res.status === 401 ? t("sessionExpired") : t("unexpected", { status: res.status }));
   }
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || res.statusText);
@@ -166,25 +339,28 @@ async function loadApps() {
     state.apps = data.apps;
     renderApps();
   } catch (err) {
-    toast("Control plane injoignable: " + err.message);
+    toast(t("cpDown") + err.message);
   }
 }
 
 function renderApps() {
   const awake = state.apps.filter((a) => a.status === "awake").length;
-  $("awake").innerHTML = awake + "<small>" + (awake === 1 ? "app réveillée" : "apps réveillées") + "</small>";
-  $("sleeping").textContent = state.apps.filter((a) => a.status === "sleeping").length + " en veille";
+  $("awake").innerHTML = awake + "<small>" + (awake === 1 ? t("awakeOne") : t("awakeMany")) + "</small>";
+  $("sleeping").textContent = state.apps.filter((a) => a.status === "sleeping").length + " " + t("asleepSuffix");
   $("fill").style.width = (state.apps.length ? (awake / state.apps.length) * 100 : 0) + "%";
 
-  if (!state.apps.length) return;
+  if (!state.apps.length) {
+    $("apps").innerHTML = '<p class="empty">' + t("appsEmptyHtml") + "</p>";
+    return;
+  }
   $("apps").innerHTML = state.apps.map(renderApp).join("");
   bindApps();
 }
 
 function accessLabel(a) {
   if (a.access === "public") return "public";
-  if (a.access === "groups") return a.groups.join(", ") || "groupes";
-  return "privé";
+  if (a.access === "groups") return a.groups.join(", ") || t("tagGroups");
+  return t("tagPrivate");
 }
 
 function renderApp(a) {
@@ -196,7 +372,7 @@ function renderApp(a) {
         <div class="row-title">${esc(a.name)}</div>
         <div class="row-sub mono">${esc(host)}</div>
       </div>
-      ${a.warm ? '<span class="tag">toujours active</span>' : ""}
+      ${a.warm ? `<span class="tag">${t("alwaysOn")}</span>` : ""}
       <span class="tag">${esc(accessLabel(a))}</span>
     </div>
     ${state.open === a.slug ? renderDetail(a, host) : ""}`;
@@ -209,32 +385,32 @@ function renderDetail(a, host) {
     .join("");
 
   return `<div class="detail">
-    <h3>Accès</h3>
+    <h3>${t("accessTitle")}</h3>
     <div class="field">
       <select data-access="${a.slug}">
-        <option value="private" ${a.access === "private" ? "selected" : ""}>Privé, comptes autorisés seulement</option>
-        <option value="groups" ${a.access === "groups" ? "selected" : ""}>Réservé à des groupes</option>
-        <option value="public" ${a.access === "public" ? "selected" : ""}>Public, ouvert à tout internet</option>
+        <option value="private" ${a.access === "private" ? "selected" : ""}>${t("accessPrivate")}</option>
+        <option value="groups" ${a.access === "groups" ? "selected" : ""}>${t("accessGroups")}</option>
+        <option value="public" ${a.access === "public" ? "selected" : ""}>${t("accessPublic")}</option>
       </select>
     </div>
-    ${a.access === "groups" ? `<div class="chips">${groupChips || '<span class="row-sub">Créez un groupe dans Comptes.</span>'}</div>` : ""}
+    ${a.access === "groups" ? `<div class="chips">${groupChips || `<span class="row-sub">${t("groupsHint")}</span>`}</div>` : ""}
 
-    ${a.envKeys.length ? `<h3>Variables</h3>${a.envKeys.map((k) => `
+    ${a.envKeys.length ? `<h3>${t("envTitle")}</h3>${a.envKeys.map((k) => `
       <div class="field">
         <input class="mono" value="${esc(k)}" readonly style="max-width:210px">
-        <input type="password" placeholder="saisir pour remplacer" data-env="${a.slug}" data-key="${esc(k)}">
+        <input type="password" placeholder="${t("envPlaceholder")}" data-env="${a.slug}" data-key="${esc(k)}">
       </div>`).join("")}
-      <button class="act" data-saveenv="${a.slug}">Enregistrer</button>` : ""}
+      <button class="act" data-saveenv="${a.slug}">${t("envSave")}</button>` : ""}
 
-    <h3>Journal</h3>
-    <pre class="logs" data-logs="${a.slug}">chargement</pre>
+    <h3>${t("logsTitle")}</h3>
+    <pre class="logs" data-logs="${a.slug}">${t("logsLoading")}</pre>
 
     <div class="actions">
-      <a class="act" href="https://${esc(host)}" target="_blank" rel="noopener" style="text-decoration:none">Ouvrir</a>
-      ${a.status === "sleeping" && a.warm ? `<button class="act" data-wake="${a.slug}">Réveiller</button>` : ""}
-      <button class="act danger" data-delete="${a.slug}">Supprimer</button>
+      <a class="act" href="https://${esc(host)}" target="_blank" rel="noopener" style="text-decoration:none">${t("open")}</a>
+      ${a.status === "sleeping" && a.warm ? `<button class="act" data-wake="${a.slug}">${t("wake")}</button>` : ""}
+      <button class="act danger" data-delete="${a.slug}">${t("delete")}</button>
     </div>
-    <p class="row-sub" style="font-size:13px;margin:12px 0 0">Les apps froides se réveillent toutes seules à la première visite. La base de données est conservée à la suppression.</p>
+    <p class="row-sub" style="font-size:13px;margin:12px 0 0">${t("detailNote")}</p>
   </div>`;
 }
 
@@ -243,7 +419,7 @@ function bindApps() {
     try {
       await fn(...args);
     } catch (err) {
-      toast("Échec: " + err.message);
+      toast(t("fail") + err.message);
     }
   };
 
@@ -263,7 +439,7 @@ function bindApps() {
       if (el.value === "groups" && !groups.length) {
         // first time in groups mode: ask for a group name, otherwise the API
         // would reject the empty list and the select would snap back
-        const name = prompt("Nom du groupe autorisé (créé dans Comptes)");
+        const name = prompt(t("groupPrompt"));
         if (!name) return renderApps();
         groups = [name];
       }
@@ -271,7 +447,7 @@ function bindApps() {
         method: "POST",
         body: JSON.stringify({ access: el.value, groups }),
       });
-      if (el.value === "public") toast("Cette app est maintenant ouverte à tout internet.");
+      if (el.value === "public") toast(t("madePublic"));
       loadApps();
     });
     el.onclick = (e) => e.stopPropagation();
@@ -303,9 +479,9 @@ function bindApps() {
       document.querySelectorAll(`[data-env="${slug}"]`).forEach((i) => {
         if (i.value) patch[i.dataset.key] = i.value;
       });
-      if (!Object.keys(patch).length) return toast("Rien à enregistrer.");
+      if (!Object.keys(patch).length) return toast(t("nothingToSave"));
       await api(`/api/apps/${slug}/env`, { method: "POST", body: JSON.stringify(patch) });
-      toast("Variables enregistrées.");
+      toast(t("envSaved"));
       loadApps();
     });
   });
@@ -322,10 +498,10 @@ function bindApps() {
     el.onclick = fail(async (e) => {
       e.stopPropagation();
       const slug = el.dataset.delete;
-      if (!confirm(`Supprimer ${slug} ? La base de données sera conservée.`)) return;
+      if (!confirm(t("confirmDelete", { slug }))) return;
       await api(`/api/apps/${slug}`, { method: "DELETE" });
       state.open = null;
-      toast(slug + " supprimée.");
+      toast(t("deleted", { slug }));
       loadApps();
     });
   });
@@ -336,9 +512,9 @@ async function loadLogs(slug) {
   if (!el) return;
   try {
     const { lines } = await api(`/api/apps/${slug}/logs`);
-    el.textContent = lines.slice(-40).join("\n") || "aucun log";
+    el.textContent = lines.slice(-40).join("\n") || t("logsNone");
   } catch (err) {
-    el.textContent = "journal indisponible: " + err.message;
+    el.textContent = t("logsError") + err.message;
   }
 }
 
@@ -349,32 +525,30 @@ async function loadPeople() {
   state.people = data.people ?? [];
   state.groups = data.groups ?? [];
   state.peopleReady = data.configured !== false;
-  renderPeople(data.error);
+  state.peopleError = data.error ?? null;
+  renderPeople(state.peopleError);
 }
 
 function renderPeople(error) {
   const view = $("view-people");
 
   if (!state.peopleReady) {
-    view.innerHTML = `<p class="empty">La gestion des comptes n'est pas branchée. Créez une clé API
-      dans Pocket ID, mettez-la dans <span class="mono">POCKETID_API_KEY</span>, puis relancez le
-      control plane.</p>
+    view.innerHTML = `<p class="empty">${t("peopleOffHtml")}</p>
       <a class="act" href="https://id.${esc(state.domain)}" target="_blank" rel="noopener"
-         style="text-decoration:none">Ouvrir Pocket ID</a>`;
+         style="text-decoration:none">${t("openPocketId")}</a>`;
     return;
   }
 
   view.innerHTML = `
-    <h3 style="font-size:13px;font-weight:500;color:var(--silk-dim);margin:0 0 10px">Inviter quelqu'un</h3>
+    <h3 style="font-size:13px;font-weight:500;color:var(--silk-dim);margin:0 0 10px">${t("inviteTitle")}</h3>
     <div class="field">
-      <input id="new-username" placeholder="identifiant" autocomplete="off">
-      <input id="new-email" type="email" placeholder="email" autocomplete="off">
-      <button class="act primary" id="invite">Inviter</button>
+      <input id="new-username" placeholder="${t("usernamePh")}" autocomplete="off">
+      <input id="new-email" type="email" placeholder="${t("emailPh")}" autocomplete="off">
+      <button class="act primary" id="invite">${t("invite")}</button>
     </div>
-    <p class="row-sub" style="font-size:13px;margin:0 0 24px">
-      Pas de mot de passe: la personne reçoit un lien et enregistre une clé d'accès.</p>
+    <p class="row-sub" style="font-size:13px;margin:0 0 24px">${t("inviteHint")}</p>
 
-    ${error ? `<p class="empty">Pocket ID a répondu: ${esc(error)}</p>` : ""}
+    ${error ? `<p class="empty">${t("peopleError")}${esc(error)}</p>` : ""}
 
     ${state.people.map((p) => `
       <div class="row" style="cursor:default">
@@ -387,26 +561,25 @@ function renderPeople(error) {
           ${state.groups.map((g) => `<button class="chip" data-person="${p.id}" data-gid="${g.id}"
               aria-pressed="${p.groups.includes(g.name)}">${esc(g.name)}</button>`).join("")}
         </div>
-      </div>`).join("") || '<p class="empty">Vous êtes seul pour le moment.</p>'}
+      </div>`).join("") || `<p class="empty">${t("alone")}</p>`}
 
-    <h3 style="font-size:13px;font-weight:500;color:var(--silk-dim);margin:24px 0 10px">Groupes</h3>
+    <h3 style="font-size:13px;font-weight:500;color:var(--silk-dim);margin:24px 0 10px">${t("groupsTitle")}</h3>
     <div class="field">
-      <input id="new-group" placeholder="nom du groupe, par exemple famille">
-      <button class="act" id="add-group">Créer</button>
+      <input id="new-group" placeholder="${t("groupPh")}">
+      <button class="act" id="add-group">${t("create")}</button>
     </div>
-    <p class="row-sub" style="font-size:13px;margin:0">
-      Un groupe ouvre une app à certaines personnes sans la rendre publique.</p>`;
+    <p class="row-sub" style="font-size:13px;margin:0">${t("groupNote")}</p>`;
 
   $("invite").onclick = async () => {
     const username = $("new-username").value.trim();
     const email = $("new-email").value.trim();
-    if (!username || !email) return toast("Identifiant et email sont requis.");
+    if (!username || !email) return toast(t("inviteRequired"));
     try {
       const res = await api("/api/people", { method: "POST", body: JSON.stringify({ username, email }) });
-      toast(res.link ? "Lien d'invitation à transmettre:\n" + res.link : "Compte créé.", true);
+      toast(res.link ? t("inviteLink") + res.link : t("created"), true);
       loadPeople();
     } catch (err) {
-      toast("Échec: " + err.message);
+      toast(t("fail") + err.message);
     }
   };
 
@@ -417,7 +590,7 @@ function renderPeople(error) {
       await api("/api/groups", { method: "POST", body: JSON.stringify({ name }) });
       loadPeople();
     } catch (err) {
-      toast("Échec: " + err.message);
+      toast(t("fail") + err.message);
     }
   };
 
@@ -436,7 +609,7 @@ function renderPeople(error) {
         });
         loadPeople();
       } catch (err) {
-        toast("Échec: " + err.message);
+        toast(t("fail") + err.message);
       }
     };
   });
@@ -445,16 +618,16 @@ function renderPeople(error) {
 /* ---------- déploiement ---------- */
 
 async function upload(file) {
-  toast("Déploiement de " + file.name, true);
+  toast(t("deploying", { name: file.name }), true);
   const form = new FormData();
   form.append("bundle", file);
   try {
     const res = await fetch("/api/deploy", { method: "POST", body: form });
     const type = res.headers.get("content-type") || "";
     const data = type.includes("json") ? await res.json() : {};
-    toast(res.ok ? [data.url, ...(data.log || [])].join("\n") : "Échec: " + (data.error || res.statusText), true);
+    toast(res.ok ? [data.url, ...(data.log || [])].join("\n") : t("fail") + (data.error || res.statusText), true);
   } catch (err) {
-    toast("Échec du déploiement: " + err.message, true);
+    toast(t("deployFailed") + err.message, true);
   }
   loadApps();
 }
@@ -471,6 +644,9 @@ drop.ondrop = (e) => {
 };
 
 /* ---------- démarrage ---------- */
+
+$("lang").onclick = () => setLang(LANG === "fr" ? "en" : "fr");
+renderStatic();
 
 document.querySelectorAll("[data-view]").forEach((tab) => {
   tab.onclick = () => {
@@ -489,7 +665,7 @@ api("/api/me")
     loadApps();
     loadPeople();
   })
-  .catch((err) => toast("Accès refusé: " + err.message, true));
+  .catch((err) => toast(t("accessDenied") + err.message, true));
 
 // refresh the list, but never while a detail panel is open
 setInterval(() => { if (!state.open) loadApps(); }, 6000);
