@@ -8,7 +8,14 @@ const WAKE_RETRY_MS = 1500;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+export type ApiOptions = {
+  // Called the first time a request lands on the waiting page. Show a "waking
+  // up" state rather than a spinner: the wait is a second, but a silent spinner
+  // on a first visit reads as a broken app.
+  onWaking?: (attempt: number) => void;
+};
+
+export async function api<T>(path: string, init?: RequestInit, opts?: ApiOptions): Promise<T> {
   let res: Response | null = null;
 
   // sablier answers 200/503 with an HTML page while the container starts
@@ -17,6 +24,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     const type = res.headers.get("content-type") ?? "";
     const waitingPage = (res.status === 200 || res.status === 503) && !type.includes("json");
     if (!waitingPage) break;
+    opts?.onWaking?.(attempt + 1);
     if (attempt === WAKE_RETRIES) {
       throw new Error("le backend ne s'est pas réveillé à temps");
     }

@@ -1,0 +1,198 @@
+/* Shared rhythm. Every Nanoploy app uses this file unchanged: it holds the
+   spacing scale, the type scale, the interaction states and the quality floor.
+   It deliberately contains no colour, no typeface and no shape decision.
+
+   Those live in theme.css, which is the art direction and is rewritten from
+   scratch for every app. Two apps on the same server should look nothing alike
+   and still feel built by the same hand: that is the split. */
+
+:root {
+  /* Spacing. One scale, used everywhere, so gaps are chosen and not guessed. */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+  --s8: 72px;
+
+  /* Type. Ratios, not sizes: the art direction sets --t-base and the scale
+     follows, so a dense utility app and an airy reading app share proportions
+     without sharing a size. */
+  --t-base: 15px;
+  --t-caption: calc(var(--t-base) * 0.8);
+  --t-body: var(--t-base);
+  --t-lead: calc(var(--t-base) * 1.2);
+  --t-title: calc(var(--t-base) * 1.7);
+  --t-display: calc(var(--t-base) * 2.8);
+
+  --line-tight: 1.15;
+  --line-body: 1.55;
+  --measure: 66ch;
+
+  /* Motion. One duration, one curve: an app that animates in three different
+     speeds reads as assembled rather than designed. */
+  --motion: 160ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--t-body);
+  line-height: var(--line-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  line-height: var(--line-tight);
+  margin: 0;
+  text-wrap: balance;
+}
+
+h1 { font-size: var(--t-title); }
+h2 { font-size: var(--t-lead); }
+h3 { font-size: var(--t-body); }
+
+p { margin: 0; max-width: var(--measure); }
+
+/* Numbers in a list must line up. Anything the user compares vertically gets
+   tabular figures, or the column reads as ragged however good the type is. */
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Layout primitives. Enough to build a screen, not a component library. */
+.page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--s7) var(--s4) var(--s8);
+}
+
+.stack > * + * { margin-top: var(--s4); }
+.stack-tight > * + * { margin-top: var(--s2); }
+.stack-loose > * + * { margin-top: var(--s6); }
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+
+.spread {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+
+.muted { color: var(--muted); }
+.caption { font-size: var(--t-caption); color: var(--muted); }
+
+/* Controls. Sized for a thumb, styled by the theme. */
+input,
+textarea,
+select,
+button {
+  font: inherit;
+  color: inherit;
+  border-radius: var(--radius);
+}
+
+input,
+textarea,
+select {
+  min-height: 44px;
+  padding: var(--s2) var(--s3);
+  background: var(--field);
+  border: var(--line-width) solid var(--line);
+  min-width: 0;
+  width: 100%;
+}
+
+input::placeholder,
+textarea::placeholder { color: var(--muted); }
+
+button {
+  min-height: 44px;
+  padding: var(--s2) var(--s4);
+  background: transparent;
+  border: var(--line-width) solid var(--line);
+  cursor: pointer;
+  transition: border-color var(--motion) var(--ease), background var(--motion) var(--ease);
+}
+
+button:hover:not(:disabled) { border-color: var(--accent); }
+
+button[data-primary] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Keyboard users must always see where they are. Never remove this. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* States. An app that only renders its happy path feels broken the first time
+   anything is slow, empty or wrong, which on a scale-to-zero platform is the
+   very first visit. */
+.empty,
+.error,
+.waking {
+  padding: var(--s5) 0;
+  color: var(--muted);
+}
+
+.error { color: var(--danger); }
+
+.waking::after {
+  content: "";
+  display: inline-block;
+  width: 1em;
+  animation: dots 1.2s steps(4, end) infinite;
+}
+
+@keyframes dots {
+  0% { content: ""; }
+  25% { content: "."; }
+  50% { content: ".."; }
+  75% { content: "..."; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .page { padding: var(--s5) var(--s4) var(--s7); }
+  :root { --t-display: calc(var(--t-base) * 2.1); }
+}
