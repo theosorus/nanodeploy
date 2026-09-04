@@ -1,13 +1,12 @@
 FROM node:20-slim AS build
 WORKDIR /app
 # The lockfile keeps the image reproducible. dockerode drags in ssh2, which
-# optionally loads the native cpu-features binding; esbuild cannot bundle a
-# .node file, so the build marks it external. ssh2 wraps that require in a
-# try/catch and we only ever speak tcp to the socket proxy, so it is never
-# needed at runtime.
+# compiles native bindings (cpu-features, sshcrypto) that esbuild cannot bundle;
+# build.mjs marks every .node external. ssh2 wraps those requires in try/catch
+# and we only ever speak tcp to the socket proxy, so they are never needed.
 COPY package.json package-lock.json ./
 RUN npm ci
-COPY tsconfig.json ./
+COPY tsconfig.json build.mjs ./
 COPY src ./src
 RUN npm run build
 
