@@ -3,7 +3,9 @@
 **Your own Vercel, on a 4 GB box in a cupboard.** Apps sleep when nobody is
 using them, wake in about a second, and share one Postgres and one login.
 
-![The Nanodeploy dashboard](docs/dashboard.png)
+<p align="center">
+  <img src="docs/dashboard.png" alt="The Nanodeploy dashboard: memory meter and the list of deployed apps" width="660">
+</p>
 
 ![MIT](https://img.shields.io/badge/license-MIT-1f4b8f) ![idle footprint](https://img.shields.io/badge/idle-~180%20MB-1f8f60) ![built for](https://img.shields.io/badge/built%20for-4%20GB%20ARM-7a5610)
 
@@ -74,7 +76,7 @@ env: [OPENAI_API_KEY]   # names only, values are typed in the dashboard
 Click an app to get its access mode, its environment variables, its recent logs
 and how much memory it is using right now.
 
-![An app's detail panel](docs/app-detail.png)
+<img src="docs/app-detail.png" alt="An app's detail panel: access mode, environment variables, recent logs" width="560">
 
 Access is a dropdown, not a redeploy. **Private** means any account you created.
 **Groups** narrows it to the people you choose. **Public** means the whole
@@ -85,7 +87,7 @@ write-only in the interface: you can replace a secret, you cannot read it back.
 
 ## One account for everything
 
-![The people tab](docs/people.png)
+<img src="docs/people.png" alt="The people tab: invite by email, group chips, admin group" width="560">
 
 Accounts live in Pocket ID and there is no password anywhere: you invite someone
 by username and email, hand them a single-use link, and they enroll a passkey.
