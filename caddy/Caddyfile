@@ -1,6 +1,13 @@
 {
 	# cloudflared terminates TLS, caddy only serves plain http internally
 	auto_https off
+	# The proxy in front terminates TLS and says so with X-Forwarded-Proto.
+	# Caddy overwrites that header with its own scheme unless the client is a
+	# trusted proxy, so without this tinyauth builds every login redirect as
+	# http:// and drops browsers back to plain http after they sign in.
+	servers {
+		trusted_proxies static private_ranges
+	}
 	# loopback only: the admin API has no auth, and apps share a network with
 	# caddy. The control plane reloads caddy by docker exec, not through this.
 	admin localhost:2019
