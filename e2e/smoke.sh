@@ -106,7 +106,7 @@ check "$(code -H "Host: smoke.$DOM" $BASE/)" "200" "static files served by caddy
 echo "== wake on request =="
 docker stop -t 1 app-smoke >/dev/null 2>&1
 B=""
-for i in $(seq 1 15); do
+for _ in $(seq 1 15); do
   B=$(json -H "Host: smoke.$DOM" $BASE/api/ping)
   echo "$B" | grep -q '"ok":true' && break
   sleep 0.4
@@ -115,7 +115,7 @@ echo "$B" | grep -q '"ok":true' && ok "backend answers after sablier wake" || ba
 check "$(docker inspect -f '{{.State.Status}}' app-smoke)" "running" "container running"
 
 echo "== prune and delete =="
-for i in 1 2; do
+for _ in 1 2; do
   curl -s -o /dev/null -X POST -H "Host: deploy.$DOM" -H "$AUTH" -F bundle=@$WORK/smoke.zip $BASE/api/deploy
 done
 N=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -c '^nanodeploy/smoke:')

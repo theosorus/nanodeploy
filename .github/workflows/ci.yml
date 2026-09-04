@@ -36,7 +36,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: bash -n install.sh e2e/smoke.sh
-      - uses: ludeeus/action-shellcheck@master
+      # pinned: an action on @master can change under you between two runs
+      - uses: ludeeus/action-shellcheck@2.0.0
         with:
           severity: warning
 
