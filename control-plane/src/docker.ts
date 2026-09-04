@@ -10,7 +10,6 @@ const MEM_MB = Number(process.env.DEFAULT_APP_MEMORY_MB ?? 256);
 // nanodeploy_edge and must stay unreachable from an app: an app is arbitrary
 // code, and socket-proxy:2375 is a root escape by design.
 export const APPS_NETWORK = "nanodeploy_apps";
-export const DATA_NETWORK = "nanodeploy_data";
 export const dataVolume = (slug: string) => `nanodeploy_data_${slug}`;
 
 export const containerName = (slug: string) => `app-${slug}`;
@@ -110,11 +109,17 @@ export async function runContainer(opts: {
       ReadonlyRootfs: true,
       Tmpfs: { "/tmp": "rw,noexec,nosuid,size=16m" },
       Binds: [`${dataVolume(opts.slug)}:/data`],
+      // apps join only nanodeploy_apps, which carries caddy and postgres. They
+      // used to also join nanodeploy_data to reach postgres, but the control
+      // plane lives on that network too: an app could open a tcp connection to
+      // control-plane:8000 and, by sending its own Remote-* headers (caddy is
+      // the only thing that strips them, and it was bypassed), drive the whole
+      // platform as an admin. Postgres is now reachable through nanodeploy_apps
+      // instead, so an app and the control plane share no network at all.
       NetworkMode: APPS_NETWORK,
       // no PortBindings: the app must only be reachable through caddy
     },
   });
-  await docker.getNetwork(DATA_NETWORK).connect({ Container: container.id });
   await container.start();
   return container.id;
 }

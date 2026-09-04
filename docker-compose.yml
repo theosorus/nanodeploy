@@ -121,7 +121,11 @@ services:
       - max_connections=60
     volumes:
       - pg_data:/var/lib/postgresql/data
-    networks: [data]
+    # data carries the control plane, apps carries the app containers. Postgres
+    # sits on both so each side reaches it on its own network, and apps never
+    # share a network with the control plane. Postgres publishes no port, so
+    # being on the non-internal apps network does not expose it to the internet.
+    networks: [data, apps]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 20s
