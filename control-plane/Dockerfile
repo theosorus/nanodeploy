@@ -1,7 +1,10 @@
 FROM node:20-slim AS build
 WORKDIR /app
-# the lockfile keeps the image build reproducible: dockerode's dependency tree
-# moved to native modules (cpu-features via ssh2) and silently broke the bundle
+# The lockfile keeps the image reproducible. dockerode drags in ssh2, which
+# optionally loads the native cpu-features binding; esbuild cannot bundle a
+# .node file, so the build marks it external. ssh2 wraps that require in a
+# try/catch and we only ever speak tcp to the socket proxy, so it is never
+# needed at runtime.
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY tsconfig.json ./
