@@ -1,8 +1,8 @@
 # Nanodeploy
 
-**Your own Vercel, on a 4 GB box in a cupboard.** Apps sleep when nobody is
-using them, wake in about a second, and share one Postgres and one login. It
-ships with a **Claude skill that writes and deploys new apps from a sentence** —
+**Your own Vercel, on a 4 GB box in a cupboard.** Apps sleep when nobody uses
+them, wake in about a second, and share one login and one Postgres. Ships with a
+**Claude skill that writes and deploys new apps from a sentence** —
 [jump to it](#build-apps-by-asking).
 
 <p align="center">
@@ -15,21 +15,18 @@ ships with a **Claude skill that writes and deploys new apps from a sentence** �
 
 ## The idea
 
-Small personal apps are cheap to write and annoying to host. A budget tracker
-you open twice a week does not deserve a VPS, and putting five of them on one
-tiny machine means five idle Node processes eating the RAM you needed for the
-sixth.
+A budget tracker you open twice a week doesn't deserve a VPS. But five of them on
+one small machine means five idle Node processes eating the RAM you needed for
+the sixth.
 
-So Nanodeploy stops them. An app with no traffic is a stopped container: zero
-RAM, zero CPU. The next request to reach it starts it back up before the page
-finishes loading. On a Jetson Nano with five apps deployed, two of them awake,
-the whole machine sits at **1.4 GB of 4 GB**, and that includes Postgres, an
-identity provider and the gateway.
+So Nanodeploy stops them. An app with no traffic is a stopped container — zero
+RAM, zero CPU — and the next request starts it back up before the page finishes
+loading. A Jetson Nano with five apps deployed sits at **1.4 GB of 4 GB**,
+Postgres, identity provider and gateway included.
 
-You still get the parts that make hosting worth it: a real domain per app, HTTPS,
-one account across everything, a database per app, and a deploy that is one
-command or one drag of a `.zip`. And because every app follows the same fixed
-stack, an AI can write one end to end — see [Build apps by asking](#build-apps-by-asking).
+You still get what makes hosting worth it: a domain per app, HTTPS, one account
+across everything, a database per app, and a deploy that is one command or one
+drag of a `.zip`.
 
 ## What it costs to run
 
@@ -43,26 +40,23 @@ stack, an AI can write one end to end — see [Build apps by asking](#build-apps
 | control plane | uploads, provisioning, routes | ~50 MB |
 | two socket proxies | least-privilege Docker access | ~10 MB |
 
-A woken app costs about 40 MB and is capped at 256 MB. An app that must answer
-instantly can opt out of sleeping for that same 40 MB, permanently.
+A woken app costs ~40 MB, capped at 256 MB. One that must answer instantly can
+opt out of sleeping for that same 40 MB, permanently.
 
 ## Deploying
 
 ```bash
 cp -r templates/app-template my-app && cd my-app
 npm install
-export NANODEPLOY_URL=https://deploy.apps.example.com
-export NANODEPLOY_TOKEN=...
+export NANODEPLOY_URL=https://deploy.apps.example.com NANODEPLOY_TOKEN=...
 npm run deploy
 ```
 
-Your machine builds; the server never compiles anything heavy. It receives a zip
-holding `dist/`, `server.js`, `app.yaml` and `migrations/`, builds a small image,
-runs the migrations once, and puts the container straight back to sleep.
+Your machine builds; the server compiles nothing. It gets a zip, builds a small
+image, runs migrations once, and puts the container back to sleep. No terminal?
+Drag the zip onto the dashboard.
 
-No terminal handy? Drag the zip onto the dashboard.
-
-The whole contract with the platform is one file:
+The whole contract is one file:
 
 ```yaml
 name: Expenses
@@ -76,34 +70,24 @@ env: [OPENAI_API_KEY]   # names only, values are typed in the dashboard
 
 ## Running it
 
-Click an app to get its access mode, its environment variables, its recent logs
-and how much memory it is using right now.
-
 <img src="docs/app-detail.png" alt="An app's detail panel: access mode, environment variables, recent logs" width="560">
 
-Access is a dropdown, not a redeploy. **Private** means any account you created.
-**Groups** narrows it to the people you choose. **Public** means the whole
-internet, and the dashboard says so out loud before you do it.
-
-Environment variables are set here and never live in your repo. Values are
-write-only in the interface: you can replace a secret, you cannot read it back.
+Click an app for its access mode, environment variables, logs and live memory.
+Access is a dropdown, not a redeploy: **private** (accounts you created),
+**groups** (people you pick), or **public** (the whole internet — the dashboard
+warns you). Env values are write-only: you can replace a secret, not read it back.
 
 ## One account for everything
 
 <img src="docs/people.png" alt="The people tab: invite by email, group chips, admin group" width="560">
 
-Accounts live in Pocket ID and there is no password anywhere: you invite someone
-by username and email, hand them a single-use link, and they enroll a passkey.
-That one account then opens every app they are allowed to see, and your apps
-never write a line of authentication code — the gateway hands them the user's
-identity in a header.
+No passwords anywhere. Invite by email, hand over a single-use link, the person
+enrolls a passkey. That one account opens every app they're allowed to see, and
+your apps write zero auth code — the gateway hands them the user in a header.
 
-Groups created here show up in every app's access selector.
-
-Because the console can deploy code and drive Docker, whoever reaches it
-effectively has root on the machine. A fresh install is single-user, so it stays
-open; the moment you invite a second person the dashboard makes you pick an admin
-group first, and warns in red until you do.
+The console can deploy code and drive Docker, so whoever reaches it has root on
+the machine. A fresh install is single-user and open; invite a second person and
+the dashboard makes you pick an admin group first.
 
 ## How it is wired
 
@@ -139,107 +123,78 @@ flowchart LR
     sp2 -.-> dock
 ```
 
-Read it as one rule: **an app can reach the gateway and its own database, and
-nothing else.** The Docker socket, Sablier, tinyauth and the control plane all
-live on a network an app is not connected to, because an app is arbitrary code
-and reaching the socket is a root escape. Neither Sablier nor the control plane
-touches the raw socket either; each gets a proxy allowed to do only its job.
+One rule: **an app reaches the gateway and its own database, nothing else.** The
+Docker socket, Sablier, tinyauth and the control plane sit on a network no app
+joins — an app is arbitrary code, and the socket is a root escape. Even Sablier
+and the control plane never touch the raw socket; each gets a proxy scoped to its
+job. Apps run non-root, all capabilities dropped, read-only filesystem, 256 MB
+cap, no published port.
 
-Apps run as a non-root user with every capability dropped, a read-only root
-filesystem, a 256 MB cap and no published port.
+## Install
 
-## What you need
-
-- A machine with Docker and Compose v2, and storage that is not an SD card.
-- A domain, and a **wildcard** `*.apps.example.com` pointing at the machine. A
-  [Cloudflare tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
-  is the easiest way through a home router; any TLS-terminating proxy works.
-- Node 20 on your laptop, to build apps.
+You need Docker + Compose v2 (on storage that isn't an SD card), a domain with a
+**wildcard** `*.apps.example.com` pointing at the machine (a
+[Cloudflare tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
+is easiest behind a home router), and Node 20 on your laptop.
 
 ```bash
-git clone https://github.com/<you>/nanodeploy && cd nanodeploy
+git clone https://github.com/theosorus/nanodeploy && cd nanodeploy
 ./install.sh          # writes .env with fresh secrets, then stops
 $EDITOR .env          # set APPS_DOMAIN and APPS_DIR
 ./install.sh          # builds and starts everything
 ```
 
 Then point your tunnel at `http://localhost:8080`, create your account at
-`https://id.apps.example.com`, wire an OIDC client for tinyauth, and drop a
-Pocket ID API key into `.env`. The installer prints each step with your own
-domain filled in.
+`https://id.apps.example.com`, wire an OIDC client for tinyauth, and put a Pocket
+ID API key in `.env`. The installer prints each step with your domain filled in.
 
-> **The wildcard is not optional.** Two settings share the word: your tunnel's
-> ingress rule decides where a request goes once it arrives, and the DNS record
-> is what makes it arrive. With the tunnel rule but no `*` DNS record, every app
-> deploys and runs perfectly while the browser says "server not found". Deploys
-> warn about it, but only after the fact.
+> **The wildcard is not optional.** The tunnel rule says where a request goes
+> once it arrives; the `*` DNS record is what makes it arrive. With the first but
+> not the second, every app deploys and runs while the browser says "server not
+> found".
 
-## Living with it
-
-Install the unit once and the machine comes back on its own after a power cut:
-
-```bash
-sudo cp nanodeploy.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable nanodeploy
-```
-
-On boot the control plane reconciles: it re-reads the `apps` table and rebuilds
-any missing container, image or route from the bundles on disk, then puts the
-cold ones back to sleep. A wiped Docker data-root heals the same way. Force it
-by hand with `POST /api/reconcile`.
-
-Two habits worth having:
-
-```bash
-# never "docker compose down": it deletes the networks, and app containers
-# are not part of the compose project, so they become unstartable
-docker compose stop
-
-# nightly, every app database in one file
-docker compose exec -T postgres pg_dumpall -U postgres | gzip > backups/pg-$(date +%F).sql.gz
-```
+After a power cut the machine comes back on its own, if you install the unit
+once (`sudo cp nanodeploy.service /etc/systemd/system/ && sudo systemctl enable
+nanodeploy`): the control plane rebuilds any missing container, image or route
+from the bundles on disk. Back up with `pg_dumpall`, and stop with `docker
+compose stop`, never `down` — `down` deletes the networks and the app containers
+become unstartable.
 
 ## Build apps by asking
 
-The reason a whole app can be generated reliably here, when "build me an app" to
-a chatbot usually cannot: the stack is fixed. One frontend, one backend, one
-database, one auth model, deployed one way. There is nothing to decide wrong.
-Nanodeploy turns that constraint into a feature — it ships a Claude skill,
-`skills/nanodeploy-app/`, that has the whole contract built in.
-
-Install it, then just describe what you want:
+"Build me an app" fails with a chatbot because there are a thousand ways to
+build it. Here there is one: fixed frontend, backend, database, auth, deploy.
+Nothing to get wrong. So Nanodeploy ships a Claude skill,
+[`skills/nanodeploy-app/`](skills/nanodeploy-app), with the whole contract built
+in. Install it and describe what you want:
 
 > **You:** build me something to track shared expenses with my flatmates
 
-The skill asks the few questions that actually change the result — who it is
-for, what data it holds, and, crucially, **three named art directions** so the
-app does not come out looking like every other generated one — then writes the
-schema, the API, the frontend and the manifest, and deploys it. You get a URL.
+It asks the questions that change the result — who it's for, what data, and
+**three named art directions** so it doesn't look like every other generated app
+— then writes the schema, API, frontend and manifest and deploys it. You get a
+URL. It also knows what quietly breaks a sleeping app (no in-memory state, no
+timers, the first-wake retry, an `ownerId` filter on every query), so the result
+survives its second visit.
 
-It knows the things that quietly break a scale-to-zero app: no in-memory state,
-no timers, the retry wrapper for the first wake, an `ownerId` filter on every
-query. So the app it produces is not a demo that falls over on the second visit —
-it is one that runs on the constraints this platform actually has.
-
-The [`app-template/`](templates/app-template) it builds from is also a fine
-starting point by hand: `cp -r`, edit, `npm run deploy`.
+Prefer to write it yourself? [`app-template/`](templates/app-template) is the
+same starting point: `cp -r`, edit, `npm run deploy`.
 
 ## What it does not do
 
 Stated plainly, because finding out later is worse:
 
 - **No rollback.** A deploy replaces the container. Keep your bundles.
-- **Apps can see each other.** They share a network. Do not put an app open to
-  strangers next to something sensitive.
-- **App secrets sit in clear text** in the control database. Encrypt your backups.
-- **Nothing is backed up for you.** One shared Postgres is one point of loss for
-  every app. Set up `pg_dumpall` on day one.
-- **Websockets do not survive sleeping.** Poll, or use SSE that reconnects.
-- **The first request after sleeping gets a waiting page**, not JSON. The
-  template's fetch wrapper retries it; a bare `fetch` breaks in silence.
+- **Apps see each other** on a shared network. Don't put an app open to strangers
+  next to something sensitive.
+- **App secrets sit in clear text** in the control database. Encrypt backups.
+- **Nothing is backed up for you.** One shared Postgres, one point of loss.
+- **Websockets don't survive sleeping.** Poll, or use reconnecting SSE.
+- **The first request after sleeping gets a waiting page**, not JSON — the
+  template's fetch wrapper retries it; a bare `fetch` breaks silently.
 - **No rate limiting.** Put the console behind an outer access layer.
 
-[SECURITY.md](SECURITY.md) has the full threat model: what is enforced, and what
+[SECURITY.md](SECURITY.md) is the full threat model: what is enforced, and what
 is deliberately not.
 
 ## Licence
