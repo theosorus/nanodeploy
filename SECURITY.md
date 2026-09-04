@@ -26,7 +26,7 @@ days; this is a hobby project, not a vendor.
 
 | Boundary | How |
 |---|---|
-| Apps cannot reach Docker | apps sit on `nanodeploy_apps`, which only carries Caddy and Postgres. The socket proxies, Sablier, tinyauth and the control plane are on `nanodeploy_edge` and unreachable from an app. |
+| Apps cannot reach Docker or the control plane | apps sit only on `nanodeploy_apps`, which carries Caddy and Postgres and nothing else. The socket proxies, Sablier, tinyauth and the control plane share no network with any app, so an app cannot reach `control-plane:8000` and forge `Remote-*` headers to drive the platform. |
 | Apps cannot escalate in their container | non-root user, `cap_drop: ALL`, `no-new-privileges`, read-only root filesystem (only the `/data` volume and a `noexec` `/tmp` are writable), 256 MB memory cap, 128 pid cap. |
 | Apps cannot read each other's data | one Postgres database and one role per app, `CONNECT` revoked from `public` on every database including the platform's own and the `postgres` maintenance database. |
 | Identity cannot be forged | Caddy strips every inbound `Remote-*` header before forward-auth re-injects it, and `request_header` is explicitly ordered before `forward_auth`. |
@@ -42,6 +42,17 @@ These are real. Decide whether they matter for your setup before you deploy.
 - **Apps see each other on the shared network.** Any app can open a TCP
   connection to any other app and to Caddy. There is no per-app network. Do not
   host an app open to untrusted users next to something sensitive.
+- **Apps reach the internet.** The apps network is not `internal`, because an
+  app may legitimately call an external API (that is why `env` exists). The flip
+  side is that a compromised app can send data out. Nothing on this platform
+  stops it.
+- **Apps can reach other services on the same host.** Through the Docker
+  network gateway, an app can connect to anything else you run on the machine
+  that listens on `0.0.0.0`, including services outside nanodeploy and the host's
+  own SSH. Bind your other services to `127.0.0.1` or a non-Docker interface, or
+  firewall the Docker bridge, if that matters to you. Apps cannot reach the
+  control plane, Sablier, tinyauth or the Docker socket proxies: those sit on a
+  network no app is connected to.
 - **App secrets are stored in clear text.** Environment variables and each app's
   Postgres password live in the `apps` table of the control database. Anyone who
   can read that database, or a backup of it, reads the secrets. Encrypt your

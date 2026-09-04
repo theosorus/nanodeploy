@@ -160,6 +160,16 @@ const slugParam = (c: Context): string | null => {
   return SLUG_RE.test(slug) ? slug : null;
 };
 
+// A malformed JSON body should be the caller's fault (400), not a 500 with a
+// stack trace. c.req.json() throws on bad input; this turns that into null.
+async function jsonBody<T>(c: Context): Promise<T | null> {
+  try {
+    return await c.req.json<T>();
+  } catch {
+    return null;
+  }
+}
+
 /* ---------- deploy ---------- */
 
 app.post("/api/deploy", async (c) => {
@@ -437,7 +447,7 @@ app.post("/api/apps/:slug/access", async (c) => {
   return runLocked(slug, async () => {
     const current = await store.getApp(slug);
     if (!current) return c.json({ error: "unknown app" }, 404);
-    const { access, groups } = await c.req.json<{ access?: string; groups?: string[] }>();
+    const { access, groups } = (await jsonBody<{ access?: string; groups?: string[] }>(c)) ?? {};
     if (access !== "public" && access !== "private" && access !== "groups") {
       return c.json({ error: "invalid access mode" }, 400);
     }
@@ -474,7 +484,8 @@ app.post("/api/apps/:slug/env", async (c) => {
   return runLocked(slug, async () => {
     const current = await store.getApp(slug);
     if (!current) return c.json({ error: "unknown app" }, 404);
-    const patch = await c.req.json<Record<string, string>>();
+    const patch = await jsonBody<Record<string, string>>(c);
+    if (!patch || typeof patch !== "object") return c.json({ error: "invalid body" }, 400);
     const valid = Object.entries(patch).every(
       ([k, v]) => ENV_KEY_RE.test(k) && typeof v === "string" && v.length <= 16_384,
     );
@@ -591,11 +602,11 @@ app.post("/api/people", async (c) => {
       409,
     );
   }
+  const { username, email, firstName } = (await jsonBody<Record<string, string>>(c)) ?? {};
+  if (!username?.trim() || !email?.trim()) {
+    return c.json({ error: "username and email are required" }, 400);
+  }
   try {
-    const { username, email, firstName } = await c.req.json<Record<string, string>>();
-    if (!username?.trim() || !email?.trim()) {
-      return c.json({ error: "username and email are required" }, 400);
-    }
     return c.json(await people.invite({ username: username.trim(), email: email.trim(), firstName }));
   } catch (err: any) {
     return c.json({ error: err.message }, 502);
@@ -603,7 +614,7 @@ app.post("/api/people", async (c) => {
 });
 
 app.post("/api/people/:id/groups", async (c) => {
-  const { groupIds } = await c.req.json<{ groupIds: string[] }>();
+  const { groupIds } = (await jsonBody<{ groupIds: string[] }>(c)) ?? {};
   if (!Array.isArray(groupIds) || groupIds.some((g) => typeof g !== "string")) {
     return c.json({ error: "groupIds must be a list of strings" }, 400);
   }
@@ -617,7 +628,7 @@ app.delete("/api/people/:id", async (c) => {
 });
 
 app.post("/api/groups", async (c) => {
-  const { name } = await c.req.json<{ name: string }>();
+  const { name } = (await jsonBody<{ name: string }>(c)) ?? {};
   const clean = String(name ?? "").replace(/[\r\n"\\]/g, "").trim().slice(0, 64);
   if (!GROUP_NAME_RE.test(clean)) {
     return c.json({ error: "group name not allowed in caddy config" }, 400);
@@ -634,8 +645,13 @@ app.post("/api/admin-group", async (c) => {
       400,
     );
   }
-  const { group } = await c.req.json<{ group: string }>();
-  const clean = String(group ?? "").replace(/[\r\n"\\]/g, "").trim().slice(0, 64);
+  const body = await jsonBody<{ group?: string }>(c);
+  // a malformed body must not be read as an empty group and silently clear the
+  // admin group: require a real object, with the key even if its value is empty
+  if (!body || typeof body !== "object" || !("group" in body)) {
+    return c.json({ error: "expected a JSON body with a group field" }, 400);
+  }
+  const clean = String(body.group ?? "").replace(/[\r\n"\\]/g, "").trim().slice(0, 64);
 
   if (!clean) {
     // clearing gives every account full control again: too big a step to take
