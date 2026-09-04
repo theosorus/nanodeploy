@@ -1,19 +1,19 @@
-name: nanoploy
+name: nanodeploy
 
 # external: created once by install.sh. App containers live on these networks
 # without being part of this compose project, so compose must never delete them.
 networks:
   edge:
-    name: nanoploy_edge
+    name: nanodeploy_edge
     external: true
   data:
-    name: nanoploy_data
+    name: nanodeploy_data
     external: true
   # app containers join this one: it only carries caddy and postgres. The
-  # platform services on nanoploy_edge (socket-proxy especially) must stay
+  # platform services on nanodeploy_edge (socket-proxy especially) must stay
   # unreachable from an app, which is arbitrary code.
   apps:
-    name: nanoploy_apps
+    name: nanodeploy_apps
     external: true
 
 volumes:
@@ -29,7 +29,7 @@ services:
       context: ./caddy
       args:
         CADDY_VERSION: ${CADDY_VERSION:-2.11.4}
-    image: nanoploy/caddy:with-sablier
+    image: nanodeploy/caddy:with-sablier
     restart: unless-stopped
     environment:
       APPS_DOMAIN: ${APPS_DOMAIN}
@@ -81,7 +81,7 @@ services:
     networks: [edge]
 
   # the control plane's own proxy: it builds images, so this one is powerful.
-  # Nothing on nanoploy_apps can reach it, which is the whole point of the
+  # Nothing on nanodeploy_apps can reach it, which is the whole point of the
   # network split: reaching :2375 is equivalent to root on the host.
   socket-proxy:
     image: tecnativa/docker-socket-proxy:${SOCKET_PROXY_VERSION:-0.3.0}
@@ -108,7 +108,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: nanoploy
+      POSTGRES_DB: nanodeploy
     command:
       - postgres
       - -c
@@ -164,7 +164,7 @@ services:
 
   control-plane:
     build: ./control-plane
-    image: nanoploy/control-plane:latest
+    image: nanodeploy/control-plane:latest
     restart: unless-stopped
     environment:
       DOCKER_HOST: tcp://socket-proxy:2375
@@ -176,7 +176,7 @@ services:
       # optional: browser sessions must be in this tinyauth group to drive the
       # platform. Leave empty for a single-admin setup.
       ADMIN_GROUP: ${ADMIN_GROUP:-}
-      POSTGRES_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/nanoploy
+      POSTGRES_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/nanodeploy
       DEFAULT_APP_MEMORY_MB: 256
       POCKETID_URL: http://pocket-id:1411
       POCKETID_PUBLIC_URL: https://id.${APPS_DOMAIN}

@@ -7,11 +7,11 @@ const docker = new Docker();
 const MEM_MB = Number(process.env.DEFAULT_APP_MEMORY_MB ?? 256);
 // app containers only share a network with caddy and postgres. The platform
 // services (socket-proxy, sablier, tinyauth, control plane) live on
-// nanoploy_edge and must stay unreachable from an app: an app is arbitrary
+// nanodeploy_edge and must stay unreachable from an app: an app is arbitrary
 // code, and socket-proxy:2375 is a root escape by design.
-export const APPS_NETWORK = "nanoploy_apps";
-export const DATA_NETWORK = "nanoploy_data";
-export const dataVolume = (slug: string) => `nanoploy_data_${slug}`;
+export const APPS_NETWORK = "nanodeploy_apps";
+export const DATA_NETWORK = "nanodeploy_data";
+export const dataVolume = (slug: string) => `nanodeploy_data_${slug}`;
 
 export const containerName = (slug: string) => `app-${slug}`;
 
@@ -31,7 +31,7 @@ CMD ["node", "${entry}"]
 
 export async function buildImage(dir: string, slug: string, entry: string, port: number) {
   await writeFile(join(dir, "Dockerfile"), DOCKERFILE(entry, port));
-  const tag = `nanoploy/${slug}:${Date.now()}`;
+  const tag = `nanodeploy/${slug}:${Date.now()}`;
   const context = tar.pack(dir, { entries: [entry, "Dockerfile"] });
   const stream = await docker.buildImage(context as any, { t: tag });
   await new Promise<void>((resolve, reject) => {
@@ -91,7 +91,7 @@ export async function runContainer(opts: {
       // a warm app is never managed by sablier, docker keeps it alive instead
       "sablier.enable": opts.warm ? "false" : "true",
       "sablier.group": opts.slug,
-      "nanoploy.slug": opts.slug,
+      "nanodeploy.slug": opts.slug,
     },
     Env: Object.entries({ ...opts.env, PORT: String(opts.port) }).map(
       ([k, v]) => `${k}=${v}`,
@@ -239,15 +239,15 @@ export async function hostMemory() {
   };
 }
 
-// Deploys tag images nanoploy/<slug>:<timestamp>, one per deploy. Old tags are
+// Deploys tag images nanodeploy/<slug>:<timestamp>, one per deploy. Old tags are
 // unreachable once the container has been recreated from the new one, so drop
-// every nanoploy image except those the database still references. Removing an
+// every nanodeploy image except those the database still references. Removing an
 // image a container still uses fails, which just means we keep one extra image.
 export async function pruneImages(keep: Set<string>) {
   const list = await docker.listImages();
   for (const img of list) {
     for (const tag of img.RepoTags ?? []) {
-      if (!tag.startsWith("nanoploy/") || keep.has(tag)) continue;
+      if (!tag.startsWith("nanodeploy/") || keep.has(tag)) continue;
       try {
         await docker.getImage(tag).remove();
       } catch {
@@ -262,7 +262,7 @@ export async function pruneImages(keep: Set<string>) {
 // bad site file would disable every new app with no trace anywhere.
 // compose names it <project>-caddy-1 and the project name is pinned in
 // docker-compose.yml, but a fork that renames the project needs a way out
-const CADDY_CONTAINER = process.env.CADDY_CONTAINER ?? "nanoploy-caddy-1";
+const CADDY_CONTAINER = process.env.CADDY_CONTAINER ?? "nanodeploy-caddy-1";
 
 export async function reloadCaddy() {
   const caddy = docker.getContainer(CADDY_CONTAINER);

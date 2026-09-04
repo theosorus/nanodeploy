@@ -18,7 +18,7 @@
 }
 
 # reusable forward-auth snippet, imported by every private app
-(nanoploy_auth) {
+(nanodeploy_auth) {
 	forward_auth tinyauth:3000 {
 		uri /api/auth/caddy
 		copy_headers Remote-User Remote-Name Remote-Email Remote-Groups Remote-Sub
@@ -26,7 +26,7 @@
 }
 
 # identity headers are gateway-owned, never accept them from a client
-(nanoploy_strip) {
+(nanodeploy_strip) {
 	request_header -Remote-User
 	request_header -Remote-Name
 	request_header -Remote-Email
@@ -43,7 +43,7 @@ http://id.{$APPS_DOMAIN} {
 }
 
 http://deploy.{$APPS_DOMAIN} {
-	import nanoploy_strip
+	import nanodeploy_strip
 	# the console deploys code and drives docker: never let it be framed, and
 	# never leak its url to an app the admin clicks through to
 	header {
@@ -62,7 +62,7 @@ http://deploy.{$APPS_DOMAIN} {
 		reverse_proxy control-plane:8000
 	}
 	handle {
-		import nanoploy_auth
+		import nanodeploy_auth
 		reverse_proxy control-plane:8000
 	}
 }

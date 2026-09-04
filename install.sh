@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Nanoploy installer. Run once on the server, as a user in the docker group.
+# Nanodeploy installer. Run once on the server, as a user in the docker group.
 set -euo pipefail
 
 say() { printf '\n\033[1m%s\033[0m\n' "$1"; }
@@ -75,9 +75,9 @@ done
 ok "configuration looks sane"
 
 mkdir -p "$APPS_DIR"
-docker network create nanoploy_edge 2>/dev/null && ok "network nanoploy_edge" || ok "network nanoploy_edge exists"
-docker network create --internal nanoploy_data 2>/dev/null && ok "network nanoploy_data" || ok "network nanoploy_data exists"
-docker network create nanoploy_apps 2>/dev/null && ok "network nanoploy_apps" || ok "network nanoploy_apps exists"
+docker network create nanodeploy_edge 2>/dev/null && ok "network nanodeploy_edge" || ok "network nanodeploy_edge exists"
+docker network create --internal nanodeploy_data 2>/dev/null && ok "network nanodeploy_data" || ok "network nanodeploy_data exists"
+docker network create nanodeploy_apps 2>/dev/null && ok "network nanodeploy_apps" || ok "network nanodeploy_apps exists"
 ok "apps dir $APPS_DIR"
 
 say "3/5 building the caddy image with the sablier plugin"
@@ -109,8 +109,8 @@ cat <<TXT
   5. Open https://deploy.$APPS_DOMAIN, People tab, and pick an admin group.
      Until you do, every account that can sign in controls this server.
   6. To bring everything back after a power cut:
-       sudo cp nanoploy.service /etc/systemd/system/
-       sudo systemctl daemon-reload && sudo systemctl enable nanoploy
+       sudo cp nanodeploy.service /etc/systemd/system/
+       sudo systemctl daemon-reload && sudo systemctl enable nanodeploy
      Adjust WorkingDirectory and RequiresMountsFor inside the file first.
   7. Your deploy token is in .env as DEPLOY_TOKEN. Keep it in your password
      manager, the CLI needs it.

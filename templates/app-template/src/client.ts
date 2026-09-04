@@ -26,7 +26,7 @@ export async function api<T>(path: string, init?: RequestInit, opts?: ApiOptions
     if (!waitingPage) break;
     opts?.onWaking?.(attempt + 1);
     if (attempt === WAKE_RETRIES) {
-      throw new Error("le backend ne s'est pas réveillé à temps");
+      throw new Error("the backend did not wake up in time");
     }
     await sleep(WAKE_RETRY_MS);
   }

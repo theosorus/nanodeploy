@@ -1,6 +1,6 @@
 # Contributing
 
-Nanoploy targets one specific machine class: a single small ARM box with about
+Nanodeploy targets one specific machine class: a single small ARM box with about
 4 GB of RAM, at home, behind a tunnel. That constraint decides most arguments.
 
 ## Before you open a pull request
@@ -9,7 +9,7 @@ Nanoploy targets one specific machine class: a single small ARM box with about
   A change that adds a permanently running service needs to justify its RAM.
 - **Keep the stack fixed.** One gateway, one identity provider, one Postgres,
   one control plane. Swapping a component is a fork, not a pull request.
-- **Assume apps are hostile.** Anything reachable from `nanoploy_apps` is
+- **Assume apps are hostile.** Anything reachable from `nanodeploy_apps` is
   reachable by arbitrary code. Read `SECURITY.md` before touching networking,
   the socket proxies, or the generated Caddy config.
 - **Assume the machine loses power.** Every state change must survive a hard
@@ -33,8 +33,8 @@ docker compose config -q     # needs a .env, even a dummy one
 The end-to-end test needs a running installation:
 
 ```bash
-NANOPLOY_BASE=http://127.0.0.1:8080 \
-NANOPLOY_TOKEN=... \
+NANODEPLOY_BASE=http://127.0.0.1:8080 \
+NANODEPLOY_TOKEN=... \
 APPS_DOMAIN=apps.example.com \
 ./e2e/smoke.sh
 ```

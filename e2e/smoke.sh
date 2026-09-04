@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
-# Smoke test du chemin critique de Nanoploy, à lancer sur la machine hôte
-# (ou de dev tant que la stack tourne). Vérifie : auth, déploiement d'une app
-# froide, sommeil post-deploy, réveil sablier, prune, réconciliation.
+# Smoke test of Nanodeploy's critical path. Run it on the host (or anywhere the
+# stack is reachable). Covers auth, the identity and cross-origin boundaries,
+# deploying a cold app, post-deploy sleep, waking through sablier, image prune
+# and reconcile.
 #
-# Variables (défauts pour un test local):
-#   NANOPLOY_BASE   http://127.0.0.1:8080
-#   NANOPLOY_TOKEN  token du deploy (DEPLOY_TOKEN du .env)
-#   APPS_DOMAIN     domaine de test, ex apps.test
+# Variables (defaults suit a local install):
+#   NANODEPLOY_BASE   http://127.0.0.1:8080
+#   NANODEPLOY_TOKEN  the DEPLOY_TOKEN from .env
+#   APPS_DOMAIN       the domain the stack serves
 set -u
 
-BASE="${NANOPLOY_BASE:-http://127.0.0.1:8080}"
-TOK="${NANOPLOY_TOKEN:-}"
+BASE="${NANODEPLOY_BASE:-http://127.0.0.1:8080}"
+TOK="${NANODEPLOY_TOKEN:-}"
 DOM="${APPS_DOMAIN:-apps.test}"
 if [ -z "$TOK" ]; then
-  echo "set NANOPLOY_TOKEN (DEPLOY_TOKEN du .env)"; exit 1
+  echo "set NANODEPLOY_TOKEN (the DEPLOY_TOKEN from .env)"; exit 1
 fi
 AUTH="Authorization: Bearer $TOK"
 PASS=0; FAIL=0
@@ -61,21 +62,21 @@ cp "$WORK/demo/server.js" "$WORK/reserved/server.js"
 (cd "$WORK/reserved" && zip -qr "$WORK/reserved.zip" .)
 
 echo "== auth =="
-check "$(code -H "Host: deploy.$DOM" $BASE/api/apps)" "401" "sans session -> 401"
-check "$(code -H "Host: deploy.$DOM" -H 'Authorization: Bearer bogus' $BASE/api/apps)" "401" "bearer bidon -> 401"
-check "$(code -H "Host: deploy.$DOM" -H "$AUTH" $BASE/api/apps)" "200" "token exact -> 200"
+check "$(code -H "Host: deploy.$DOM" $BASE/api/apps)" "401" "no session -> 401"
+check "$(code -H "Host: deploy.$DOM" -H 'Authorization: Bearer bogus' $BASE/api/apps)" "401" "bogus bearer -> 401"
+check "$(code -H "Host: deploy.$DOM" -H "$AUTH" $BASE/api/apps)" "200" "exact token -> 200"
 
-echo "== frontieres =="
+echo "== boundaries =="
 # the gateway owns the identity headers: a client must never be able to send one
 check "$(code -H "Host: deploy.$DOM" -H 'Remote-Sub: forged' $BASE/api/apps)" \
-  "401" "Remote-Sub forge -> 401"
+  "401" "forged Remote-Sub -> 401"
 check "$(code -H "Host: deploy.$DOM" -H 'Remote-Sub: forged' -H 'Remote-Groups: admins' $BASE/api/apps)" \
-  "401" "Remote-Groups forge -> 401"
+  "401" "forged Remote-Groups -> 401"
 # The cross-origin guard only matters for a request that already carries a
 # session, which caddy would never let through unauthenticated. Talk to the
 # control plane directly, injecting the identity headers forward-auth produces.
 direct() {
-  docker exec nanoploy-control-plane-1 node -e '
+  docker exec nanodeploy-control-plane-1 node -e '
     const [method, path, headers] = process.argv.slice(1);
     fetch("http://127.0.0.1:8000" + path, { method, headers: JSON.parse(headers) })
       .then((r) => console.log(r.status))
@@ -85,24 +86,24 @@ direct() {
 # multipart is a CORS simple request: without this guard, any web page an admin
 # visits could deploy code here using their cookie
 check "$(direct POST /api/reconcile '{"Remote-Sub":"u1","Sec-Fetch-Site":"cross-site"}')" \
-  "403" "session + requete cross-site -> 403"
+  "403" "session + cross-site request -> 403"
 check "$(direct POST /api/reconcile '{"Remote-Sub":"u1","Origin":"https://evil.example"}')" \
-  "403" "session + origin externe -> 403"
+  "403" "session + foreign origin -> 403"
 S=$(direct POST /api/reconcile '{"Remote-Sub":"u1","Sec-Fetch-Site":"same-origin"}')
-if [ "$S" != "403" ]; then ok "session same-origin non bloquee"; else bad "same-origin bloque a tort"; fi
+if [ "$S" != "403" ]; then ok "same-origin session not blocked"; else bad "same-origin wrongly blocked"; fi
 # a slug that collides with a platform host makes every later caddy reload fail
 R=$(json -X POST -H "Host: deploy.$DOM" -H "$AUTH" -F bundle=@$WORK/reserved.zip $BASE/api/deploy)
-echo "$R" | grep -q 'reserved' && ok "slug reserve refuse" || bad "slug reserve accepte: $R"
+echo "$R" | grep -q 'reserved' && ok "reserved slug refused" || bad "reserved slug accepted: $R"
 curl -s -D- -o /dev/null -H "Host: deploy.$DOM" -H "$AUTH" $BASE/ | grep -qi '^x-frame-options: DENY' \
-  && ok "console non affichable en iframe" || bad "en-tete X-Frame-Options absent"
+  && ok "console cannot be framed" || bad "X-Frame-Options header missing"
 
-echo "== deploiement et sommeil =="
+echo "== deploy and sleep =="
 R=$(json -s -X POST -H "Host: deploy.$DOM" -H "$AUTH" -F bundle=@$WORK/smoke.zip $BASE/api/deploy)
 echo "$R" | grep -q '"ok":true' && ok "deploy smoke" || bad "deploy smoke: $R"
-check "$(docker inspect -f '{{.State.Status}}' app-smoke)" "exited" "app froide endormie apres deploy"
-check "$(code -H "Host: smoke.$DOM" $BASE/)" "200" "statique servi par caddy"
+check "$(docker inspect -f '{{.State.Status}}' app-smoke)" "exited" "cold app asleep after deploy"
+check "$(code -H "Host: smoke.$DOM" $BASE/)" "200" "static files served by caddy"
 
-echo "== reveil a la requete =="
+echo "== wake on request =="
 docker stop -t 1 app-smoke >/dev/null 2>&1
 B=""
 for i in $(seq 1 15); do
@@ -110,27 +111,27 @@ for i in $(seq 1 15); do
   echo "$B" | grep -q '"ok":true' && break
   sleep 0.4
 done
-echo "$B" | grep -q '"ok":true' && ok "backend répond après réveil sablier" || bad "pas de réveil: $B"
-check "$(docker inspect -f '{{.State.Status}}' app-smoke)" "running" "conteneur tourne"
+echo "$B" | grep -q '"ok":true' && ok "backend answers after sablier wake" || bad "no wake: $B"
+check "$(docker inspect -f '{{.State.Status}}' app-smoke)" "running" "container running"
 
-echo "== prunes et suppression =="
+echo "== prune and delete =="
 for i in 1 2; do
   curl -s -o /dev/null -X POST -H "Host: deploy.$DOM" -H "$AUTH" -F bundle=@$WORK/smoke.zip $BASE/api/deploy
 done
-N=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -c '^nanoploy/smoke:')
-check "$N" "1" "une seule image apres 3 deploys (prune)"
+N=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -c '^nanodeploy/smoke:')
+check "$N" "1" "one image left after 3 deploys (prune)"
 
 docker rm -f app-smoke >/dev/null 2>&1
-docker images --format '{{.Repository}}:{{.Tag}}' | grep '^nanoploy/smoke:' | xargs -I{} docker rmi {} >/dev/null 2>&1
+docker images --format '{{.Repository}}:{{.Tag}}' | grep '^nanodeploy/smoke:' | xargs -I{} docker rmi {} >/dev/null 2>&1
 json -X POST -H "Host: deploy.$DOM" -H "$AUTH" $BASE/api/reconcile >/dev/null
 sleep 2
-[ "$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -c '^nanoploy/smoke:')" -ge 1 ] \
-  && ok "image reconstruite au reconcile" || bad "image non reconstruite"
-check "$(docker inspect -f '{{.State.Status}}' app-smoke)" "exited" "conteneur recree et endormi"
+[ "$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -c '^nanodeploy/smoke:')" -ge 1 ] \
+  && ok "image rebuilt by reconcile" || bad "image not rebuilt"
+check "$(docker inspect -f '{{.State.Status}}' app-smoke)" "exited" "container recreated and asleep"
 
-check "$(code -H "Host: deploy.$DOM" -H "$AUTH" -X DELETE $BASE/api/apps/smoke)" "200" "suppression"
-check "$(code -H "Host: smoke.$DOM" $BASE/)" "404" "sous-domaine inconnu -> 404"
+check "$(code -H "Host: deploy.$DOM" -H "$AUTH" -X DELETE $BASE/api/apps/smoke)" "200" "delete"
+check "$(code -H "Host: smoke.$DOM" $BASE/)" "404" "unknown subdomain -> 404"
 
 echo
-echo "== RESULTAT: $PASS passe / $FAIL echoue =="
+echo "== RESULT: $PASS passed / $FAIL failed =="
 exit $FAIL

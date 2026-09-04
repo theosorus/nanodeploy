@@ -1,11 +1,11 @@
 ---
-name: nanoploy-app
-description: Builds and deploys web apps on Nanoploy, a self-hosted platform (small ARM box, scale-to-zero, shared Postgres, gateway authentication). Use this skill AS SOON AS the user asks to create, code, scaffold, change or deploy an app, an internal tool, a dashboard, a tracker, a mini SaaS or "something that does X" meant for their own server, even without the word Nanoploy. Also triggers on "deploy this", "put this on my server", "build me an app for...", "add a page to my app", "fais-moi une app pour...", "mets ça sur mon serveur", or any mention of app.yaml, the control plane, Sablier, or the Nanoploy template. When in doubt about where a web app is meant to run, ask whether it is for Nanoploy rather than scaffolding something generic.
+name: nanodeploy-app
+description: Builds and deploys web apps on Nanodeploy, a self-hosted platform (small ARM box, scale-to-zero, shared Postgres, gateway authentication). Use this skill AS SOON AS the user asks to create, code, scaffold, change or deploy an app, an internal tool, a dashboard, a tracker, a mini SaaS or "something that does X" meant for their own server, even without the word Nanodeploy. Also triggers on "deploy this", "put this on my server", "build me an app for...", "add a page to my app", "fais-moi une app pour...", "mets ça sur mon serveur", or any mention of app.yaml, the control plane, Sablier, or the Nanodeploy template. When in doubt about where a web app is meant to run, ask whether it is for Nanodeploy rather than scaffolding something generic.
 ---
 
-# Nanoploy app
+# Nanodeploy app
 
-Nanoploy deploys apps on a small home server, typically 4 GB of RAM. The
+Nanodeploy deploys apps on a small home server, typically 4 GB of RAM. The
 platform imposes one stack and a few hard constraints. An app that ignores them
 deploys fine, then breaks silently after its first sleep.
 
@@ -83,7 +83,7 @@ Then, while building:
   alignment; a spare one needs precision in spacing. Elegance is executing the
   chosen direction well, not adding to it.
 - **Write the words as carefully as the layout.** Buttons name what happens
-  ("Ajouter", not "Soumettre"), an action keeps the same word through the whole
+  ("Add", not "Submit"), an action keeps the same word through the whole
   flow, errors say what went wrong and what to do, an empty screen invites the
   first action. Generic copy makes a design feel templated as fast as generic
   colour does.
@@ -214,7 +214,7 @@ an app from itself.
 `app.yaml` at the root is the only contract with the platform.
 
 ```yaml
-name: Suivi de dépenses
+name: Expenses
 slug: depenses          # becomes depenses.<domain>, [a-z0-9-] only
                         # deploy, auth, id and www are reserved by the platform
 access: private         # public | private | groups
@@ -235,7 +235,7 @@ env: [OPENAI_API_KEY]   # names only, values are typed in the dashboard
 ## Procedure
 
 1. **Frame it.** The questions above, in one round.
-2. **Copy the template.** `cp -r templates/app-template <slug>` from the Nanoploy
+2. **Copy the template.** `cp -r templates/app-template <slug>` from the Nanodeploy
    repo, or reproduce its exact structure if the repo is not around.
 3. **Write `app.yaml` first**, it frames everything else.
 4. **Write `theme.css`**, the chosen art direction, before any component. Design
@@ -248,7 +248,7 @@ env: [OPENAI_API_KEY]   # names only, values are typed in the dashboard
    loading, waking, empty and error states written from the start.
 9. **Deploy**: `npm run deploy`. That builds the frontend, bundles the server,
    zips `dist/ server.js app.yaml migrations/` and posts it to the control
-   plane. Needs `NANOPLOY_URL` and `NANOPLOY_TOKEN` in the environment.
+   plane. Needs `NANODEPLOY_URL` and `NANODEPLOY_TOKEN` in the environment.
 
 After a successful deploy, give the URL and list the environment variables still
 waiting for a value, if any.
@@ -263,6 +263,28 @@ so explicitly.
 
 When changing an existing app, read its `theme.css` first and work inside its
 direction. Do not quietly restyle an app that already has one.
+
+## Patterns that keep coming up
+
+Reach for these rather than reinventing them; each one was paid for once.
+
+- **A view per URL, with the hash.** Anything with a list-then-detail shape needs
+  the phone's back button to work. Ten lines around `location.hash` and a
+  `hashchange` listener do it; a router is more code than the feature.
+- **Optimistic writes on anything tapped.** A checkbox that waits for a round
+  trip feels broken on a weak connection. Apply the change locally, send it, and
+  put it back if the server refuses. Re-sort locally with the same rule the
+  server uses, or the row jumps when the list is next fetched.
+- **Keep the focus after adding to a list.** People add five things in a row,
+  not one per visit.
+- **Never let a client-supplied value reach a style or a class.** Colours,
+  themes, icons: accept a key from a fixed set and map it in the frontend. A
+  free-form string in a `style` attribute is an injection waiting to happen.
+- **Cascade in the schema, not in the handler.** Deleting a parent and then its
+  children is two statements, and the container can be stopped between them. A
+  foreign key with `onDelete: "cascade"` is one atomic act.
+- **Bound the list before it grows.** A `limit` on every query and a cap on how
+  many rows one account can create.
 
 ## Before saying it is done
 
@@ -283,5 +305,5 @@ direction. Do not quietly restyle an app that already has one.
 ## Code style
 
 Comments in English, explaining a platform constraint or a non-obvious decision,
-never restating the next line. Interface language follows the user's, French by
-default when they write in French. No comment that repeats the code.
+never restating the next line. Interface copy follows the language the user
+writes to you in. No comment that repeats the code.

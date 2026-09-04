@@ -1,4 +1,4 @@
-# Nanoploy manifest. This file is the whole contract with the platform.
+# Nanodeploy manifest. This file is the whole contract with the platform.
 name: Mon app
 slug: mon-app            # becomes mon-app.<APPS_DOMAIN>, [a-z0-9-] only
 access: private          # public | private | groups

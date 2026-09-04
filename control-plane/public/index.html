@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Nanoploy</title>
+<title>Nanodeploy</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#eaedeb">
 <meta name="color-scheme" content="light">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Nanoploy">
+<meta name="apple-mobile-web-app-title" content="Nanodeploy">
 <style>
   /* VEILLE.
      This machine is asleep almost all of the time, and its scarce resource is
@@ -177,7 +177,7 @@
 <body>
 <div class="wrap">
   <header>
-    <h1><img src="/favicon.svg" width="20" height="20" alt="">Nanoploy</h1>
+    <h1><img src="/favicon.svg" width="20" height="20" alt="">Nanodeploy</h1>
     <div class="side">
       <span class="who" id="who"></span>
       <button class="langbtn" id="lang" title="Switch language"></button>
@@ -222,7 +222,7 @@ const esc = (s) => String(s ?? "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">"
 
 const I18N = {
   fr: {
-    title: "Nanoploy",
+    title: "Nanodeploy",
     navApps: "Apps",
     navPeople: "Comptes",
     memoryLabel: "Mémoire",
@@ -297,7 +297,7 @@ const I18N = {
     created: "Compte créé.",
   },
   en: {
-    title: "Nanoploy",
+    title: "Nanodeploy",
     navApps: "Apps",
     navPeople: "People",
     memoryLabel: "Memory",
@@ -373,7 +373,7 @@ const I18N = {
   },
 };
 
-const savedLang = (() => { try { return localStorage.getItem("nanoploy.lang"); } catch { return null; } })();
+const savedLang = (() => { try { return localStorage.getItem("nanodeploy.lang"); } catch { return null; } })();
 let LANG = savedLang === "fr" || savedLang === "en" ? savedLang : (navigator.language || "").toLowerCase().startsWith("fr") ? "fr" : "en";
 let T = I18N[LANG];
 const t = (key, vars) => {
@@ -397,18 +397,21 @@ function renderStatic() {
 function setLang(lang) {
   LANG = lang;
   T = I18N[LANG];
-  try { localStorage.setItem("nanoploy.lang", lang); } catch {}
+  try { localStorage.setItem("nanodeploy.lang", lang); } catch {}
   renderStatic();
   renderApps();
   if (!$("view-people").hidden) renderPeople(state.peopleError);
 }
 
-/* ---------- état ---------- */
+/* ---------- state ---------- */
 
 const state = {
   apps: [], open: null, domain: "", people: [], groups: [],
   peopleReady: false, peopleError: null,
   host: null, me: null,
+  // last fetched logs per slug: the panel is re-rendered on every refresh and
+  // must not flash back to "loading" each time
+  logs: {},
   // slug whose access select was just moved to "groups" but which has no group
   // yet: show the chips and only call the API once one is picked
   pendingGroups: null,
@@ -508,6 +511,9 @@ function renderApps() {
   }
   $("apps").innerHTML = state.apps.map(renderApp).join("");
   bindApps();
+  // an open panel keeps its logs live too, it is the one place you look when
+  // an app is misbehaving
+  if (state.open) loadLogs(state.open);
 }
 
 function accessLabel(a) {
@@ -574,7 +580,7 @@ function renderDetail(a, host) {
       <button class="act" data-saveenv="${a.slug}">${t("envSave")}</button>` : ""}
 
     <h3 class="label">${t("logsTitle")}</h3>
-    <pre class="logs" data-logs="${a.slug}">${t("logsLoading")}</pre>
+    <pre class="logs" data-logs="${a.slug}">${esc(state.logs[a.slug] ?? t("logsLoading"))}</pre>
 
     <div class="actions">
       <a class="act" href="https://${esc(host)}" target="_blank" rel="noopener" style="text-decoration:none">${t("open")}</a>
@@ -598,8 +604,7 @@ function bindApps() {
   document.querySelectorAll("[data-open]").forEach((el) => {
     el.onclick = () => {
       state.open = state.open === el.dataset.open ? null : el.dataset.open;
-      renderApps();
-      if (state.open) loadLogs(state.open);
+      renderApps(); // loads the logs of whatever is now open
     };
   });
 
@@ -685,17 +690,19 @@ function bindApps() {
 }
 
 async function loadLogs(slug) {
-  const el = document.querySelector(`[data-logs="${slug}"]`);
-  if (!el) return;
+  let text;
   try {
     const { lines } = await api(`/api/apps/${slug}/logs`);
-    el.textContent = lines.slice(-40).join("\n") || t("logsNone");
+    text = lines.slice(-40).join("\n") || t("logsNone");
   } catch (err) {
-    el.textContent = t("logsError") + err.message;
+    text = t("logsError") + err.message;
   }
+  state.logs[slug] = text;
+  const el = document.querySelector(`[data-logs="${slug}"]`);
+  if (el) el.textContent = text;
 }
 
-/* ---------- comptes ---------- */
+/* ---------- people ---------- */
 
 async function loadPeople() {
   const data = await api("/api/people").catch((e) => ({ error: e.message, configured: true, people: [], groups: [] }));
@@ -842,7 +849,7 @@ function renderPeople(error) {
   });
 }
 
-/* ---------- déploiement ---------- */
+/* ---------- deploy ---------- */
 
 async function upload(file) {
   toast(t("deploying", { name: file.name }), true);
@@ -870,7 +877,7 @@ drop.ondrop = (e) => {
   if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]);
 };
 
-/* ---------- démarrage ---------- */
+/* ---------- startup ---------- */
 
 $("lang").onclick = () => setLang(LANG === "fr" ? "en" : "fr");
 renderStatic();
@@ -910,10 +917,19 @@ api("/api/me")
   })
   .catch((err) => toast(t("accessDenied") + err.message, true));
 
-// refresh the list, but never while a detail panel is open, and never for a
-// session that is not allowed to see it in the first place
+// Refresh unless it would destroy work in progress. Stopping whenever a panel
+// is merely open was too blunt: an app woken from another tab then showed as
+// asleep for as long as the panel stayed open, which is exactly when you are
+// watching it. Only a value being typed into the panel is worth freezing for.
+function editingDetail() {
+  const detail = document.querySelector(".detail");
+  if (!detail) return false;
+  if (detail.contains(document.activeElement)) return true;
+  return [...detail.querySelectorAll("input[type=password]")].some((i) => i.value);
+}
+
 setInterval(() => {
-  if (!state.open && state.me && state.me.admin !== false) loadApps();
+  if (state.me && state.me.admin !== false && !editingDetail()) loadApps();
 }, 6000);
 </script>
 </body>

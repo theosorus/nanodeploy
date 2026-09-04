@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-// Packs dist/, server.js, app.yaml and migrations/ then posts them to nanoploy.
+// Packs dist/, server.js, app.yaml and migrations/ then posts them to nanodeploy.
 // Runs on the dev machine: the server never builds anything heavy.
 import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { readFile, rm } from "node:fs/promises";
 
-const url = process.env.NANOPLOY_URL;
-const token = process.env.NANOPLOY_TOKEN;
+const url = process.env.NANODEPLOY_URL;
+const token = process.env.NANODEPLOY_TOKEN;
 if (!url || !token) {
-  console.error("set NANOPLOY_URL and NANOPLOY_TOKEN in your shell first");
+  console.error("set NANODEPLOY_URL and NANODEPLOY_TOKEN in your shell first");
   process.exit(1);
 }
 

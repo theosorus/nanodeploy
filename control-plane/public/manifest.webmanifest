@@ -1,7 +1,7 @@
 {
-  "name": "Nanoploy",
-  "short_name": "Nanoploy",
-  "description": "Déploiement d'applications personnelles",
+  "name": "Nanodeploy",
+  "short_name": "Nanodeploy",
+  "description": "Self-hosted apps that sleep when nobody is using them",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#eaedeb",

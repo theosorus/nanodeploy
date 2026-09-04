@@ -19,10 +19,10 @@ export function renderSite(app: AppRow) {
   const host = `${app.slug}.${DOMAIN}`;
   const name = cleanName(app.name);
   const groups = cleanGroups(app.groups);
-  const lines: string[] = [`http://${host} {`, `\timport nanoploy_strip`];
+  const lines: string[] = [`http://${host} {`, `\timport nanodeploy_strip`];
 
   if (app.access !== "public") {
-    lines.push(`\timport nanoploy_auth`);
+    lines.push(`\timport nanodeploy_auth`);
   }
   if (app.access === "groups" && groups.length > 0) {
     // tinyauth already checked the session, this narrows it to the allowed groups

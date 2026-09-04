@@ -51,8 +51,8 @@ export function App() {
   return (
     <main className="page stack-loose">
       <header className="spread">
-        <h1>Mes notes</h1>
-        <span className="label">{notes.length} enregistrées</span>
+        <h1>Notes</h1>
+        <span className="label">{notes.length} saved</span>
       </header>
 
       <form
@@ -65,12 +65,12 @@ export function App() {
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="Écrire une note"
-          aria-label="Nouvelle note"
+          placeholder="Write a note"
+          aria-label="New note"
           style={{ flex: 1 }}
         />
         <button data-primary type="submit" disabled={!draft.trim() || saving}>
-          {saving ? "Enregistrement" : "Ajouter"}
+          {saving ? "Saving" : "Add"}
         </button>
       </form>
 
@@ -80,10 +80,10 @@ export function App() {
         </p>
       )}
 
-      {status === "loading" && <p className="muted">Chargement</p>}
-      {status === "waking" && <p className="waking">Réveil du serveur</p>}
+      {status === "loading" && <p className="muted">Loading</p>}
+      {status === "waking" && <p className="waking">Waking the server</p>}
       {status === "ready" && notes.length === 0 && (
-        <p className="empty">Aucune note pour l'instant. La première ligne suffit à commencer.</p>
+        <p className="empty">Nothing here yet. One line is enough to start.</p>
       )}
 
       {notes.length > 0 && (
@@ -92,7 +92,7 @@ export function App() {
             <li key={n.id} className="spread">
               <span>{n.body}</span>
               <time className="num caption" dateTime={n.createdAt}>
-                {new Date(n.createdAt).toLocaleDateString("fr-FR", {
+                {new Date(n.createdAt).toLocaleDateString(undefined, {
                   day: "2-digit",
                   month: "2-digit",
                 })}

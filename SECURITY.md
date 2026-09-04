@@ -1,6 +1,6 @@
 # Security
 
-Nanoploy runs arbitrary code you wrote, on a machine in your home, behind an
+Nanodeploy runs arbitrary code you wrote, on a machine in your home, behind an
 identity provider. This page says what it defends against, what it does not,
 and how to report a problem.
 
@@ -26,7 +26,7 @@ days; this is a hobby project, not a vendor.
 
 | Boundary | How |
 |---|---|
-| Apps cannot reach Docker | apps sit on `nanoploy_apps`, which only carries Caddy and Postgres. The socket proxies, Sablier, tinyauth and the control plane are on `nanoploy_edge` and unreachable from an app. |
+| Apps cannot reach Docker | apps sit on `nanodeploy_apps`, which only carries Caddy and Postgres. The socket proxies, Sablier, tinyauth and the control plane are on `nanodeploy_edge` and unreachable from an app. |
 | Apps cannot escalate in their container | non-root user, `cap_drop: ALL`, `no-new-privileges`, read-only root filesystem (only the `/data` volume and a `noexec` `/tmp` are writable), 256 MB memory cap, 128 pid cap. |
 | Apps cannot read each other's data | one Postgres database and one role per app, `CONNECT` revoked from `public` on every database including the platform's own and the `postgres` maintenance database. |
 | Identity cannot be forged | Caddy strips every inbound `Remote-*` header before forward-auth re-injects it, and `request_header` is explicitly ordered before `forward_auth`. |

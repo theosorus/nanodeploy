@@ -697,7 +697,7 @@ app.get("/", async (c) => c.html(await readFile("./public/index.html", "utf8")))
 app.use("/*", serveStatic({ root: "./public" }));
 
 serve({ fetch: app.fetch, port: 8000 });
-console.log("nanoploy control plane on :8000");
+console.log("nanodeploy control plane on :8000");
 
 // wait for caddy and the docker socket proxy to settle before healing
 setTimeout(() => {

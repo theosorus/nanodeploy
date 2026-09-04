@@ -1,259 +1,225 @@
-# Nanoploy
+# Nanodeploy
 
-A self-hosted mini-Vercel sized for a 4 GB machine.
+**Your own Vercel, on a 4 GB box in a cupboard.** Apps sleep when nobody is
+using them, wake in about a second, and share one Postgres and one login.
 
-*[Version française](README.fr.md)*
+![The Nanodeploy dashboard](docs/dashboard.png)
 
-Deployed apps sleep by default and cost nothing. The first request wakes one in
-about a second. A single Postgres instance is shared by every app, with one
-database and one role each. One account gives access to all of your apps, and
-any app can be flipped between private, group-restricted and public in a click.
+![MIT](https://img.shields.io/badge/license-MIT-1f4b8f) ![idle footprint](https://img.shields.io/badge/idle-~180%20MB-1f8f60) ![built for](https://img.shields.io/badge/built%20for-4%20GB%20ARM-7a5610)
 
-It runs on a Jetson Nano, a Raspberry Pi 4/5, an old laptop, or any box that can
-run Docker and stay on.
+---
 
-## What is in the box
+## The idea
 
-| Component | Role | RAM at rest |
+Small personal apps are cheap to write and annoying to host. A budget tracker
+you open twice a week does not deserve a VPS, and putting five of them on one
+tiny machine means five idle Node processes eating the RAM you needed for the
+sixth.
+
+So Nanodeploy stops them. An app with no traffic is a stopped container: zero
+RAM, zero CPU. The next request to reach it starts it back up before the page
+finishes loading. On a Jetson Nano with five apps deployed, two of them awake,
+the whole machine sits at **1.4 GB of 4 GB**, and that includes Postgres, an
+identity provider and the gateway.
+
+You still get the parts that make hosting worth it: a real domain per app, HTTPS,
+one account across everything, a database per app, and a deploy that is one
+command or one drag of a `.zip`.
+
+## What it costs to run
+
+| Component | Job | RAM at rest |
 |---|---|---|
-| Caddy + Sablier plugin | routing, static frontends, waking apps | ~25 MB |
+| Caddy + Sablier plugin | routing, static files, waking apps | ~25 MB |
 | Sablier | stops and starts containers on demand | ~15 MB |
-| Postgres 16 | shared database, one database per app | ~60 MB |
-| Pocket ID | identity provider, passkeys, accounts | ~15 MB |
-| tinyauth v5 | forward-auth in front of every private app | ~10 MB |
-| control plane | bundle upload, provisioning, routes | ~50 MB |
-| socket proxies | least-privilege Docker access, one per consumer | ~10 MB |
+| Postgres 16 | one database and one role per app | ~60 MB |
+| Pocket ID | accounts, passkeys, groups | ~15 MB |
+| tinyauth | forward-auth in front of every private app | ~10 MB |
+| control plane | uploads, provisioning, routes | ~50 MB |
+| two socket proxies | least-privilege Docker access | ~10 MB |
 
-A woken app costs about 40 MB and is capped at 256 MB.
+A woken app costs about 40 MB and is capped at 256 MB. An app that must answer
+instantly can opt out of sleeping for that same 40 MB, permanently.
+
+## Deploying
+
+```bash
+cp -r templates/app-template my-app && cd my-app
+npm install
+export NANODEPLOY_URL=https://deploy.apps.example.com
+export NANODEPLOY_TOKEN=...
+npm run deploy
+```
+
+Your machine builds; the server never compiles anything heavy. It receives a zip
+holding `dist/`, `server.js`, `app.yaml` and `migrations/`, builds a small image,
+runs the migrations once, and puts the container straight back to sleep.
+
+No terminal handy? Drag the zip onto the dashboard.
+
+The whole contract with the platform is one file:
+
+```yaml
+name: Expenses
+slug: expenses          # -> expenses.apps.example.com
+access: private         # public | private | groups
+backend: { entry: server.js, port: 3000 }
+database: { enabled: true, migrations: ./migrations }
+idle: { timeout: 10m, warm: false }
+env: [OPENAI_API_KEY]   # names only, values are typed in the dashboard
+```
+
+## Running it
+
+Click an app to get its access mode, its environment variables, its recent logs
+and how much memory it is using right now.
+
+![An app's detail panel](docs/app-detail.png)
+
+Access is a dropdown, not a redeploy. **Private** means any account you created.
+**Groups** narrows it to the people you choose. **Public** means the whole
+internet, and the dashboard says so out loud before you do it.
+
+Environment variables are set here and never live in your repo. Values are
+write-only in the interface: you can replace a secret, you cannot read it back.
+
+## One account for everything
+
+![The people tab](docs/people.png)
+
+Accounts live in Pocket ID and there is no password anywhere: you invite someone
+by username and email, hand them a single-use link, and they enroll a passkey.
+That one account then opens every app they are allowed to see, and your apps
+never write a line of authentication code — the gateway hands them the user's
+identity in a header.
+
+Groups created here show up in every app's access selector.
+
+Because the console can deploy code and drive Docker, whoever reaches it
+effectively has root on the machine. A fresh install is single-user, so it stays
+open; the moment you invite a second person the dashboard makes you pick an admin
+group first, and warns in red until you do.
+
+## How it is wired
+
+```mermaid
+flowchart LR
+    net([Internet]) --> tun[Tunnel or reverse proxy<br/>terminates TLS]
+    tun --> caddy[Caddy + Sablier plugin]
+
+    subgraph edge[network: edge]
+        caddy --- auth[tinyauth]
+        auth --- pid[Pocket ID]
+        caddy --- sab[Sablier]
+        cp[control plane]
+        sab --- sp2[socket proxy<br/>start / stop only]
+        cp --- sp1[socket proxy<br/>build / exec]
+    end
+
+    subgraph appsnet[network: apps]
+        a1[app-expenses]
+        a2[app-notes]
+    end
+
+    subgraph datanet[network: data, no internet]
+        pg[(Postgres)]
+    end
+
+    caddy --> a1
+    caddy --> a2
+    a1 --> pg
+    a2 --> pg
+    cp --> pg
+    sp1 -.-> dock[[Docker socket]]
+    sp2 -.-> dock
+```
+
+Read it as one rule: **an app can reach the gateway and its own database, and
+nothing else.** The Docker socket, Sablier, tinyauth and the control plane all
+live on a network an app is not connected to, because an app is arbitrary code
+and reaching the socket is a root escape. Neither Sablier nor the control plane
+touches the raw socket either; each gets a proxy allowed to do only its job.
+
+Apps run as a non-root user with every capability dropped, a read-only root
+filesystem, a 256 MB cap and no published port.
 
 ## What you need
 
-- A machine with Docker and Docker Compose v2, ideally with storage that is not
-  an SD card.
-- A domain you control, and a wildcard `*.apps.example.com` pointing at the
-  machine. A [Cloudflare tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
-  is the easiest way in from behind a home router; any reverse proxy that
-  terminates TLS works.
-- Node 20 on your development machine, to build and deploy apps.
-
-## Preparing the host
-
-Do this once, before installing. These three points are what kills a homelab on
-an SD card.
-
-1. Move Docker's storage to an external disk, in `/etc/docker/daemon.json`:
-
-   ```json
-   {
-     "data-root": "/mnt/ssd/docker",
-     "log-driver": "json-file",
-     "log-opts": { "max-size": "10m", "max-file": "3" }
-   }
-   ```
-
-   On a Jetson, add `RequiresMountsFor=/mnt/ssd` to Docker's systemd unit, or a
-   boot that happens before the disk is mounted will recreate an empty
-   data-root.
-
-2. Go headless: `sudo systemctl set-default multi-user.target` frees about
-   500 MB on a Jetson.
-
-3. On JetPack 4, update `libseccomp2` from bionic-backports, otherwise recent
-   Debian images die with `Illegal instruction`.
-
-## Installing
+- A machine with Docker and Compose v2, and storage that is not an SD card.
+- A domain, and a **wildcard** `*.apps.example.com` pointing at the machine. A
+  [Cloudflare tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
+  is the easiest way through a home router; any TLS-terminating proxy works.
+- Node 20 on your laptop, to build apps.
 
 ```bash
-git clone https://github.com/<you>/nanoploy && cd nanoploy
+git clone https://github.com/<you>/nanodeploy && cd nanodeploy
 ./install.sh          # writes .env with fresh secrets, then stops
 $EDITOR .env          # set APPS_DOMAIN and APPS_DIR
 ./install.sh          # builds and starts everything
 ```
 
-`install.sh` generates `POSTGRES_PASSWORD`, `POCKETID_ENCRYPTION_KEY` and
-`DEPLOY_TOKEN`, checks the host, and refuses to start on a configuration that
-would come up broken or wide open. Building Caddy with the Sablier plugin
-compiles from source: about 10 minutes on a Jetson.
+Then point your tunnel at `http://localhost:8080`, create your account at
+`https://id.apps.example.com`, wire an OIDC client for tinyauth, and drop a
+Pocket ID API key into `.env`. The installer prints each step with your own
+domain filled in.
 
-Then:
+> **The wildcard is not optional.** Two settings share the word: your tunnel's
+> ingress rule decides where a request goes once it arrives, and the DNS record
+> is what makes it arrive. With the tunnel rule but no `*` DNS record, every app
+> deploys and runs perfectly while the browser says "server not found". Deploys
+> warn about it, but only after the fact.
 
-1. Point your tunnel or reverse proxy at `http://localhost:8080` (change with
-   `CADDY_PORT`), with a **wildcard** hostname `*.apps.example.com` and
-   `apps.example.com` itself. With a Cloudflare tunnel that is one entry under
-   *Public Hostname* with the subdomain set to `*`, service `HTTP` →
-   `localhost:8080`.
+## Living with it
 
-   Do not skip the wildcard. Without it, every app deploys and runs perfectly
-   and none of them resolves: the browser says "server not found" and nothing in
-   the dashboard explains why. Deploys warn about it, but only after the fact.
-2. Open `https://id.apps.example.com` and create the Pocket ID admin account.
-3. In Pocket ID, create an OIDC client for tinyauth with callback
-   `https://auth.apps.example.com/api/oauth/callback/generic`. Put the client id
-   and secret in `.env`, then `docker compose up -d tinyauth`.
-4. In Pocket ID, create an API key, put it in `POCKETID_API_KEY`, then
-   `docker compose up -d control-plane`. This is what enables the People tab.
-5. Open `https://deploy.apps.example.com`, People tab, and pick an admin group.
-   Read the next section first.
-6. Put `DEPLOY_TOKEN` in your password manager.
-
-The token lives in `.env` and doubles as the CLI bypass password in the
-Caddyfile, where it is matched literally. If you change it, restart both
-containers that hold it: `docker compose up -d caddy control-plane`.
-
-## Who may drive the console
-
-The dashboard deploys arbitrary code and drives Docker. Whoever can open it
-effectively has root on the machine.
-
-A fresh install is single-user, so **every account that can sign in is an
-administrator**. That is fine while you are alone, and the dashboard says so in
-red until you fix it. Two things happen the moment you stop being alone:
-
-- The dashboard refuses to create a second account until an admin group is set.
-- Once set, only members of that group reach `/api/*`; everyone else keeps
-  access to the apps themselves and sees a plain "you are not an administrator"
-  page on the console.
-
-To set it: People tab → create a group (say `admins`) → click its chip on your
-own row to join it → pick it in the red panel → Apply. The control plane checks
-with Pocket ID that you really belong to the group before applying, so the
-change cannot lock you out of your own console, and it does not wait for your
-session to be refreshed.
-
-You can also pin it in `.env` with `ADMIN_GROUP=admins`, which makes it
-read-only in the dashboard. Clearing it again requires the deploy token, on
-purpose: it is the one change that widens access to everybody.
-
-Recommended on top: put `deploy.apps.example.com` behind Cloudflare Access or an
-equivalent outer layer.
-
-## The dashboard
-
-Two tabs, on `deploy.apps.example.com`.
-
-**Apps** — host memory in use, a drop zone for `.zip` bundles, and one row per
-app. Clicking a row opens the detail: access mode (private, groups, public),
-environment variables, recent logs, wake and delete.
-
-**People** — the list of accounts with their groups as clickable chips.
-Inviting someone creates the account in Pocket ID and returns a single-use link
-to pass along; there is no password, the person enrolls a passkey. Groups
-created here become available in every app's access selector.
-
-Accounts live only in Pocket ID; the dashboard just drives its API. Without
-`POCKETID_API_KEY`, the tab simply links out to Pocket ID. The API paths used
-(`/api/users`, `/api/user-groups`) depend on the Pocket ID version, worth
-checking if the tab returns an error.
-
-**Isolation** — each app runs as a non-root container with all capabilities
-dropped, a read-only root filesystem, `/data` on its own volume and a memory
-cap, on a network that only carries Caddy and Postgres. The Docker socket,
-Sablier, tinyauth and the control plane are unreachable from an app. See
-[SECURITY.md](SECURITY.md) for the full boundary list and the accepted limits.
-
-## Deploying an app
+Install the unit once and the machine comes back on its own after a power cut:
 
 ```bash
-cp -r templates/app-template my-app && cd my-app
-npm install
-export NANOPLOY_URL=https://deploy.apps.example.com
-export NANOPLOY_TOKEN=...
-npm run deploy
+sudo cp nanodeploy.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable nanodeploy
 ```
 
-The build happens on your machine. The server never compiles anything heavy: it
-receives a zip holding `dist/`, `server.js`, `app.yaml` and `migrations/`, builds
-a tiny image and starts the container.
+On boot the control plane reconciles: it re-reads the `apps` table and rebuilds
+any missing container, image or route from the bundles on disk, then puts the
+cold ones back to sleep. A wiped Docker data-root heals the same way. Force it
+by hand with `POST /api/reconcile`.
 
-Or, without a terminal: drop the zip on the dashboard.
-
-A cold app — the default — is **put back to sleep immediately after deploying**:
-a container started outside a Sablier session would never stop on its own. HTML
-and assets are served instantly by Caddy without waking anything; only the first
-`/api/*` request triggers the wake, with a waiting page of about a second that
-the template's `src/client.ts` retries away. Only apps with `idle.warm: true`
-run permanently.
-
-The subdomains `deploy`, `auth`, `id` and `www` are reserved by the platform and
-rejected as slugs.
-
-## The skill
-
-`skills/nanoploy-app/` holds a Claude skill that knows the stack, the
-scale-to-zero constraints and the deployment procedure. Once installed, "build
-me an app that tracks my expenses" produces something conformant and
-deployable.
-
-The template ships `src/client.ts`, a `fetch` wrapper that retries requests that
-landed on Sablier's waiting page. Not using it is the number one cause of apps
-that "work, then silently break" on the first wake.
-
-## After a power cut
-
-Nothing to do, provided you installed the unit once:
+Two habits worth having:
 
 ```bash
-sudo cp nanoploy.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable nanoploy
+# never "docker compose down": it deletes the networks, and app containers
+# are not part of the compose project, so they become unstartable
+docker compose stop
+
+# nightly, every app database in one file
+docker compose exec -T postgres pg_dumpall -U postgres | gzip > backups/pg-$(date +%F).sql.gz
 ```
 
-What happens on reboot:
+## Building apps with Claude
 
-1. systemd waits for the storage to be mounted, then restarts the platform.
-2. App containers are still there, simply stopped. So are the Caddy routes, they
-   are files. The first request on an app wakes it.
-3. The control plane reconciles at startup: it re-reads the `apps` table in
-   Postgres and recreates any missing container, image or route. Images are
-   rebuilt from the bundle stored in `APPS_DIR` (the extracted files live there,
-   not the zip), then cold apps are put back to sleep. The heal also covers an
-   image deleted by hand while the app was asleep.
+`skills/nanodeploy-app/` is a Claude skill that knows the stack, the
+scale-to-zero constraints and the deploy procedure. Installed, "build me
+something to track my expenses" produces a conformant, deployable app — and asks
+you about the art direction first, so it does not look like every other
+generated app.
 
-To force a reconcile by hand:
+## What it does not do
 
-```bash
-curl -X POST -H "Authorization: Bearer $NANOPLOY_TOKEN" \
-  https://deploy.apps.example.com/api/reconcile
-```
+Stated plainly, because finding out later is worse:
 
-An app that must answer instantly, with no waiting page, sets `idle.warm: true`
-in its manifest. It then opts out of scale-to-zero, runs permanently and
-restarts with the machine. That costs ~40 MB, so keep it to one or two apps.
-
-**Never run `docker compose down`.** It deletes the networks, and app
-containers, which do not belong to the compose project, become unstartable. Use
-`docker compose stop`. The networks are declared `external` to limit the damage,
-but the habit is still the right one.
-
-## Backups
-
-Nothing is backed up automatically. Set this up right away:
-
-```bash
-# nightly, one dump for every app database
-docker compose exec -T postgres pg_dumpall -U postgres | gzip > /mnt/ssd/backups/pg-$(date +%F).sql.gz
-```
-
-Plus an encrypted off-site copy with restic. A shared database is a single point
-of loss for every app, and app secrets sit in it in clear text, so encrypt those
-dumps. On the image side, one image per app is kept (automatic prune on every
-deploy); bundles in `APPS_DIR` are only removed when the app is deleted.
-
-## Known limits
-
-- No automatic rollback: a deployment replaces the container.
-- No centralised logs, `docker logs app-<slug>` does the job.
-- An app's environment variables and database password sit in clear text in the
-  `apps` table of the control database. Acceptable on a homelab, worth
-  remembering when you handle backups.
-- The first wake shows a waiting page for about a second (an SPA fetch works
-  around it through `src/client.ts`, which retries).
-- Websockets do not survive going to sleep, by design.
-- Caddy answers 404 for any unknown subdomain, including a deleted app.
-- Apps can see each other on the shared network: do not host an app open to
+- **No rollback.** A deploy replaces the container. Keep your bundles.
+- **Apps can see each other.** They share a network. Do not put an app open to
   strangers next to something sensitive.
-- Deleting an app keeps its Postgres database but erases its `/data` volume.
+- **App secrets sit in clear text** in the control database. Encrypt your backups.
+- **Nothing is backed up for you.** One shared Postgres is one point of loss for
+  every app. Set up `pg_dumpall` on day one.
+- **Websockets do not survive sleeping.** Poll, or use SSE that reconnects.
+- **The first request after sleeping gets a waiting page**, not JSON. The
+  template's fetch wrapper retries it; a bare `fetch` breaks in silence.
+- **No rate limiting.** Put the console behind an outer access layer.
+
+[SECURITY.md](SECURITY.md) has the full threat model: what is enforced, and what
+is deliberately not.
 
 ## Licence
 
-MIT, see [LICENSE](LICENSE). Contributions welcome, see
-[CONTRIBUTING.md](CONTRIBUTING.md).
+MIT. See [LICENSE](LICENSE) and [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -1,5 +1,5 @@
 {
-  "name": "nanoploy-control-plane",
+  "name": "nanodeploy-control-plane",
   "private": true,
   "type": "module",
   "scripts": {

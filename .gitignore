@@ -6,5 +6,5 @@ server.js
 var/
 .DS_Store
 
-# sites générés par le control plane à l'exécution
+# site files the control plane writes at runtime
 caddy/conf.d/*.caddy
