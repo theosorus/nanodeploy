@@ -1,7 +1,9 @@
 # Nanodeploy
 
 **Your own Vercel, on a 4 GB box in a cupboard.** Apps sleep when nobody is
-using them, wake in about a second, and share one Postgres and one login.
+using them, wake in about a second, and share one Postgres and one login. It
+ships with a **Claude skill that writes and deploys new apps from a sentence** —
+[jump to it](#build-apps-by-asking).
 
 <p align="center">
   <img src="docs/dashboard.png" alt="The Nanodeploy dashboard: memory meter and the list of deployed apps" width="660">
@@ -26,7 +28,8 @@ identity provider and the gateway.
 
 You still get the parts that make hosting worth it: a real domain per app, HTTPS,
 one account across everything, a database per app, and a deploy that is one
-command or one drag of a `.zip`.
+command or one drag of a `.zip`. And because every app follows the same fixed
+stack, an AI can write one end to end — see [Build apps by asking](#build-apps-by-asking).
 
 ## What it costs to run
 
@@ -196,13 +199,30 @@ docker compose stop
 docker compose exec -T postgres pg_dumpall -U postgres | gzip > backups/pg-$(date +%F).sql.gz
 ```
 
-## Building apps with Claude
+## Build apps by asking
 
-`skills/nanodeploy-app/` is a Claude skill that knows the stack, the
-scale-to-zero constraints and the deploy procedure. Installed, "build me
-something to track my expenses" produces a conformant, deployable app — and asks
-you about the art direction first, so it does not look like every other
-generated app.
+The reason a whole app can be generated reliably here, when "build me an app" to
+a chatbot usually cannot: the stack is fixed. One frontend, one backend, one
+database, one auth model, deployed one way. There is nothing to decide wrong.
+Nanodeploy turns that constraint into a feature — it ships a Claude skill,
+`skills/nanodeploy-app/`, that has the whole contract built in.
+
+Install it, then just describe what you want:
+
+> **You:** build me something to track shared expenses with my flatmates
+
+The skill asks the few questions that actually change the result — who it is
+for, what data it holds, and, crucially, **three named art directions** so the
+app does not come out looking like every other generated one — then writes the
+schema, the API, the frontend and the manifest, and deploys it. You get a URL.
+
+It knows the things that quietly break a scale-to-zero app: no in-memory state,
+no timers, the retry wrapper for the first wake, an `ownerId` filter on every
+query. So the app it produces is not a demo that falls over on the second visit —
+it is one that runs on the constraints this platform actually has.
+
+The [`app-template/`](templates/app-template) it builds from is also a fine
+starting point by hand: `cp -r`, edit, `npm run deploy`.
 
 ## What it does not do
 
