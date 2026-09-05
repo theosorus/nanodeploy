@@ -1,4 +1,6 @@
-# Nanodeploy
+<p align="center">
+  <img src="docs/brand2/wordmark-C.png" alt="Nanodeploy" width="440">
+</p>
 
 **Your own Vercel, on a 4 GB box in a cupboard.** Apps sleep when nobody uses
 them, wake in about a second, and share one login and one Postgres. Ships with a
