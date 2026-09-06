@@ -26,11 +26,6 @@ if (TOKEN.length < 24) {
   process.exit(1);
 }
 
-// Group whose members may drive the platform from a browser. Pinning it in the
-// environment wins; otherwise it is a setting the dashboard can write, so
-// nobody has to ssh in to stop sharing root with every invited account.
-const ADMIN_GROUP_ENV = (process.env.ADMIN_GROUP ?? "").trim();
-let adminGroup = ADMIN_GROUP_ENV;
 const app = new Hono();
 
 // upload sanity: disk and ram are constrained on the target machine
@@ -47,7 +42,6 @@ const GROUP_NAME_RE = /^[\p{L}\p{N}._'-]+$/u;
 
 await store.initState();
 await store.migrateState();
-if (!ADMIN_GROUP_ENV) adminGroup = (await store.getSetting("admin_group")) ?? "";
 
 /* ---------- auth ---------- */
 
@@ -71,20 +65,20 @@ const sessionGroups = (c: Context) =>
     .map((g) => g.trim())
     .filter(Boolean);
 
-// full platform access: the CLI token, or a browser session in the admin group.
-// A tinyauth user that is not in the group may use the apps, not the console.
+// Full platform access: the CLI token, or a signed-in account flagged as admin
+// in the identity provider (the owner always is). Console access follows that
+// one flag, never a named group, so no group edit can ever lock the owner out.
+// Before an identity provider is wired up there is only the owner, so a bare
+// session is allowed through to bootstrap the first setup.
 const adminOk = async (c: Context) => {
   if (tokenOk(c)) return true;
   if (!sessionOk(c)) return false;
-  if (!adminGroup) return true;
-  if (sessionGroups(c).includes(adminGroup)) return true;
-  // the session predates the group change: ask pocket-id rather than lock
-  // someone out of the console they just configured
-  const live = await people.groupsOf(
+  if (!people.configured()) return true;
+  const me = await people.findBySession(
     c.req.header("remote-sub") ?? "",
     c.req.header("remote-email") ?? "",
   );
-  return live.includes(adminGroup);
+  return Boolean(me?.isAdmin);
 };
 
 const isMe = (c: Context) => c.req.path === "/api/me";
@@ -117,7 +111,7 @@ app.use("/api/*", async (c: Context, next: Next) => {
   // tell a signed-in non-admin apart from a stranger: the dashboard shows
   // "you are not an administrator" instead of "your session expired"
   if (sessionOk(c)) {
-    return c.json({ error: `this account is not in the "${adminGroup}" group`, admin: false }, 403);
+    return c.json({ error: "this account is not an administrator", admin: false }, 403);
   }
   return c.json({ error: "unauthorized" }, 401);
 });
@@ -589,19 +583,10 @@ app.get("/api/people", async (c) => {
 });
 
 app.post("/api/people", async (c) => {
-  // Until an admin group exists, every account that can sign in can deploy code
-  // and drive docker on this machine. Creating a second account before that is
-  // handing out root, so the invite waits for the decision.
-  if (!adminGroup) {
-    return c.json(
-      {
-        error:
-          "choose an admin group before inviting anyone: without one, every account gets full control of this server",
-        needsAdminGroup: true,
-      },
-      409,
-    );
-  }
+  // An invited account is not an administrator: it can sign in and open the apps
+  // it is allowed, but not reach this console. Granting console access is a
+  // separate, explicit step (POST /api/people/:id/admin), so inviting someone is
+  // safe and never hands out control of the machine.
   const { username, email, firstName } = (await jsonBody<Record<string, string>>(c)) ?? {};
   if (!username?.trim() || !email?.trim()) {
     return c.json({ error: "username and email are required" }, 400);
@@ -636,77 +621,100 @@ app.post("/api/groups", async (c) => {
   return c.json(await people.createGroup(clean));
 });
 
-// Who may drive the console. Set from the dashboard so nobody has to ssh in and
-// restart a container to stop sharing root with the whole family.
-app.post("/api/admin-group", async (c) => {
-  if (ADMIN_GROUP_ENV) {
-    return c.json(
-      { error: "the admin group is pinned by the ADMIN_GROUP environment variable" },
-      400,
+// Grant or revoke console access. It follows the identity provider's admin flag,
+// never a group, so no group edit can lock the owner out.
+app.post("/api/people/:id/admin", async (c) => {
+  const body = await jsonBody<{ admin?: unknown }>(c);
+  if (!body || typeof body.admin !== "boolean") {
+    return c.json({ error: "expected { admin: true | false }" }, 400);
+  }
+  const id = c.req.param("id");
+  if (!body.admin) {
+    // never let an admin revoke their own access, and never leave the console
+    // with nobody able to manage it
+    const me = await people.findBySession(
+      c.req.header("remote-sub") ?? "",
+      c.req.header("remote-email") ?? "",
     );
-  }
-  const body = await jsonBody<{ group?: string }>(c);
-  // a malformed body must not be read as an empty group and silently clear the
-  // admin group: require a real object, with the key even if its value is empty
-  if (!body || typeof body !== "object" || !("group" in body)) {
-    return c.json({ error: "expected a JSON body with a group field" }, 400);
-  }
-  const clean = String(body.group ?? "").replace(/[\r\n"\\]/g, "").trim().slice(0, 64);
-
-  if (!clean) {
-    // clearing gives every account full control again: too big a step to take
-    // from a browser session that the change itself could be locking out
-    if (!tokenOk(c)) {
-      return c.json({ error: "clearing the admin group requires the deploy token" }, 403);
+    if (me && me.id === id) {
+      return c.json({ error: "you cannot remove your own console access" }, 400);
     }
-    await store.setSetting("admin_group", "");
-    adminGroup = "";
-    return c.json({ ok: true, adminGroup: null });
+    if ((await people.adminCount()) <= 1) {
+      return c.json({ error: "this is the last administrator" }, 400);
+    }
   }
+  try {
+    await people.setAdmin(id, body.admin);
+    return c.json({ ok: true });
+  } catch (err: any) {
+    return c.json({ error: err.message }, 502);
+  }
+});
 
+// Groups only decide who may open an app set to "groups". A rename must follow
+// through to every app that references the group by name and to the caddy site
+// that enforces it, or that app would quietly allow the wrong people.
+function appsUsingGroup(apps: store.AppRow[], name: string) {
+  return apps.filter((a) => a.access === "groups" && a.groups.includes(name));
+}
+
+app.patch("/api/groups/:id", async (c) => {
+  const { name } = (await jsonBody<{ name: string }>(c)) ?? {};
+  const clean = String(name ?? "").replace(/[\r\n"\\]/g, "").trim().slice(0, 64);
   if (!GROUP_NAME_RE.test(clean)) {
     return c.json({ error: "group name not allowed in caddy config" }, 400);
   }
-  if (people.configured()) {
-    const known = await people.listGroups().catch(() => null);
-    if (known && !known.some((g) => g.name === clean)) {
-      return c.json({ error: `no group named "${clean}" in Pocket ID` }, 400);
-    }
+  const groups = await people.listGroups().catch(() => null);
+  const old = groups?.find((g) => g.id === c.req.param("id"));
+  if (!old) return c.json({ error: "no such group" }, 404);
+  if (old.name === clean) return c.json({ ok: true });
+  try {
+    await people.renameGroup(c.req.param("id"), clean);
+  } catch (err: any) {
+    return c.json({ error: err.message }, 502);
   }
-  // a browser admin must already be in the group, or the very next request
-  // would lock them out of their own console
-  if (!tokenOk(c)) {
-    const mine = sessionGroups(c).includes(clean)
-      ? true
-      : (
-          await people.groupsOf(
-            c.req.header("remote-sub") ?? "",
-            c.req.header("remote-email") ?? "",
-          )
-        ).includes(clean);
-    if (!mine) {
-      return c.json(
-        { error: `add your own account to "${clean}" first, then set it here` },
-        400,
-      );
-    }
+  for (const row of appsUsingGroup(await store.listApps(), old.name)) {
+    await runLocked(row.slug, async () => {
+      const next = row.groups.map((g) => (g === old.name ? clean : g));
+      await store.setAccess(row.slug, row.access, next);
+      await applySite((await store.getApp(row.slug))!);
+    });
   }
-  await store.setSetting("admin_group", clean);
-  adminGroup = clean;
-  return c.json({ ok: true, adminGroup: clean });
+  return c.json({ ok: true });
+});
+
+app.delete("/api/groups/:id", async (c) => {
+  const groups = await people.listGroups().catch(() => null);
+  const g = groups?.find((x) => x.id === c.req.param("id"));
+  if (!g) return c.json({ error: "no such group" }, 404);
+  const used = appsUsingGroup(await store.listApps(), g.name);
+  if (used.length > 0) {
+    return c.json(
+      {
+        error: `still used by ${used.map((a) => a.name).join(", ")}. Change those apps' access first.`,
+      },
+      409,
+    );
+  }
+  try {
+    await people.deleteGroup(c.req.param("id"));
+    return c.json({ ok: true });
+  } catch (err: any) {
+    return c.json({ error: err.message }, 502);
+  }
 });
 
 app.get("/api/me", async (c) =>
   c.json({
     name: c.req.header("Remote-Name") ?? c.req.header("Remote-User") ?? "",
     email: c.req.header("Remote-Email") ?? "",
+    // the identity provider subject equals the Pocket ID user id, so the People
+    // tab can tell which row is you and refuse to let you demote yourself
+    sub: c.req.header("Remote-Sub") ?? null,
     domain: process.env.APPS_DOMAIN,
     admin: await adminOk(c),
     viaToken: tokenOk(c),
     groups: sessionGroups(c),
-    adminGroup: adminGroup || null,
-    // pinned in .env: the dashboard shows it read-only
-    adminGroupLocked: Boolean(ADMIN_GROUP_ENV),
   }));
 
 app.get("/", async (c) => c.html(await readFile("./public/index.html", "utf8")));

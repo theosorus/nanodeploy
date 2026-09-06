@@ -145,6 +145,12 @@
     border-radius: 99px; padding: 6px 12px; cursor: pointer; color: var(--soft); min-height: 34px;
   }
   .chip[aria-pressed="true"] { border-color: var(--live); color: var(--live); }
+  /* a static marker that an account can drive the console */
+  .badge-admin {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--live-fill);
+    border: 1px solid var(--live-fill); border-radius: 99px; padding: 1px 8px; margin-left: 6px;
+  }
 
   pre.logs {
     background: var(--paper); border: 1px solid var(--rule); border-radius: var(--radius);
@@ -984,6 +990,145 @@ const LANGS = [
   ["zh", "中文"], ["ja", "日本語"],
 ];
 
+// The People tab was reworked: console access follows the identity provider's
+// admin flag, and groups are only for app access. These keys are added here and
+// merged into I18N so the (large) per-language blocks above stay untouched; the
+// three keys that changed meaning (groupsTitle, groupNote, notAdminBody) are
+// overridden on purpose.
+const I18N_PEOPLE = {
+  en: {
+    accountsTitle: "Accounts",
+    consoleHelp: "A console admin can manage this server — deploy apps and see everything. Groups only decide who can open which app; they have nothing to do with administration.",
+    youBadge: "you", adminBadge: "admin", consoleAdmin: "Console admin",
+    groupsLabel: "Groups", noGroupsYet: "No group yet — create one below.",
+    removePerson: "Remove", removePersonConfirm: "Remove {name}? Their account and access are deleted.",
+    confirmGrantAdmin: "Give {name} console access? They will be able to manage the whole server.",
+    memberOne: "member", memberMany: "members", rename: "Rename", cancel: "Cancel",
+    deleteGroupConfirm: "Delete the group {name}?",
+    groupsTitle: "Groups (app access)",
+    groupNote: "A group opens an app to specific people without making it public. It has no effect on who can administer the server.",
+    notAdminBody: "You can use the apps you have access to, but not manage the platform. Ask an administrator to give you console access.",
+  },
+  fr: {
+    accountsTitle: "Comptes",
+    consoleHelp: "Un admin console peut gérer ce serveur : déployer des apps et tout voir. Les groupes servent seulement à décider qui peut ouvrir quelle app, ça n'a rien à voir avec l'administration.",
+    youBadge: "vous", adminBadge: "admin", consoleAdmin: "Admin console",
+    groupsLabel: "Groupes", noGroupsYet: "Aucun groupe — crée-en un ci-dessous.",
+    removePerson: "Retirer", removePersonConfirm: "Retirer {name} ? Son compte et ses accès seront supprimés.",
+    confirmGrantAdmin: "Donner l'accès admin à {name} ? Cette personne pourra tout gérer sur le serveur.",
+    memberOne: "membre", memberMany: "membres", rename: "Renommer", cancel: "Annuler",
+    deleteGroupConfirm: "Supprimer le groupe {name} ?",
+    groupsTitle: "Groupes (accès aux apps)",
+    groupNote: "Un groupe ouvre une app à certaines personnes sans la rendre publique. Il n'a aucun effet sur qui peut administrer le serveur.",
+    notAdminBody: "Vous pouvez utiliser les apps auxquelles vous avez accès, mais pas gérer la plateforme. Demandez à un administrateur de vous donner l'accès.",
+  },
+  es: {
+    accountsTitle: "Cuentas",
+    consoleHelp: "Un administrador de la consola puede gestionar este servidor: desplegar apps y verlo todo. Los grupos solo deciden quién puede abrir cada app; no tienen nada que ver con la administración.",
+    youBadge: "tú", adminBadge: "admin", consoleAdmin: "Admin de consola",
+    groupsLabel: "Grupos", noGroupsYet: "Aún no hay grupos: crea uno abajo.",
+    removePerson: "Quitar", removePersonConfirm: "¿Quitar a {name}? Se eliminarán su cuenta y sus accesos.",
+    confirmGrantAdmin: "¿Dar acceso de administrador a {name}? Podrá gestionar todo el servidor.",
+    memberOne: "miembro", memberMany: "miembros", rename: "Renombrar", cancel: "Cancelar",
+    deleteGroupConfirm: "¿Eliminar el grupo {name}?",
+    groupsTitle: "Grupos (acceso a apps)",
+    groupNote: "Un grupo abre una app a ciertas personas sin hacerla pública. No influye en quién puede administrar el servidor.",
+    notAdminBody: "Puedes usar las apps a las que tienes acceso, pero no gestionar la plataforma. Pide a un administrador que te dé acceso a la consola.",
+  },
+  de: {
+    accountsTitle: "Konten",
+    consoleHelp: "Ein Konsolen-Admin kann diesen Server verwalten: Apps bereitstellen und alles sehen. Gruppen legen nur fest, wer welche App öffnen darf; mit der Administration haben sie nichts zu tun.",
+    youBadge: "du", adminBadge: "Admin", consoleAdmin: "Konsolen-Admin",
+    groupsLabel: "Gruppen", noGroupsYet: "Noch keine Gruppe – erstelle unten eine.",
+    removePerson: "Entfernen", removePersonConfirm: "{name} entfernen? Konto und Zugriffe werden gelöscht.",
+    confirmGrantAdmin: "{name} Konsolenzugriff geben? Diese Person kann dann den ganzen Server verwalten.",
+    memberOne: "Mitglied", memberMany: "Mitglieder", rename: "Umbenennen", cancel: "Abbrechen",
+    deleteGroupConfirm: "Die Gruppe {name} löschen?",
+    groupsTitle: "Gruppen (App-Zugriff)",
+    groupNote: "Eine Gruppe öffnet eine App für bestimmte Personen, ohne sie öffentlich zu machen. Auf die Administration hat sie keinen Einfluss.",
+    notAdminBody: "Du kannst die Apps nutzen, auf die du Zugriff hast, aber die Plattform nicht verwalten. Bitte einen Administrator, dir Konsolenzugriff zu geben.",
+  },
+  it: {
+    accountsTitle: "Account",
+    consoleHelp: "Un amministratore della console può gestire questo server: distribuire app e vedere tutto. I gruppi decidono solo chi può aprire quale app; non hanno nulla a che fare con l'amministrazione.",
+    youBadge: "tu", adminBadge: "admin", consoleAdmin: "Admin console",
+    groupsLabel: "Gruppi", noGroupsYet: "Ancora nessun gruppo: creane uno qui sotto.",
+    removePerson: "Rimuovi", removePersonConfirm: "Rimuovere {name}? L'account e gli accessi verranno eliminati.",
+    confirmGrantAdmin: "Dare l'accesso console a {name}? Potrà gestire tutto il server.",
+    memberOne: "membro", memberMany: "membri", rename: "Rinomina", cancel: "Annulla",
+    deleteGroupConfirm: "Eliminare il gruppo {name}?",
+    groupsTitle: "Gruppi (accesso alle app)",
+    groupNote: "Un gruppo apre un'app a persone specifiche senza renderla pubblica. Non incide su chi può amministrare il server.",
+    notAdminBody: "Puoi usare le app a cui hai accesso, ma non gestire la piattaforma. Chiedi a un amministratore di darti l'accesso alla console.",
+  },
+  pt: {
+    accountsTitle: "Contas",
+    consoleHelp: "Um administrador do console pode gerenciar este servidor: implantar apps e ver tudo. Os grupos apenas decidem quem pode abrir cada app; não têm nada a ver com a administração.",
+    youBadge: "você", adminBadge: "admin", consoleAdmin: "Admin do console",
+    groupsLabel: "Grupos", noGroupsYet: "Nenhum grupo ainda — crie um abaixo.",
+    removePerson: "Remover", removePersonConfirm: "Remover {name}? A conta e os acessos serão excluídos.",
+    confirmGrantAdmin: "Dar acesso de administrador a {name}? Poderá gerenciar todo o servidor.",
+    memberOne: "membro", memberMany: "membros", rename: "Renomear", cancel: "Cancelar",
+    deleteGroupConfirm: "Excluir o grupo {name}?",
+    groupsTitle: "Grupos (acesso às apps)",
+    groupNote: "Um grupo abre uma app para pessoas específicas sem torná-la pública. Não afeta quem pode administrar o servidor.",
+    notAdminBody: "Você pode usar as apps a que tem acesso, mas não gerenciar a plataforma. Peça a um administrador para lhe dar acesso ao console.",
+  },
+  nl: {
+    accountsTitle: "Accounts",
+    consoleHelp: "Een console-beheerder kan deze server beheren: apps uitrollen en alles zien. Groepen bepalen alleen wie welke app mag openen; ze hebben niets met beheer te maken.",
+    youBadge: "jij", adminBadge: "beheerder", consoleAdmin: "Consolebeheerder",
+    groupsLabel: "Groepen", noGroupsYet: "Nog geen groep — maak er hieronder een.",
+    removePerson: "Verwijderen", removePersonConfirm: "{name} verwijderen? Het account en de toegang worden verwijderd.",
+    confirmGrantAdmin: "{name} consoletoegang geven? Deze persoon kan dan de hele server beheren.",
+    memberOne: "lid", memberMany: "leden", rename: "Hernoemen", cancel: "Annuleren",
+    deleteGroupConfirm: "De groep {name} verwijderen?",
+    groupsTitle: "Groepen (app-toegang)",
+    groupNote: "Een groep opent een app voor bepaalde mensen zonder hem openbaar te maken. Het heeft geen invloed op wie de server mag beheren.",
+    notAdminBody: "Je kunt de apps gebruiken waar je toegang toe hebt, maar het platform niet beheren. Vraag een beheerder om je consoletoegang te geven.",
+  },
+  ru: {
+    accountsTitle: "Аккаунты",
+    consoleHelp: "Администратор консоли может управлять этим сервером: развёртывать приложения и видеть всё. Группы только определяют, кто может открыть какое приложение, и не имеют отношения к администрированию.",
+    youBadge: "вы", adminBadge: "админ", consoleAdmin: "Админ консоли",
+    groupsLabel: "Группы", noGroupsYet: "Групп пока нет — создайте ниже.",
+    removePerson: "Удалить", removePersonConfirm: "Удалить {name}? Аккаунт и доступы будут удалены.",
+    confirmGrantAdmin: "Дать {name} доступ к консоли? Этот человек сможет управлять всем сервером.",
+    memberOne: "участник", memberMany: "участников", rename: "Переименовать", cancel: "Отмена",
+    deleteGroupConfirm: "Удалить группу {name}?",
+    groupsTitle: "Группы (доступ к приложениям)",
+    groupNote: "Группа открывает приложение определённым людям, не делая его публичным. На администрирование сервера она не влияет.",
+    notAdminBody: "Вы можете пользоваться приложениями, к которым у вас есть доступ, но не управлять платформой. Попросите администратора выдать вам доступ к консоли.",
+  },
+  zh: {
+    accountsTitle: "账户",
+    consoleHelp: "控制台管理员可以管理此服务器：部署应用并查看一切。群组只决定谁能打开哪个应用，与管理无关。",
+    youBadge: "你", adminBadge: "管理员", consoleAdmin: "控制台管理员",
+    groupsLabel: "群组", noGroupsYet: "还没有群组——在下方创建一个。",
+    removePerson: "移除", removePersonConfirm: "移除 {name}？其账户和访问权限将被删除。",
+    confirmGrantAdmin: "给 {name} 控制台访问权限？该用户将能够管理整个服务器。",
+    memberOne: "名成员", memberMany: "名成员", rename: "重命名", cancel: "取消",
+    deleteGroupConfirm: "删除群组 {name}？",
+    groupsTitle: "群组（应用访问）",
+    groupNote: "群组可以在不公开应用的情况下，将其开放给特定的人。它不影响谁能管理服务器。",
+    notAdminBody: "你可以使用有权限的应用，但无法管理平台。请管理员给你控制台访问权限。",
+  },
+  ja: {
+    accountsTitle: "アカウント",
+    consoleHelp: "コンソール管理者はこのサーバーを管理できます（アプリのデプロイ、すべての閲覧）。グループはどのアプリを誰が開けるかを決めるだけで、管理とは関係ありません。",
+    youBadge: "あなた", adminBadge: "管理者", consoleAdmin: "コンソール管理者",
+    groupsLabel: "グループ", noGroupsYet: "まだグループがありません。下で作成してください。",
+    removePerson: "削除", removePersonConfirm: "{name} を削除しますか？アカウントとアクセス権が削除されます。",
+    confirmGrantAdmin: "{name} にコンソールアクセスを与えますか？サーバー全体を管理できるようになります。",
+    memberOne: "人", memberMany: "人", rename: "名前を変更", cancel: "キャンセル",
+    deleteGroupConfirm: "グループ {name} を削除しますか？",
+    groupsTitle: "グループ（アプリのアクセス）",
+    groupNote: "グループは、アプリを公開せずに特定の人に開放します。サーバーの管理には影響しません。",
+    notAdminBody: "アクセス権のあるアプリは使えますが、プラットフォームの管理はできません。管理者にコンソールへのアクセスを依頼してください。",
+  },
+};
+for (const l of Object.keys(I18N_PEOPLE)) Object.assign(I18N[l], I18N_PEOPLE[l]);
+
 const SUPPORTED = new Set(LANGS.map(([c]) => c));
 const savedLang = (() => { try { return localStorage.getItem("nanodeploy.lang"); } catch { return null; } })();
 // English is the default; a saved choice wins if it is one we support
@@ -1326,35 +1471,68 @@ async function loadPeople() {
   renderPeople(state.peopleError);
 }
 
-// Who may drive this console. While it is unset, anyone who can sign in can
-// deploy code here, so this block is a warning, not a preference.
-function adminBlock() {
-  const me = state.me;
-  if (!me) return "";
-  if (me.adminGroup) {
-    return `<p class="note" style="margin:0 0 24px">${esc(t("adminSet", { group: me.adminGroup }))}
-      ${me.adminGroupLocked ? esc(t("adminPinned")) : ""}</p>`;
-  }
+// which group name, if any, is being renamed inline
+let editingGroup = null;
 
-  // only a group the current account belongs to can be chosen, otherwise the
-  // next request would lock this very session out
-  const mine = state.people.find(
-    (p) => me.email && p.email && p.email.toLowerCase() === me.email.toLowerCase(),
-  );
-  const owned = new Set([...(me.groups ?? []), ...(mine?.groups ?? [])]);
-  const options = state.groups.filter((g) => owned.has(g.name));
+// the signed-in account, matched to a row so its own controls can be locked:
+// you must not be able to remove your own console access or your own account
+function isMe(p) {
+  const sub = state.me?.sub;
+  const email = (state.me?.email || "").toLowerCase();
+  return (sub && p.id === sub) || (email && (p.email || "").toLowerCase() === email);
+}
 
-  return `<div class="warn">
-    <h3>${t("adminTitle")}</h3>
-    <p style="margin:0 0 12px">${t("adminOpen")}</p>
-    ${options.length
-      ? `<div class="field" style="margin:0">
-           <select id="admin-group">${options
-             .map((g) => `<option value="${esc(g.name)}">${esc(g.name)}</option>`)
-             .join("")}</select>
-           <button class="act primary" id="set-admin">${t("adminSave")}</button>
-         </div>`
-      : `<p class="note" style="margin:0">${t("adminNoGroup")}</p>`}
+function personCard(p) {
+  const me = isMe(p);
+  const badges =
+    (me ? ` <span class="note">${t("youBadge")}</span>` : "") +
+    (p.isAdmin ? ` <span class="badge-admin">${t("adminBadge")}</span>` : "");
+
+  // console access: a toggle for everyone else, a static state for yourself
+  const adminControl = me
+    ? ""
+    : `<button class="chip" data-admin="${p.id}" aria-pressed="${p.isAdmin}">${t("consoleAdmin")}</button>`;
+
+  const groupChips = state.groups.length
+    ? state.groups
+        .map(
+          (g) => `<button class="chip" data-person="${p.id}" data-gid="${g.id}"
+            aria-pressed="${p.groups.includes(g.name)}">${esc(g.name)}</button>`,
+        )
+        .join("")
+    : `<span class="note">${t("noGroupsYet")}</span>`;
+
+  return `<div class="detail" style="margin-bottom:12px">
+    <div class="spread">
+      <div style="min-width:0">
+        <span class="app-name">${esc(p.displayName)}${badges}</span>
+        <span class="app-host num">${esc(p.email || p.username)}</span>
+      </div>
+      <div class="row">${adminControl}</div>
+    </div>
+    <div style="margin-top:16px">
+      <span class="label">${t("groupsLabel")}</span>
+      <div class="chips" style="margin-top:8px">${groupChips}</div>
+    </div>
+    ${me ? "" : `<div class="actions"><button class="act danger" data-removeperson="${p.id}">${t("removePerson")}</button></div>`}
+  </div>`;
+}
+
+function groupRow(g) {
+  const count = state.people.filter((p) => p.groups.includes(g.name)).length;
+  const editing = editingGroup === g.id;
+  const left = editing
+    ? `<input id="rename-input" value="${esc(g.name)}" style="max-width:260px" aria-label="${t("rename")}">`
+    : `<span class="app-name">${esc(g.name)}</span>
+       <span class="app-host">${count} ${count === 1 ? t("memberOne") : t("memberMany")}</span>`;
+  const right = editing
+    ? `<button class="act primary" data-savegroup="${g.id}">${t("envSave")}</button>
+       <button class="act" data-cancelgroup="1">${t("cancel")}</button>`
+    : `<button class="act" data-renamegroup="${g.id}">${t("rename")}</button>
+       <button class="act danger" data-delgroup="${g.id}">${t("delete")}</button>`;
+  return `<div class="spread" style="border-top:1px solid var(--rule);padding:12px 0;gap:12px">
+    <div style="flex:1;min-width:0">${left}</div>
+    <div class="row">${right}</div>
   </div>`;
 }
 
@@ -1369,96 +1547,110 @@ function renderPeople(error) {
   }
 
   view.innerHTML = `
-    ${adminBlock()}
-    <div class="label" style="margin-bottom:8px">${t("inviteTitle")}</div>
+    <p class="note" style="margin:0 0 24px">${t("consoleHelp")}</p>
+
+    <div class="label" style="margin-bottom:8px">${t("accountsTitle")}</div>
     <div class="field">
       <input id="new-username" placeholder="${t("usernamePh")}" autocomplete="off">
       <input id="new-email" type="email" placeholder="${t("emailPh")}" autocomplete="off">
-      <button class="act${state.me?.adminGroup ? " primary" : ""}" id="invite">${t("invite")}</button>
+      <button class="act primary" id="invite">${t("invite")}</button>
     </div>
-    <p class="note" style="margin:0 0 32px">${t("inviteHint")}</p>
+    <p class="note" style="margin:0 0 24px">${t("inviteHint")}</p>
 
     ${error ? `<p class="empty">${t("peopleError")}${esc(error)}</p>` : ""}
 
-    ${state.people.map((p) => `
-      <div class="app" style="cursor:default">
-        <span class="app-main">
-          <span class="app-name">${esc(p.displayName)}${p.isAdmin ? ` <span class="note" style="font-weight:400">${t("idAdmin")}</span>` : ""}</span>
-          <span class="app-host num">${esc(p.email || p.username)}</span>
-        </span>
-        <span class="chips">
-          ${state.groups.map((g) => `<button class="chip" data-person="${p.id}" data-gid="${g.id}"
-              aria-pressed="${p.groups.includes(g.name)}">${esc(g.name)}</button>`).join("")}
-        </span>
-      </div>`).join("") || `<p class="empty">${t("alone")}</p>`}
+    ${state.people.map(personCard).join("") || `<p class="empty">${t("alone")}</p>`}
 
-    <div class="label" style="margin:32px 0 8px">${t("groupsTitle")}</div>
+    <div class="label" style="margin:36px 0 8px">${t("groupsTitle")}</div>
+    <p class="note" style="margin:0 0 12px">${t("groupNote")}</p>
     <div class="field">
       <input id="new-group" placeholder="${t("groupPh")}">
       <button class="act" id="add-group">${t("create")}</button>
     </div>
-    <p class="note" style="margin:0">${t("groupNote")}</p>`;
+    <div style="margin-top:4px">
+      ${state.groups.map(groupRow).join("") || `<p class="note" style="margin-top:12px">${t("noGroupsYet")}</p>`}
+    </div>`;
 
-  const setAdmin = $("set-admin");
-  if (setAdmin) {
-    setAdmin.onclick = async () => {
-      const group = $("admin-group").value;
-      try {
-        const res = await api("/api/admin-group", {
-          method: "POST",
-          body: JSON.stringify({ group }),
-        });
-        state.me.adminGroup = res.adminGroup;
-        toast(t("adminSet", { group: res.adminGroup }));
-        loadPeople();
-      } catch (err) {
-        toast(t("fail") + err.message);
-      }
-    };
-  }
+  bindPeople();
+}
 
-  $("invite").onclick = async () => {
+function bindPeople() {
+  const fail = (fn) => async (...a) => {
+    try { await fn(...a); } catch (err) { toast(t("fail") + err.message, true); }
+  };
+
+  $("invite").onclick = fail(async () => {
     const username = $("new-username").value.trim();
     const email = $("new-email").value.trim();
     if (!username || !email) return toast(t("inviteRequired"));
-    try {
-      const res = await api("/api/people", { method: "POST", body: JSON.stringify({ username, email }) });
-      toast(res.link ? t("inviteLink") + res.link : t("created"), true);
-      loadPeople();
-    } catch (err) {
-      toast(err.data?.needsAdminGroup ? t("inviteNeedsAdmin") : t("fail") + err.message, true);
-    }
-  };
+    const res = await api("/api/people", { method: "POST", body: JSON.stringify({ username, email }) });
+    toast(res.link ? t("inviteLink") + res.link : t("created"), true);
+    loadPeople();
+  });
 
-  $("add-group").onclick = async () => {
+  $("add-group").onclick = fail(async () => {
     const name = $("new-group").value.trim();
     if (!name) return;
-    try {
-      await api("/api/groups", { method: "POST", body: JSON.stringify({ name }) });
-      loadPeople();
-    } catch (err) {
-      toast(t("fail") + err.message);
-    }
-  };
+    await api("/api/groups", { method: "POST", body: JSON.stringify({ name }) });
+    loadPeople();
+  });
 
+  // console access on/off
+  document.querySelectorAll("[data-admin]").forEach((el) => {
+    el.onclick = fail(async () => {
+      const p = state.people.find((x) => x.id === el.dataset.admin);
+      const turningOn = !p.isAdmin;
+      if (turningOn && !confirm(t("confirmGrantAdmin", { name: p.displayName }))) return;
+      await api(`/api/people/${p.id}/admin`, { method: "POST", body: JSON.stringify({ admin: turningOn }) });
+      loadPeople();
+    });
+  });
+
+  // group membership for app access
   document.querySelectorAll("[data-person]").forEach((el) => {
-    el.onclick = async () => {
-      try {
-        const person = state.people.find((p) => p.id === el.dataset.person);
-        const group = state.groups.find((g) => g.id === el.dataset.gid);
-        const names = person.groups.includes(group.name)
-          ? person.groups.filter((n) => n !== group.name)
-          : [...person.groups, group.name];
-        const ids = state.groups.filter((g) => names.includes(g.name)).map((g) => g.id);
-        await api(`/api/people/${person.id}/groups`, {
-          method: "POST",
-          body: JSON.stringify({ groupIds: ids }),
-        });
-        loadPeople();
-      } catch (err) {
-        toast(t("fail") + err.message);
-      }
-    };
+    el.onclick = fail(async () => {
+      const person = state.people.find((p) => p.id === el.dataset.person);
+      const group = state.groups.find((g) => g.id === el.dataset.gid);
+      const names = person.groups.includes(group.name)
+        ? person.groups.filter((n) => n !== group.name)
+        : [...person.groups, group.name];
+      const ids = state.groups.filter((g) => names.includes(g.name)).map((g) => g.id);
+      await api(`/api/people/${person.id}/groups`, { method: "POST", body: JSON.stringify({ groupIds: ids }) });
+      loadPeople();
+    });
+  });
+
+  document.querySelectorAll("[data-removeperson]").forEach((el) => {
+    el.onclick = fail(async () => {
+      const p = state.people.find((x) => x.id === el.dataset.removeperson);
+      if (!confirm(t("removePersonConfirm", { name: p.displayName }))) return;
+      await api(`/api/people/${p.id}`, { method: "DELETE" });
+      loadPeople();
+    });
+  });
+
+  document.querySelectorAll("[data-renamegroup]").forEach((el) => {
+    el.onclick = () => { editingGroup = el.dataset.renamegroup; renderPeople(state.peopleError); $("rename-input")?.focus(); };
+  });
+  document.querySelectorAll("[data-cancelgroup]").forEach((el) => {
+    el.onclick = () => { editingGroup = null; renderPeople(state.peopleError); };
+  });
+  document.querySelectorAll("[data-savegroup]").forEach((el) => {
+    el.onclick = fail(async () => {
+      const name = $("rename-input").value.trim();
+      const id = el.dataset.savegroup;
+      editingGroup = null;
+      await api(`/api/groups/${id}`, { method: "PATCH", body: JSON.stringify({ name }) });
+      loadPeople();
+    });
+  });
+  document.querySelectorAll("[data-delgroup]").forEach((el) => {
+    el.onclick = fail(async () => {
+      const g = state.groups.find((x) => x.id === el.dataset.delgroup);
+      if (!confirm(t("deleteGroupConfirm", { name: g.name }))) return;
+      await api(`/api/groups/${g.id}`, { method: "DELETE" });
+      loadPeople();
+    });
   });
 }
 
@@ -1514,7 +1706,7 @@ function renderDenied() {
   view.hidden = false;
   view.innerHTML = `<div class="warn">
     <h3>${t("notAdminTitle")}</h3>
-    <p style="margin:0">${esc(t("notAdminBody", { group: state.me?.adminGroup ?? "admin" }))}</p>
+    <p style="margin:0">${esc(t("notAdminBody"))}</p>
   </div>`;
 }
 

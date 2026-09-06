@@ -52,27 +52,42 @@ export async function listPeople(): Promise<Person[]> {
   }));
 }
 
-// A tinyauth session carries the groups the person had when they signed in.
-// Adding yourself to the admin group and then naming it would therefore lock
-// you out of your own console until you signed out and back in. Ask the
-// identity provider instead, cached so this stays cheap on a per-request path.
+// A tinyauth session carries the groups and admin flag the person had when they
+// signed in, which can be stale right after an edit. Ask the identity provider
+// instead, cached so this stays cheap on a per-request path (adminOk runs on it).
 let cache: { at: number; people: Person[] } | null = null;
 const CACHE_MS = 60_000;
 
-export async function groupsOf(sub: string, email: string): Promise<string[]> {
+async function everyone(): Promise<Person[]> {
   if (!configured()) return [];
   if (!cache || Date.now() - cache.at > CACHE_MS) {
     const list = await listPeople().catch(() => null);
-    if (!list) return [];
+    if (!list) return cache?.people ?? [];
     cache = { at: Date.now(), people: list };
   }
-  const found = cache.people.find(
-    (p) => p.id === sub || (email && p.email.toLowerCase() === email.toLowerCase()),
-  );
-  return found?.groups ?? [];
+  return cache.people;
 }
 
-// group edits must be visible on the next request, not up to a minute later
+// The signed-in person, matched by identity provider id first, then email.
+export async function findBySession(sub: string, email: string): Promise<Person | null> {
+  const list = await everyone();
+  return (
+    list.find((p) => p.id === sub || (email && p.email.toLowerCase() === email.toLowerCase())) ??
+    null
+  );
+}
+
+export async function groupsOf(sub: string, email: string): Promise<string[]> {
+  return (await findBySession(sub, email))?.groups ?? [];
+}
+
+// How many accounts can administer the console. Used to refuse removing the last
+// one, so an install can never end up with nobody able to manage it.
+export async function adminCount(): Promise<number> {
+  return (await everyone()).filter((p) => p.isAdmin).length;
+}
+
+// edits must be visible on the next request, not up to a minute later
 export const forgetGroups = () => (cache = null);
 
 export async function listGroups(): Promise<{ id: string; name: string }[]> {
@@ -119,11 +134,43 @@ export async function setGroups(userId: string, groupIds: string[]) {
   });
 }
 
+// Grant or revoke console access. Pocket ID's PUT replaces the whole user, so
+// read the current row and send it back with only isAdmin changed, or a toggle
+// would wipe the person's name and email.
+export async function setAdmin(userId: string, isAdmin: boolean) {
+  forgetGroups();
+  const u = await call(`/users/${enc(userId)}`);
+  return call(`/users/${enc(userId)}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      username: u.username,
+      email: u.email,
+      firstName: u.firstName ?? "",
+      lastName: u.lastName ?? "",
+      isAdmin,
+    }),
+  });
+}
+
 export async function createGroup(name: string) {
+  forgetGroups();
   return call("/user-groups", {
     method: "POST",
     body: JSON.stringify({ name, friendlyName: name }),
   });
+}
+
+export async function renameGroup(groupId: string, name: string) {
+  forgetGroups();
+  return call(`/user-groups/${enc(groupId)}`, {
+    method: "PUT",
+    body: JSON.stringify({ name, friendlyName: name }),
+  });
+}
+
+export async function deleteGroup(groupId: string) {
+  forgetGroups();
+  return call(`/user-groups/${enc(groupId)}`, { method: "DELETE" });
 }
 
 export async function removePerson(userId: string) {
