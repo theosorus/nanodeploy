@@ -1,0 +1,18 @@
+# Runs scripts/update.sh: pulls the tracked branch once its CI is green, backs
+# up, updates, checks, rolls back on failure. Started by nanodeploy-update.timer.
+# Install (edit WorkingDirectory, ExecStart and User first):
+#   sudo cp nanodeploy-update.service nanodeploy-update.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now nanodeploy-update.timer
+# Follow it: journalctl -u nanodeploy-update -f
+[Unit]
+Description=Nanodeploy self-update
+Requires=docker.service
+After=docker.service network-online.target nanodeploy.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/nanodeploy
+ExecStart=/opt/nanodeploy/scripts/update.sh
+# a user in the docker group that owns the checkout
+User=nanodeploy
+TimeoutStartSec=45min

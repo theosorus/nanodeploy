@@ -255,6 +255,15 @@ from the bundles on disk. Back up with `pg_dumpall`, and stop with `docker
 compose stop`, never `down` — `down` deletes the networks and the app containers
 become unstartable.
 
+## Keeping it up to date
+
+`./scripts/update.sh`, run every five minutes by `nanodeploy-update.timer`,
+deploys each new commit of `main` once its CI is green: it backs up first
+(`scripts/backup.sh`), checks the console still lists every app afterwards, and
+goes back to the previous commit if not. [docs/UPGRADING.md](docs/UPGRADING.md)
+has the setup, and the one-time steps from a version that used tinyauth and
+Pocket ID.
+
 ## Build apps by asking
 
 "Build me an app" fails with a chatbot because there are a thousand ways to

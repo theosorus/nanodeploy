@@ -102,7 +102,15 @@ warn "this compiles caddy from source, ~10 min on a Jetson"
 docker compose build caddy
 
 say "4/5 starting the platform"
-docker compose up -d
+# Upgrading from Pocket ID: it must answer while the control plane imports the
+# accounts with their ids. Started here only while a key is configured; clear
+# POCKETID_API_KEY in .env once everyone has signed in to stop it for good.
+if [ -n "${POCKETID_API_KEY:-}" ]; then
+  docker compose --profile legacy up -d pocket-id
+  ok "pocket-id running for the account import"
+fi
+# --build: an upgrade changes the control plane and gate, not only caddy
+docker compose up -d --build
 ok "containers up"
 
 say "5/5 next steps"
