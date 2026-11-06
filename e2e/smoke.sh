@@ -148,6 +148,12 @@ check "$(code -H "Host: deploy.$DOM" -H "$AUTH" "$BASE/api/apps/smoke/analytics?
 json -H "Host: deploy.$DOM" -H "$AUTH" $BASE/api/analytics | grep -q '"slug":"smoke"' && ok "analytics overview lists the app" \
   || bad "overview without the app"
 
+echo "== git =="
+check "$(code -H "Host: deploy.$DOM" -H "$AUTH" $BASE/api/git)" "200" "git overview"
+check "$(code -X POST -H "Host: deploy.$DOM" -H 'X-GitHub-Hook-Installation-Target-ID: 1' -d '{}' $BASE/hooks/github)" \
+  "404" "webhook from an unknown app refused, without a session"
+check "$(code -X POST -H "Host: deploy.$DOM" -d '{}' $BASE/hooks/gitlab/999999)" "404" "unknown gitlab hook"
+
 echo "== platform cookie never reaches an app =="
 # tinyauth's cookies live on the parent domain, so the browser sends them to
 # every app: an app backend holding an admin's session could drive the console

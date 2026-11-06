@@ -19,3 +19,8 @@ idle:
   timeout: 10m           # scale to zero after this much inactivity
   warm: false            # true = always running, restarts with the machine, ~40 Mo
 env: []                  # names only, values are set in the dashboard
+# Only for deploys from a Git repository (the server builds it); a zip ignores it.
+# build:
+#   image: node:20-bookworm-slim
+#   install: npm ci
+#   command: npm run build

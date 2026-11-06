@@ -168,8 +168,9 @@
   .diff { border: 1px solid var(--live); border-radius: var(--radius); padding: var(--s3) var(--s4); margin: var(--s2) 0 var(--s3); }
   .diff ul { margin: var(--s2) 0; padding-left: 18px; }
   .diff li { margin: 2px 0; }
-  .rel { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); border-top: 1px solid var(--rule); padding: var(--s2) 0; }
-  .rel-main { min-width: 0; }
+  .rel { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); border-top: 1px solid var(--rule); padding: var(--s2) 0; flex-wrap: wrap; }
+  /* the text keeps room to be read; the buttons go under it when they cannot fit */
+  .rel-main { min-width: 0; flex: 1 1 220px; }
   .rel-main .num { font-size: 13px; }
   .rel-state { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--soft); }
   .rel-state.live { color: var(--live); }
@@ -237,6 +238,9 @@
        too narrow to read their own placeholder */
     .field { flex-direction: column; align-items: stretch; }
     .field input { max-width: none; }
+    /* a row with several actions puts them under its text */
+    .rel { flex-wrap: wrap; }
+    .rel-actions { flex: 1 1 100%; justify-content: flex-start; }
   }
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; animation: none !important; }
@@ -256,6 +260,7 @@
   <nav role="tablist">
     <button role="tab" data-view="apps" aria-selected="true"></button>
     <button role="tab" data-view="analytics" aria-selected="false"></button>
+    <button role="tab" data-view="git" aria-selected="false"></button>
     <button role="tab" data-view="people" aria-selected="false"></button>
   </nav>
 
@@ -290,6 +295,7 @@
   </section>
 
   <section id="view-analytics" hidden></section>
+  <section id="view-git" hidden></section>
   <section id="view-people" hidden></section>
   <section id="view-denied" hidden></section>
 </div>
@@ -2186,6 +2192,432 @@ const I18N_ANALYTICS = {
 
 for (const l of Object.keys(I18N_ANALYTICS)) Object.assign(I18N[l], I18N_ANALYTICS[l]);
 
+// Git: forges, connected repositories, builds.
+const I18N_GIT = {
+  en: {
+    navGit: "Git",
+    gitNotReady: "Set NANODEPLOY_SECRET_KEY first (run ./install.sh, then restart the control plane): forge credentials are stored encrypted with it.",
+    gitForges: "Connected forges",
+    gitConnectGithub: "Connect GitHub",
+    gitOrgPh: "organization (optional)",
+    gitGithubNote: "Creates a private GitHub App for this server, in your account or an organization. GitHub asks you to confirm, then which repositories it may read.",
+    gitInstall: "Choose repositories",
+    gitRemove: "Remove",
+    gitGitlabProjectPh: "group/project",
+    gitGitlabTokenPh: "project access token",
+    gitConnectGitlab: "Connect a GitLab project",
+    gitGitlabNote: "On GitLab: the project, Settings, Access tokens, role Maintainer, scopes api and read_repository.",
+    gitNoForge: "No forge connected yet.",
+    gitDeployTitle: "Deploy a repository",
+    gitProvider: "Forge",
+    gitRepo: "Repository",
+    gitBranch: "Branch",
+    gitRoot: "Folder of app.yaml",
+    gitPreviews: "Preview each pull request",
+    gitDeploy: "Deploy from this repository",
+    gitConnections: "Connected repositories",
+    gitNoConnections: "No repository connected yet.",
+    gitBuildNow: "Build now",
+    gitDisconnect: "Disconnect",
+    gitDisconnectConfirm: "Disconnect {repo}? The app stays as it is, its previews are removed, and pushes no longer deploy.",
+    gitBuilds: "Builds",
+    gitNoBuilds: "No build yet.",
+    gitStatusQueued: "queued",
+    gitStatusRunning: "building",
+    gitStatusSucceeded: "deployed",
+    gitStatusFailed: "failed",
+    gitStatusSkipped: "skipped",
+    gitPr: "pull request #{n}",
+    gitLog: "Log",
+    sourceGit: "Git",
+    gitHookNote: "Webhooks arrive at {url}: if the console is behind an access layer, let /hooks/ through.",
+    gitBuildQueued: "Build queued.",
+    gitPanelFrom: "Deployed from {repo} ({branch}) on every push.",
+    gitPickRepo: "choose a repository",
+    gitRemoveConfirm: "Remove this forge? Its credentials are deleted.",
+  },
+  fr: {
+    navGit: "Git",
+    gitNotReady: "Définissez d'abord NANODEPLOY_SECRET_KEY (lancez ./install.sh, puis redémarrez le control plane) : les accès aux forges sont chiffrés avec.",
+    gitForges: "Forges connectées",
+    gitConnectGithub: "Connecter GitHub",
+    gitOrgPh: "organisation (facultatif)",
+    gitGithubNote: "Crée une GitHub App privée pour ce serveur, sur votre compte ou une organisation. GitHub vous demande de confirmer, puis quels dépôts elle peut lire.",
+    gitInstall: "Choisir les dépôts",
+    gitRemove: "Retirer",
+    gitGitlabProjectPh: "groupe/projet",
+    gitGitlabTokenPh: "jeton d'accès du projet",
+    gitConnectGitlab: "Connecter un projet GitLab",
+    gitGitlabNote: "Sur GitLab : le projet, Settings, Access tokens, rôle Maintainer, portées api et read_repository.",
+    gitNoForge: "Aucune forge connectée.",
+    gitDeployTitle: "Déployer un dépôt",
+    gitProvider: "Forge",
+    gitRepo: "Dépôt",
+    gitBranch: "Branche",
+    gitRoot: "Dossier de app.yaml",
+    gitPreviews: "Une preview pour chaque pull request",
+    gitDeploy: "Déployer depuis ce dépôt",
+    gitConnections: "Dépôts connectés",
+    gitNoConnections: "Aucun dépôt connecté.",
+    gitBuildNow: "Construire maintenant",
+    gitDisconnect: "Déconnecter",
+    gitDisconnectConfirm: "Déconnecter {repo} ? L'app reste telle quelle, ses previews sont supprimées, et les pushs ne déploient plus.",
+    gitBuilds: "Builds",
+    gitNoBuilds: "Aucun build pour l'instant.",
+    gitStatusQueued: "en attente",
+    gitStatusRunning: "en cours",
+    gitStatusSucceeded: "déployé",
+    gitStatusFailed: "échec",
+    gitStatusSkipped: "ignoré",
+    gitPr: "pull request #{n}",
+    gitLog: "Journal",
+    sourceGit: "Git",
+    gitHookNote: "Les webhooks arrivent sur {url} : si la console est derrière une couche d'accès, laissez passer /hooks/.",
+    gitBuildQueued: "Build mis en file.",
+    gitPanelFrom: "Déployée depuis {repo} ({branch}) à chaque push.",
+    gitPickRepo: "choisir un dépôt",
+    gitRemoveConfirm: "Retirer cette forge ? Ses accès sont effacés.",
+  },
+  es: {
+    navGit: "Git",
+    gitNotReady: "Define primero NANODEPLOY_SECRET_KEY (ejecuta ./install.sh y reinicia el control plane): los accesos a las forjas se guardan cifrados con ella.",
+    gitForges: "Forjas conectadas",
+    gitConnectGithub: "Conectar GitHub",
+    gitOrgPh: "organización (opcional)",
+    gitGithubNote: "Crea una GitHub App privada para este servidor, en tu cuenta o en una organización. GitHub te pide confirmar y luego qué repositorios puede leer.",
+    gitInstall: "Elegir repositorios",
+    gitRemove: "Quitar",
+    gitGitlabProjectPh: "grupo/proyecto",
+    gitGitlabTokenPh: "token de acceso del proyecto",
+    gitConnectGitlab: "Conectar un proyecto de GitLab",
+    gitGitlabNote: "En GitLab: el proyecto, Settings, Access tokens, rol Maintainer, alcances api y read_repository.",
+    gitNoForge: "Ninguna forja conectada.",
+    gitDeployTitle: "Desplegar un repositorio",
+    gitProvider: "Forja",
+    gitRepo: "Repositorio",
+    gitBranch: "Rama",
+    gitRoot: "Carpeta de app.yaml",
+    gitPreviews: "Una preview por cada pull request",
+    gitDeploy: "Desplegar desde este repositorio",
+    gitConnections: "Repositorios conectados",
+    gitNoConnections: "Ningún repositorio conectado.",
+    gitBuildNow: "Construir ahora",
+    gitDisconnect: "Desconectar",
+    gitDisconnectConfirm: "¿Desconectar {repo}? La app queda como está, sus previews se eliminan y los push dejan de desplegar.",
+    gitBuilds: "Builds",
+    gitNoBuilds: "Aún no hay builds.",
+    gitStatusQueued: "en cola",
+    gitStatusRunning: "construyendo",
+    gitStatusSucceeded: "desplegado",
+    gitStatusFailed: "falló",
+    gitStatusSkipped: "omitido",
+    gitPr: "pull request #{n}",
+    gitLog: "Registro",
+    sourceGit: "Git",
+    gitHookNote: "Los webhooks llegan a {url}: si la consola está detrás de una capa de acceso, deja pasar /hooks/.",
+    gitBuildQueued: "Build en cola.",
+    gitPanelFrom: "Desplegada desde {repo} ({branch}) en cada push.",
+    gitPickRepo: "elige un repositorio",
+    gitRemoveConfirm: "¿Quitar esta forja? Sus accesos se borran.",
+  },
+  de: {
+    navGit: "Git",
+    gitNotReady: "Setze zuerst NANODEPLOY_SECRET_KEY (./install.sh ausführen, dann die Control Plane neu starten): Forge-Zugänge werden damit verschlüsselt gespeichert.",
+    gitForges: "Verbundene Forges",
+    gitConnectGithub: "GitHub verbinden",
+    gitOrgPh: "Organisation (optional)",
+    gitGithubNote: "Erstellt eine private GitHub App für diesen Server, in deinem Konto oder einer Organisation. GitHub fragt nach einer Bestätigung und danach, welche Repositories sie lesen darf.",
+    gitInstall: "Repositories wählen",
+    gitRemove: "Entfernen",
+    gitGitlabProjectPh: "gruppe/projekt",
+    gitGitlabTokenPh: "Projekt-Zugriffstoken",
+    gitConnectGitlab: "GitLab-Projekt verbinden",
+    gitGitlabNote: "In GitLab: das Projekt, Settings, Access tokens, Rolle Maintainer, Scopes api und read_repository.",
+    gitNoForge: "Noch keine Forge verbunden.",
+    gitDeployTitle: "Ein Repository bereitstellen",
+    gitProvider: "Forge",
+    gitRepo: "Repository",
+    gitBranch: "Branch",
+    gitRoot: "Ordner der app.yaml",
+    gitPreviews: "Für jeden Pull Request eine Preview",
+    gitDeploy: "Aus diesem Repository bereitstellen",
+    gitConnections: "Verbundene Repositories",
+    gitNoConnections: "Noch kein Repository verbunden.",
+    gitBuildNow: "Jetzt bauen",
+    gitDisconnect: "Trennen",
+    gitDisconnectConfirm: "{repo} trennen? Die App bleibt, ihre Previews werden entfernt, Pushes stellen nicht mehr bereit.",
+    gitBuilds: "Builds",
+    gitNoBuilds: "Noch kein Build.",
+    gitStatusQueued: "wartet",
+    gitStatusRunning: "baut",
+    gitStatusSucceeded: "bereitgestellt",
+    gitStatusFailed: "fehlgeschlagen",
+    gitStatusSkipped: "übersprungen",
+    gitPr: "Pull Request #{n}",
+    gitLog: "Protokoll",
+    sourceGit: "Git",
+    gitHookNote: "Webhooks kommen an {url}: liegt die Konsole hinter einer Zugriffsschicht, lass /hooks/ durch.",
+    gitBuildQueued: "Build eingereiht.",
+    gitPanelFrom: "Bei jedem Push aus {repo} ({branch}) bereitgestellt.",
+    gitPickRepo: "Repository wählen",
+    gitRemoveConfirm: "Diese Forge entfernen? Ihre Zugänge werden gelöscht.",
+  },
+  it: {
+    navGit: "Git",
+    gitNotReady: "Imposta prima NANODEPLOY_SECRET_KEY (esegui ./install.sh, poi riavvia il control plane): gli accessi alle forge sono salvati cifrati con essa.",
+    gitForges: "Forge collegate",
+    gitConnectGithub: "Collega GitHub",
+    gitOrgPh: "organizzazione (facoltativa)",
+    gitGithubNote: "Crea una GitHub App privata per questo server, sul tuo account o su un'organizzazione. GitHub chiede di confermare, poi quali repository può leggere.",
+    gitInstall: "Scegli i repository",
+    gitRemove: "Rimuovi",
+    gitGitlabProjectPh: "gruppo/progetto",
+    gitGitlabTokenPh: "token di accesso del progetto",
+    gitConnectGitlab: "Collega un progetto GitLab",
+    gitGitlabNote: "Su GitLab: il progetto, Settings, Access tokens, ruolo Maintainer, scope api e read_repository.",
+    gitNoForge: "Nessuna forge collegata.",
+    gitDeployTitle: "Pubblica un repository",
+    gitProvider: "Forge",
+    gitRepo: "Repository",
+    gitBranch: "Branch",
+    gitRoot: "Cartella di app.yaml",
+    gitPreviews: "Una preview per ogni pull request",
+    gitDeploy: "Pubblica da questo repository",
+    gitConnections: "Repository collegati",
+    gitNoConnections: "Nessun repository collegato.",
+    gitBuildNow: "Compila ora",
+    gitDisconnect: "Scollega",
+    gitDisconnectConfirm: "Scollegare {repo}? L'app resta com'è, le sue preview vengono rimosse e i push non pubblicano più.",
+    gitBuilds: "Build",
+    gitNoBuilds: "Ancora nessuna build.",
+    gitStatusQueued: "in coda",
+    gitStatusRunning: "in corso",
+    gitStatusSucceeded: "pubblicato",
+    gitStatusFailed: "fallita",
+    gitStatusSkipped: "saltata",
+    gitPr: "pull request #{n}",
+    gitLog: "Registro",
+    sourceGit: "Git",
+    gitHookNote: "I webhook arrivano su {url}: se la console è dietro un livello di accesso, lascia passare /hooks/.",
+    gitBuildQueued: "Build in coda.",
+    gitPanelFrom: "Pubblicata da {repo} ({branch}) a ogni push.",
+    gitPickRepo: "scegli un repository",
+    gitRemoveConfirm: "Rimuovere questa forge? I suoi accessi vengono cancellati.",
+  },
+  pt: {
+    navGit: "Git",
+    gitNotReady: "Defina primeiro NANODEPLOY_SECRET_KEY (execute ./install.sh e reinicie o control plane): os acessos às forjas são guardados cifrados com ela.",
+    gitForges: "Forjas ligadas",
+    gitConnectGithub: "Ligar o GitHub",
+    gitOrgPh: "organização (opcional)",
+    gitGithubNote: "Cria uma GitHub App privada para este servidor, na sua conta ou numa organização. O GitHub pede confirmação e depois que repositórios pode ler.",
+    gitInstall: "Escolher repositórios",
+    gitRemove: "Remover",
+    gitGitlabProjectPh: "grupo/projeto",
+    gitGitlabTokenPh: "token de acesso do projeto",
+    gitConnectGitlab: "Ligar um projeto GitLab",
+    gitGitlabNote: "No GitLab: o projeto, Settings, Access tokens, função Maintainer, âmbitos api e read_repository.",
+    gitNoForge: "Nenhuma forja ligada.",
+    gitDeployTitle: "Publicar um repositório",
+    gitProvider: "Forja",
+    gitRepo: "Repositório",
+    gitBranch: "Ramo",
+    gitRoot: "Pasta do app.yaml",
+    gitPreviews: "Uma preview por cada pull request",
+    gitDeploy: "Publicar a partir deste repositório",
+    gitConnections: "Repositórios ligados",
+    gitNoConnections: "Nenhum repositório ligado.",
+    gitBuildNow: "Construir agora",
+    gitDisconnect: "Desligar",
+    gitDisconnectConfirm: "Desligar {repo}? A app fica como está, as previews são removidas e os pushes deixam de publicar.",
+    gitBuilds: "Builds",
+    gitNoBuilds: "Ainda não há builds.",
+    gitStatusQueued: "em espera",
+    gitStatusRunning: "a construir",
+    gitStatusSucceeded: "publicado",
+    gitStatusFailed: "falhou",
+    gitStatusSkipped: "ignorado",
+    gitPr: "pull request #{n}",
+    gitLog: "Registo",
+    sourceGit: "Git",
+    gitHookNote: "Os webhooks chegam a {url}: se a consola estiver atrás de uma camada de acesso, deixe passar /hooks/.",
+    gitBuildQueued: "Build em fila.",
+    gitPanelFrom: "Publicada a partir de {repo} ({branch}) a cada push.",
+    gitPickRepo: "escolha um repositório",
+    gitRemoveConfirm: "Remover esta forja? Os acessos são apagados.",
+  },
+  nl: {
+    navGit: "Git",
+    gitNotReady: "Stel eerst NANODEPLOY_SECRET_KEY in (voer ./install.sh uit en herstart de control plane): toegang tot forges wordt daarmee versleuteld opgeslagen.",
+    gitForges: "Verbonden forges",
+    gitConnectGithub: "GitHub verbinden",
+    gitOrgPh: "organisatie (optioneel)",
+    gitGithubNote: "Maakt een privé GitHub App voor deze server, in je account of een organisatie. GitHub vraagt om bevestiging en daarna welke repositories ze mag lezen.",
+    gitInstall: "Repositories kiezen",
+    gitRemove: "Verwijderen",
+    gitGitlabProjectPh: "groep/project",
+    gitGitlabTokenPh: "project-toegangstoken",
+    gitConnectGitlab: "GitLab-project verbinden",
+    gitGitlabNote: "In GitLab: het project, Settings, Access tokens, rol Maintainer, scopes api en read_repository.",
+    gitNoForge: "Nog geen forge verbonden.",
+    gitDeployTitle: "Een repository uitrollen",
+    gitProvider: "Forge",
+    gitRepo: "Repository",
+    gitBranch: "Branch",
+    gitRoot: "Map van app.yaml",
+    gitPreviews: "Een preview voor elke pull request",
+    gitDeploy: "Uitrollen vanuit deze repository",
+    gitConnections: "Verbonden repositories",
+    gitNoConnections: "Nog geen repository verbonden.",
+    gitBuildNow: "Nu bouwen",
+    gitDisconnect: "Loskoppelen",
+    gitDisconnectConfirm: "{repo} loskoppelen? De app blijft zoals hij is, de previews verdwijnen en pushes rollen niet meer uit.",
+    gitBuilds: "Builds",
+    gitNoBuilds: "Nog geen build.",
+    gitStatusQueued: "wacht",
+    gitStatusRunning: "bezig",
+    gitStatusSucceeded: "uitgerold",
+    gitStatusFailed: "mislukt",
+    gitStatusSkipped: "overgeslagen",
+    gitPr: "pull request #{n}",
+    gitLog: "Logboek",
+    sourceGit: "Git",
+    gitHookNote: "Webhooks komen binnen op {url}: staat de console achter een toegangslaag, laat /hooks/ door.",
+    gitBuildQueued: "Build in de wachtrij.",
+    gitPanelFrom: "Uitgerold vanuit {repo} ({branch}) bij elke push.",
+    gitPickRepo: "kies een repository",
+    gitRemoveConfirm: "Deze forge verwijderen? De toegang wordt gewist.",
+  },
+  ru: {
+    navGit: "Git",
+    gitNotReady: "Сначала задайте NANODEPLOY_SECRET_KEY (запустите ./install.sh и перезапустите control plane): доступы к форжам хранятся зашифрованными этим ключом.",
+    gitForges: "Подключённые форжи",
+    gitConnectGithub: "Подключить GitHub",
+    gitOrgPh: "организация (необязательно)",
+    gitGithubNote: "Создаёт приватное GitHub App для этого сервера, в вашем аккаунте или организации. GitHub попросит подтвердить, а затем выбрать доступные репозитории.",
+    gitInstall: "Выбрать репозитории",
+    gitRemove: "Удалить",
+    gitGitlabProjectPh: "группа/проект",
+    gitGitlabTokenPh: "токен доступа проекта",
+    gitConnectGitlab: "Подключить проект GitLab",
+    gitGitlabNote: "В GitLab: проект, Settings, Access tokens, роль Maintainer, области api и read_repository.",
+    gitNoForge: "Форжи не подключены.",
+    gitDeployTitle: "Развернуть репозиторий",
+    gitProvider: "Форж",
+    gitRepo: "Репозиторий",
+    gitBranch: "Ветка",
+    gitRoot: "Папка с app.yaml",
+    gitPreviews: "Превью для каждого pull request",
+    gitDeploy: "Разворачивать из этого репозитория",
+    gitConnections: "Подключённые репозитории",
+    gitNoConnections: "Репозитории не подключены.",
+    gitBuildNow: "Собрать сейчас",
+    gitDisconnect: "Отключить",
+    gitDisconnectConfirm: "Отключить {repo}? Приложение останется как есть, превью удалятся, а push больше не будет разворачивать.",
+    gitBuilds: "Сборки",
+    gitNoBuilds: "Сборок пока нет.",
+    gitStatusQueued: "в очереди",
+    gitStatusRunning: "собирается",
+    gitStatusSucceeded: "развёрнуто",
+    gitStatusFailed: "ошибка",
+    gitStatusSkipped: "пропущена",
+    gitPr: "pull request #{n}",
+    gitLog: "Журнал",
+    sourceGit: "Git",
+    gitHookNote: "Вебхуки приходят на {url}: если консоль за слоем доступа, пропускайте /hooks/.",
+    gitBuildQueued: "Сборка в очереди.",
+    gitPanelFrom: "Разворачивается из {repo} ({branch}) при каждом push.",
+    gitPickRepo: "выберите репозиторий",
+    gitRemoveConfirm: "Удалить этот форж? Его доступы будут стёрты.",
+  },
+  zh: {
+    navGit: "Git",
+    gitNotReady: "请先设置 NANODEPLOY_SECRET_KEY（运行 ./install.sh，然后重启 control plane）：代码托管平台的凭据会用它加密保存。",
+    gitForges: "已连接的平台",
+    gitConnectGithub: "连接 GitHub",
+    gitOrgPh: "组织（可选）",
+    gitGithubNote: "为这台服务器在你的账户或组织下创建一个私有 GitHub App。GitHub 会请你确认，然后选择它可以读取的仓库。",
+    gitInstall: "选择仓库",
+    gitRemove: "移除",
+    gitGitlabProjectPh: "group/project",
+    gitGitlabTokenPh: "项目访问令牌",
+    gitConnectGitlab: "连接 GitLab 项目",
+    gitGitlabNote: "在 GitLab：项目，Settings，Access tokens，角色 Maintainer，范围 api 和 read_repository。",
+    gitNoForge: "还没有连接任何平台。",
+    gitDeployTitle: "部署一个仓库",
+    gitProvider: "平台",
+    gitRepo: "仓库",
+    gitBranch: "分支",
+    gitRoot: "app.yaml 所在目录",
+    gitPreviews: "为每个 pull request 生成预览",
+    gitDeploy: "从这个仓库部署",
+    gitConnections: "已连接的仓库",
+    gitNoConnections: "还没有连接仓库。",
+    gitBuildNow: "立即构建",
+    gitDisconnect: "断开",
+    gitDisconnectConfirm: "断开 {repo}？应用保持不变，预览会被删除，推送不再触发部署。",
+    gitBuilds: "构建",
+    gitNoBuilds: "还没有构建。",
+    gitStatusQueued: "排队中",
+    gitStatusRunning: "构建中",
+    gitStatusSucceeded: "已部署",
+    gitStatusFailed: "失败",
+    gitStatusSkipped: "已跳过",
+    gitPr: "pull request #{n}",
+    gitLog: "日志",
+    sourceGit: "Git",
+    gitHookNote: "Webhook 发送到 {url}：如果控制台前面有访问控制层，请放行 /hooks/。",
+    gitBuildQueued: "构建已排队。",
+    gitPanelFrom: "每次推送都从 {repo}（{branch}）部署。",
+    gitPickRepo: "选择仓库",
+    gitRemoveConfirm: "移除这个平台？它的凭据会被删除。",
+  },
+  ja: {
+    navGit: "Git",
+    gitNotReady: "まず NANODEPLOY_SECRET_KEY を設定してください（./install.sh を実行し、control plane を再起動）。フォージの認証情報はこの鍵で暗号化して保存されます。",
+    gitForges: "接続済みのフォージ",
+    gitConnectGithub: "GitHub を接続",
+    gitOrgPh: "組織（任意）",
+    gitGithubNote: "このサーバー用の非公開 GitHub App を、あなたのアカウントか組織に作成します。GitHub で確認したあと、読み取れるリポジトリを選びます。",
+    gitInstall: "リポジトリを選ぶ",
+    gitRemove: "削除",
+    gitGitlabProjectPh: "group/project",
+    gitGitlabTokenPh: "プロジェクトアクセストークン",
+    gitConnectGitlab: "GitLab プロジェクトを接続",
+    gitGitlabNote: "GitLab で: プロジェクト、Settings、Access tokens、ロール Maintainer、スコープ api と read_repository。",
+    gitNoForge: "接続済みのフォージはありません。",
+    gitDeployTitle: "リポジトリをデプロイ",
+    gitProvider: "フォージ",
+    gitRepo: "リポジトリ",
+    gitBranch: "ブランチ",
+    gitRoot: "app.yaml のフォルダ",
+    gitPreviews: "プルリクエストごとにプレビュー",
+    gitDeploy: "このリポジトリからデプロイ",
+    gitConnections: "接続済みのリポジトリ",
+    gitNoConnections: "接続済みのリポジトリはありません。",
+    gitBuildNow: "今すぐビルド",
+    gitDisconnect: "切断",
+    gitDisconnectConfirm: "{repo} を切断しますか？アプリはそのまま残り、プレビューは削除され、push でデプロイされなくなります。",
+    gitBuilds: "ビルド",
+    gitNoBuilds: "まだビルドはありません。",
+    gitStatusQueued: "待機中",
+    gitStatusRunning: "ビルド中",
+    gitStatusSucceeded: "デプロイ済み",
+    gitStatusFailed: "失敗",
+    gitStatusSkipped: "スキップ",
+    gitPr: "プルリクエスト #{n}",
+    gitLog: "ログ",
+    sourceGit: "Git",
+    gitHookNote: "Webhook は {url} に届きます。コンソールの前にアクセス制御がある場合は /hooks/ を通してください。",
+    gitBuildQueued: "ビルドを登録しました。",
+    gitPanelFrom: "push のたびに {repo}（{branch}）からデプロイ。",
+    gitPickRepo: "リポジトリを選択",
+    gitRemoveConfirm: "このフォージを削除しますか？認証情報は消去されます。",
+  },
+};
+
+for (const l of Object.keys(I18N_GIT)) Object.assign(I18N[l], I18N_GIT[l]);
+
 const SUPPORTED = new Set(LANGS.map(([c]) => c));
 const savedLang = (() => { try { return localStorage.getItem("nanodeploy.lang"); } catch { return null; } })();
 // English is the default; a saved choice wins if it is one we support
@@ -2202,7 +2634,7 @@ function renderStatic() {
   document.title = t("title");
   $("lang").value = LANG;
   document.querySelectorAll("[data-view]").forEach((b) => {
-    b.textContent = { apps: t("navApps"), analytics: t("navAnalytics"), people: t("navPeople") }[b.dataset.view];
+    b.textContent = { apps: t("navApps"), analytics: t("navAnalytics"), git: t("navGit"), people: t("navPeople") }[b.dataset.view];
   });
   $("memory-label").textContent = t("memoryLabel");
   $("gauge-note").textContent = t("gaugeNote");
@@ -2221,6 +2653,7 @@ function setLang(lang) {
   renderApps();
   if (!$("view-people").hidden) renderPeople(state.peopleError);
   if (!$("view-analytics").hidden) renderAnalytics();
+  if (!$("view-git").hidden) renderGit();
 }
 
 /* ---------- state ---------- */
@@ -2466,7 +2899,7 @@ function renderDiff(d) {
 function releaseRow(slug, r) {
   const status = { live: t("statusLive"), superseded: t("statusSuperseded"), failed: t("statusFailed") }[r.status] ?? r.status;
   const source = r.source === "rollback" && r.rollbackOf ? t("sourceRollback", { n: r.rollbackOf })
-    : ({ upload: t("sourceUpload"), cli: t("sourceCli"), legacy: t("sourceLegacy") }[r.source] ?? r.source);
+    : ({ upload: t("sourceUpload"), cli: t("sourceCli"), legacy: t("sourceLegacy"), git: t("sourceGit") }[r.source] ?? r.source);
   const what = [r.message, r.commitMessage, r.commitSha ? r.commitSha.slice(0, 7) : null].filter(Boolean).join(" · ");
   const meta = [source, r.createdBy ? t("byWho", { who: r.createdBy }) : null, ago(r.createdAt)].filter(Boolean).join(" · ");
   const canGoBack = r.status === "superseded" && r.rollback && r.rollback.filesKept;
@@ -2498,6 +2931,10 @@ function renderVersions(a) {
   const pending = state.pending && state.pending.slug === a.slug ? renderDiff(state.pending.diff) : "";
   return `<h3 class="label">${t("versionsTitle")}</h3>
     ${a.release ? `<p class="note" style="margin:0 0 8px">${esc(t("liveVersion", { n: a.release }))}</p>` : ""}
+    ${(() => {
+      const conn = state.git?.connections?.find((c) => c.slug === a.slug);
+      return conn ? `<p class="note" style="margin:0 0 8px">${esc(t("gitPanelFrom", { repo: conn.repo, branch: conn.branch }))}</p>` : "";
+    })()}
     ${pending}
     <div class="field">
       <button class="act" data-newversion="${a.slug}">${t("newVersion")}</button>
@@ -3298,6 +3735,190 @@ document.addEventListener("pointermove", (e) => {
   tip.style.top = Math.max(8, e.clientY - tip.offsetHeight - 12) + "px";
 });
 
+/* ---------- git ---------- */
+
+state.git = null;
+state.gitRepos = {};
+state.gitLog = null;
+
+async function loadGit() {
+  try {
+    state.git = await api("/api/git");
+  } catch (err) {
+    return toast(t("fail") + err.message);
+  }
+  renderGit();
+}
+
+const buildStatus = (s) => ({ queued: t("gitStatusQueued"), running: t("gitStatusRunning"), succeeded: t("gitStatusSucceeded"),
+  failed: t("gitStatusFailed"), skipped: t("gitStatusSkipped") }[s] ?? s);
+
+function renderGit() {
+  const view = $("view-git");
+  const g = state.git;
+  if (!g) return;
+  const providers = g.providers.length ? g.providers.map((p) => `<div class="rel">
+      <div class="rel-main"><span class="rel-state">${esc(p.kind)}</span> ${esc(p.name)}</div>
+      <div class="rel-actions">
+        ${p.installUrl ? `<a class="act" href="${esc(p.installUrl)}" target="_blank" rel="noopener" style="text-decoration:none">${t("gitInstall")}</a>` : ""}
+        <button class="act danger" data-gitremove="${esc(p.id)}">${t("gitRemove")}</button>
+      </div></div>`).join("") : `<p class="note">${t("gitNoForge")}</p>`;
+  const sel = state.gitSel ?? {};
+  const repos = sel.provider ? state.gitRepos[sel.provider] : null;
+  const deploy = g.providers.length ? `<h3 class="label" style="margin-top:32px">${t("gitDeployTitle")}</h3>
+    <div class="field">
+      <select id="git-provider" aria-label="${t("gitProvider")}">
+        <option value="">${t("gitProvider")}</option>
+        ${g.providers.map((p) => `<option value="${esc(p.id)}" ${sel.provider === p.id ? "selected" : ""}>${esc(p.kind)} · ${esc(p.name)}</option>`).join("")}
+      </select>
+      <select id="git-repo" aria-label="${t("gitRepo")}" ${repos ? "" : "disabled"}>
+        <option value="">${t("gitPickRepo")}</option>
+        ${(repos ?? []).map((r) => `<option value="${esc(r.id)}" data-branch="${esc(r.defaultBranch)}" ${sel.repo === r.id ? "selected" : ""}>${esc(r.fullName)}</option>`).join("")}
+      </select>
+    </div>
+    <div class="field">
+      <input id="git-branch" placeholder="${t("gitBranch")}" value="${esc(sel.branch ?? "")}" class="num" spellcheck="false">
+      <input id="git-root" placeholder="${t("gitRoot")}" value="${esc(sel.root ?? ".")}" class="num" spellcheck="false">
+    </div>
+    <label class="note" style="display:flex;gap:8px;align-items:center;margin:0 0 12px">
+      <input type="checkbox" id="git-previews" ${sel.previews === false ? "" : "checked"} style="flex:none;min-height:auto"> ${t("gitPreviews")}</label>
+    <button class="act primary" id="git-deploy">${t("gitDeploy")}</button>` : "";
+  const conns = g.connections.length ? g.connections.map((c) => `<div class="rel">
+      <div class="rel-main"><span class="app-name">${esc(c.slug)}</span>
+        <span class="app-host num">${esc(c.repo)} · ${esc(c.branch)}${c.root_dir !== "." ? " · " + esc(c.root_dir) : ""}</span></div>
+      <div class="rel-actions">
+        <button class="chip" data-gitpreviews="${esc(c.id)}" aria-pressed="${c.previews}">${t("gitPreviews")}</button>
+        <button class="act" data-gitbuild="${esc(c.id)}">${t("gitBuildNow")}</button>
+        <button class="act danger" data-gitdisconnect="${esc(c.id)}" data-repo="${esc(c.repo)}">${t("gitDisconnect")}</button>
+      </div></div>`).join("") : `<p class="note">${t("gitNoConnections")}</p>`;
+  const builds = g.builds.length ? g.builds.map((b) => `<div class="rel">
+      <div class="rel-main">
+        <span class="num">#${esc(b.id)}</span> <span class="rel-state ${b.status === "succeeded" ? "live" : b.status === "failed" ? "failed" : ""}">${esc(buildStatus(b.status))}</span>
+        <span class="app-host">${esc(b.target_slug)} · ${esc(b.kind === "preview" ? t("gitPr", { n: b.pr }) : b.ref)} · <span class="num">${esc(b.sha.slice(0, 7))}</span>${b.release ? " · v" + b.release : ""}</span>
+        <span class="app-host">${esc([b.message.split("\n")[0], b.author, ago(b.created_at)].filter(Boolean).join(" · "))}</span>
+      </div>
+      <div class="rel-actions"><button class="act" data-gitlog="${esc(b.id)}" aria-expanded="${state.gitLog?.id === b.id}">${t("gitLog")}</button></div>
+    </div>${state.gitLog?.id === b.id ? `<pre class="logs" style="max-height:360px">${esc(state.gitLog.lines.join("\n"))}</pre>` : ""}`).join("")
+    : `<p class="note">${t("gitNoBuilds")}</p>`;
+  view.innerHTML = `
+    ${g.ready ? "" : `<div class="warn"><p style="margin:0">${esc(t("gitNotReady"))}</p></div>`}
+    <h3 class="label">${t("gitForges")}</h3>
+    ${providers}
+    <div class="field" style="margin-top:12px">
+      <input id="git-org" placeholder="${t("gitOrgPh")}" spellcheck="false" class="num">
+      <button class="act" id="git-github" ${g.ready ? "" : "disabled"}>${t("gitConnectGithub")}</button>
+    </div>
+    <p class="note" style="margin:0 0 12px">${t("gitGithubNote")}</p>
+    <div class="field">
+      <input id="git-gl-project" placeholder="${t("gitGitlabProjectPh")}" spellcheck="false" class="num">
+      <input id="git-gl-token" type="password" placeholder="${t("gitGitlabTokenPh")}" autocomplete="off">
+      <button class="act" id="git-gitlab" ${g.ready ? "" : "disabled"}>${t("gitConnectGitlab")}</button>
+    </div>
+    <p class="note" style="margin:0">${t("gitGitlabNote")}</p>
+    ${deploy}
+    <h3 class="label" style="margin-top:32px">${t("gitConnections")}</h3>
+    ${conns}
+    <h3 class="label" style="margin-top:32px">${t("gitBuilds")}</h3>
+    ${builds}
+    <p class="note" style="margin-top:24px">${esc(t("gitHookNote", { url: g.consoleOrigin + "/hooks/" }))}</p>`;
+  bindGit();
+}
+
+function bindGit() {
+  const fail = (fn) => async (...a) => {
+    try { await fn(...a); } catch (err) { toast(t("fail") + err.message, true); }
+  };
+  // GitHub's manifest flow is a form post to github.com: build it, submit it
+  const gh = $("git-github");
+  if (gh) gh.onclick = fail(async () => {
+    const org = $("git-org").value.trim();
+    const { action, manifest } = await api("/api/git/github/manifest", { method: "POST", body: JSON.stringify(org ? { org } : {}) });
+    const form = document.createElement("form");
+    form.method = "post";
+    form.action = action;
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = "manifest";
+    input.value = manifest;
+    form.append(input);
+    document.body.append(form);
+    form.submit();
+  });
+  const gl = $("git-gitlab");
+  if (gl) gl.onclick = fail(async () => {
+    await api("/api/git/gitlab", { method: "POST", body: JSON.stringify({ project: $("git-gl-project").value.trim(), token: $("git-gl-token").value }) });
+    loadGit();
+  });
+  document.querySelectorAll("[data-gitremove]").forEach((el) => {
+    el.onclick = fail(async () => {
+      if (!confirm(t("gitRemoveConfirm"))) return;
+      await api(`/api/git/providers/${el.dataset.gitremove}`, { method: "DELETE" });
+      loadGit();
+    });
+  });
+  const keep = () => {
+    state.gitSel = {
+      provider: $("git-provider")?.value || null,
+      repo: $("git-repo")?.value || null,
+      branch: $("git-branch")?.value ?? "",
+      root: $("git-root")?.value ?? ".",
+      previews: $("git-previews")?.checked ?? true,
+    };
+  };
+  const prov = $("git-provider");
+  if (prov) prov.onchange = fail(async () => {
+    keep();
+    state.gitSel.repo = null;
+    if (prov.value && !state.gitRepos[prov.value]) {
+      state.gitRepos[prov.value] = (await api(`/api/git/providers/${prov.value}/repos`)).repos;
+    }
+    renderGit();
+  });
+  const repo = $("git-repo");
+  if (repo) repo.onchange = () => {
+    keep();
+    const opt = repo.selectedOptions[0];
+    if (opt?.dataset.branch && !state.gitSel.branch) state.gitSel.branch = opt.dataset.branch;
+    renderGit();
+  };
+  const dep = $("git-deploy");
+  if (dep) dep.onclick = fail(async () => {
+    keep();
+    const s = state.gitSel;
+    await api("/api/git/connections", { method: "POST", body: JSON.stringify({ providerId: s.provider, repoId: s.repo, branch: s.branch, rootDir: s.root || ".", previews: s.previews }) });
+    state.gitSel = null;
+    toast(t("gitBuildQueued"));
+    loadGit();
+  });
+  document.querySelectorAll("[data-gitpreviews]").forEach((el) => {
+    el.onclick = fail(async () => {
+      await api(`/api/git/connections/${el.dataset.gitpreviews}`, { method: "PATCH", body: JSON.stringify({ previews: el.getAttribute("aria-pressed") !== "true" }) });
+      loadGit();
+    });
+  });
+  document.querySelectorAll("[data-gitbuild]").forEach((el) => {
+    el.onclick = fail(async () => {
+      await api(`/api/git/connections/${el.dataset.gitbuild}/build`, { method: "POST" });
+      toast(t("gitBuildQueued"));
+      loadGit();
+    });
+  });
+  document.querySelectorAll("[data-gitdisconnect]").forEach((el) => {
+    el.onclick = fail(async () => {
+      if (!confirm(t("gitDisconnectConfirm", { repo: el.dataset.repo }))) return;
+      await api(`/api/git/connections/${el.dataset.gitdisconnect}`, { method: "DELETE" });
+      loadGit();
+    });
+  });
+  document.querySelectorAll("[data-gitlog]").forEach((el) => {
+    el.onclick = fail(async () => {
+      if (state.gitLog?.id === el.dataset.gitlog) state.gitLog = null;
+      else state.gitLog = { id: el.dataset.gitlog, lines: (await api(`/api/git/builds/${el.dataset.gitlog}`)).log };
+      renderGit();
+    });
+  });
+}
+
 /* ---------- deploy ---------- */
 
 // The global drop zone: a new app goes live at once; a bundle for an existing
@@ -3349,7 +3970,9 @@ document.querySelectorAll("[data-view]").forEach((tab) => {
     $("view-apps").hidden = tab.dataset.view !== "apps";
     $("view-analytics").hidden = tab.dataset.view !== "analytics";
     $("view-people").hidden = tab.dataset.view !== "people";
+    $("view-git").hidden = tab.dataset.view !== "git";
     if (tab.dataset.view === "people") loadPeople();
+    if (tab.dataset.view === "git") loadGit();
     if (tab.dataset.view === "analytics") loadAnalytics();
   };
 });
@@ -3359,6 +3982,7 @@ function renderDenied() {
   $("view-apps").hidden = true;
   $("view-people").hidden = true;
   $("view-analytics").hidden = true;
+  $("view-git").hidden = true;
   const view = $("view-denied");
   view.hidden = false;
   view.innerHTML = `<div class="warn">
@@ -3377,6 +4001,8 @@ api("/api/me")
     if (me.admin === false) return renderDenied();
     loadApps();
     loadPeople();
+    // which apps deploy from a repository, for their panels
+    api("/api/git").then((g) => (state.git = g)).catch(() => {});
   })
   .catch((err) => toast(t("accessDenied") + err.message, true));
 
@@ -3394,6 +4020,13 @@ function editingDetail() {
 setInterval(() => {
   if (state.me && state.me.admin !== false && !editingDetail()) loadApps();
 }, 6000);
+// builds move by the second: refresh the Git tab while one is queued or running,
+// unless someone is typing in it
+setInterval(() => {
+  const busy = state.git?.builds?.some((b) => b.status === "queued" || b.status === "running");
+  const typing = $("view-git").contains(document.activeElement) && document.activeElement.tagName === "INPUT";
+  if (!$("view-git").hidden && busy && !typing) loadGit();
+}, 4000);
 // "online now" moves by the minute: refresh the analytics while they are shown
 setInterval(() => {
   if (!$("view-analytics").hidden) loadAnalytics();

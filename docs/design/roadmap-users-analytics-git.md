@@ -1188,6 +1188,21 @@ plane a déjà l'exec via son proxy) ou via un client `pg_dump` dans l'image du
 control plane. Les snapshots vont dans un dossier dédié du host, hors de
 `APPS_DIR` (Caddy n'a pas à les voir).
 
+> **Livré en phase 4** (`control-plane/src/forges.ts`, `builds.ts`, onglet Git).
+> Ce qui diffère du plan ci-dessous, après implémentation :
+>
+> * **L'URL du webhook GitHub est fixe** (`/hooks/github`) : elle est inscrite dans
+>   le manifeste avant que l'app existe. Les livraisons sont rattachées à l'app par
+>   l'en-tête `X-GitHub-Hook-Installation-Target-ID`.
+> * **Un fournisseur GitLab par projet** (un jeton de projet ne voit que son
+>   projet), webhook `/hooks/gitlab/<id>` posé et retiré automatiquement.
+> * **Previews de pull request seulement** (pas de previews de branche), accès
+>   réservé aux comptes du serveur, variables copiées de la production, base
+>   supprimée avec la preview. Nettoyage aussi après 14 jours sans push.
+> * **Pas de repli par interrogation périodique** : le bouton "Construire
+>   maintenant" déploie la tête de branche quand les webhooks ne passent pas.
+> * **Le journal de build** est consultable dans l'onglet Git, pas en direct.
+
 ### 4.5 Connecter GitHub et GitLab.com
 
 **GitHub : une GitHub App créée en un clic.** GitHub propose le flux
@@ -1545,8 +1560,8 @@ Chaque phase est livrable seule et laisse la plateforme dans un état cohérent.
 | **1. `gate`** (fait) | annuaire, mot de passe, passkey, sessions liées à l'hôte, rôles par app, chemins protégés, identité optionnelle, clés `ndk_`, migration Pocket ID, UI Personnes et Rôles | c'est ton premier axe, et l'axe 2 (nominatif) et l'axe 3 (clés pour la CI et l'agent) s'appuient dessus | fait |
 | **2. Releases** (fait) | dossiers de release, bascule atomique, table `releases`, rollback, snapshots avant migration, "Nouvelle version" avec diff, historique | fondation obligatoire de Git ; apporte déjà le remplacement à chaud par zip | fait |
 | **3. Analytics** (fait) | logs Caddy, ingesteur, événements Docker, échantillons, activité nominative depuis `gate`, onglet Analytics, beacon | indépendant, mais plus riche une fois `gate` et les releases en place (déploiements sur la frise) | fait |
-| **4. Git** | GitHub App (manifest), webhooks, archive, builder sandbox, file, statuts, puis GitLab.com | repose sur les releases | 8 à 11 j |
-| **5. Previews** | sous-domaines de branche, bases et volumes dédiés, nettoyage, commentaire de PR | repose sur Git | 4 à 5 j |
+| **4. Git** (fait) | GitHub App (manifest), webhooks, archive, builder sandbox, file, statuts, GitLab.com | repose sur les releases | fait |
+| **5. Previews** (fait, avec la phase 4) | previews de pull request, bases et volumes dédiés, nettoyage, commentaire de PR | repose sur Git | fait |
 | 6. Ensuite | 2FA obligatoire pour la console, connexion OIDC externe, code par email, serveur MCP, blue/green pour les apps warm | confort | à la demande |
 
 Total : environ **6 à 8 semaines** de travail effectif pour l'ensemble, en

@@ -177,6 +177,22 @@ signed-in one does. Every route that needs a user therefore answers 401 when
 `tryGetUser` returns null; that is what avoids a cascade of 500s. `getUser(c)`,
 which throws, is only justified in an app that will always stay private.
 
+### Deploying from a repository
+
+When the app lives in a GitHub or GitLab repository connected to the server
+(the dashboard's Git tab), do not deploy with `npm run deploy`: commit and push.
+A push to the connected branch builds and deploys; a pull request gets a preview
+at `<slug>--pr-<n>.<domain>`, for accounts of the server only, with its own empty
+database. Work on a branch, open a pull request, give the preview URL, and let
+the user merge. The commit status on the forge (green or red, with the build
+log) tells you whether the build passed.
+
+The server runs `npm ci` (or `npm install`) then `npm run build`, which must leave
+`dist/`, `server.js` and `migrations/` exactly where `npm run deploy` packs them.
+Commit `package-lock.json`. Change the commands in `app.yaml` (`build.install`,
+`build.command`) only when the template's do not fit. Never change `slug` in a
+connected repository: the build fails on purpose.
+
 ### Page views
 
 The platform counts visits on its own, from the gateway's log: never add an

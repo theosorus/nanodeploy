@@ -264,6 +264,15 @@ export async function pendingMigrations(dir: string, url: string | null): Promis
   }
 }
 
+// Previews only: a production app's database survives its deletion on purpose.
+export async function dropAppDatabase(slug: string) {
+  const app = await getApp(slug);
+  const user = app?.db_user;
+  if (!user || !/^app_[a-z0-9_]+$/.test(user)) return;
+  await admin.unsafe(`drop database if exists "${user}" with (force)`);
+  await admin.unsafe(`drop role if exists "${user}"`);
+}
+
 // Before a restore: pg_restore --clean cannot drop tables an app is holding.
 export async function disconnectDatabase(db: string) {
   await admin`

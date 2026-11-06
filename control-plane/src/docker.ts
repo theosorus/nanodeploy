@@ -399,3 +399,93 @@ export function followAppEvents(onEvent: (e: AppEvent) => void) {
   };
   connect();
 }
+
+/* ---------- the build sandbox, for Git deploys ---------- */
+
+// Builds run code from the repository (npm scripts of every dependency). They
+// get their own network, with the internet for the package registry and
+// nothing of the platform: not the apps, not postgres, not the socket proxies.
+export const BUILD_NETWORK = "nanodeploy_build";
+export const BUILD_CACHE = "nanodeploy_npm_cache";
+const BUILD_MEMORY_MB = Number(process.env.BUILD_MEMORY_MB ?? 1536);
+
+export async function ensureImage(image: string, log: (line: string) => void) {
+  try {
+    await docker.getImage(image).inspect();
+    return;
+  } catch {
+    log(`pulling ${image}`);
+  }
+  const stream = await docker.pull(image);
+  await new Promise<void>((resolve, reject) =>
+    docker.modem.followProgress(stream, (err: any) => (err ? reject(err) : resolve())),
+  );
+}
+
+// The npm cache volume is created by docker as root; builds run as uid 1000.
+// Hand it over once, with a throwaway container that may only chown.
+export async function prepareBuildCache(image: string) {
+  const vol = await docker.getVolume(BUILD_CACHE).inspect().catch(() => null);
+  if (vol?.Labels?.["nanodeploy.owner"] === "1000") return;
+  await docker.createVolume({ Name: BUILD_CACHE, Labels: { "nanodeploy.owner": "1000" } }).catch(() => {});
+  const c = await docker.createContainer({
+    Image: image,
+    Cmd: ["chown", "1000:1000", "/cache"],
+    User: "0:0",
+    HostConfig: { Binds: [`${BUILD_CACHE}:/cache`], CapDrop: ["ALL"], CapAdd: ["CHOWN"], NetworkMode: "none" },
+  });
+  try {
+    await c.start();
+    await c.wait();
+  } finally {
+    await c.remove({ force: true }).catch(() => {});
+  }
+  // docker never changes a volume's labels: the volume was made above with the
+  // label, or existed before without it and has now been chowned
+}
+
+export async function runBuilder(opts: {
+  name: string;
+  image: string;
+  hostWork: string;
+  workdir: string;
+  command: string;
+  timeoutMs: number;
+}): Promise<{ exitCode: number | null; logs: string; timedOut: boolean }> {
+  const cpus = Math.max(1, (await import("node:os")).cpus().length - 1);
+  const c = await docker.createContainer({
+    name: opts.name,
+    Image: opts.image,
+    Cmd: ["sh", "-c", opts.command],
+    WorkingDir: opts.workdir,
+    User: "1000:1000",
+    // no credential of any kind: the archive was downloaded before this ran
+    Env: ["HOME=/tmp", "npm_config_cache=/cache", "npm_config_update_notifier=false", "CI=true"],
+    Labels: { "nanodeploy.build": "1" },
+    HostConfig: {
+      Binds: [`${opts.hostWork}:/work`, `${BUILD_CACHE}:/cache`],
+      Memory: BUILD_MEMORY_MB * 1024 * 1024,
+      MemorySwap: (BUILD_MEMORY_MB + 512) * 1024 * 1024,
+      NanoCpus: cpus * 1e9,
+      PidsLimit: 512,
+      CapDrop: ["ALL"],
+      SecurityOpt: ["no-new-privileges:true"],
+      NetworkMode: BUILD_NETWORK,
+    },
+  });
+  let timedOut = false;
+  try {
+    await c.start();
+    const timer = setTimeout(() => {
+      timedOut = true;
+      c.kill().catch(() => {});
+    }, opts.timeoutMs);
+    const result: any = await c.wait();
+    clearTimeout(timer);
+    const raw = await c.logs({ stdout: true, stderr: true, tail: 400 });
+    const logs = demux(Buffer.from(raw as any)).replace(ANSI_RE, "");
+    return { exitCode: result?.StatusCode ?? null, logs, timedOut };
+  } finally {
+    await c.remove({ force: true }).catch(() => {});
+  }
+}

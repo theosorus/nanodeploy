@@ -58,7 +58,7 @@ export type Release = {
 };
 
 export type Meta = {
-  source: "upload" | "cli" | "rollback" | "legacy";
+  source: "upload" | "cli" | "rollback" | "legacy" | "git";
   message?: string;
   commitSha?: string;
   commitMessage?: string;

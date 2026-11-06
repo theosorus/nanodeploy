@@ -15,6 +15,11 @@ networks:
   apps:
     name: nanodeploy_apps
     external: true
+  # Git builds run here: the internet (package registries) and nothing of the
+  # platform. Only the throwaway build containers join it.
+  build:
+    name: nanodeploy_build
+    external: true
 
 volumes:
   caddy_data:
@@ -190,6 +195,10 @@ services:
       PUBLIC_PORT: ${PUBLIC_PORT:-}
       # analytics: where a day starts, for "today" and the daily visitor count
       TIMEZONE: ${TIMEZONE:-UTC}
+      # encrypts forge credentials (GitHub App key, GitLab tokens) at rest
+      NANODEPLOY_SECRET_KEY: ${NANODEPLOY_SECRET_KEY}
+      # APPS_DIR as the docker daemon sees it: Git builds bind-mount a workspace
+      HOST_APPS_DIR: ${APPS_DIR}
       # upgrade only: import accounts from a Pocket ID still running (legacy)
       POCKETID_URL: http://pocket-id:1411
       POCKETID_API_KEY: ${POCKETID_API_KEY:-}

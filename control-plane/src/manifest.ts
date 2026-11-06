@@ -14,9 +14,14 @@ export type Manifest = {
   env: string[];
   roles: string[];
   protect: { path: string; role: string }[];
+  // how a repository is built on the server (Git deploys only); a zip upload
+  // arrives already built and ignores it
+  build: { image: string; install: string | null; command: string };
 };
 
-const SLUG_RE = /^[a-z][a-z0-9-]{1,30}$/;
+// "--pr-<n>" is the suffix of a pull request preview, made by the platform
+const SLUG_RE = /^[a-z][a-z0-9-]{1,30}(--pr-\d{1,6})?$/;
+export const isPreviewSlug = (slug: string) => /--pr-\d{1,6}$/.test(slug);
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 const IDLE_RE = /^\d+(ms|s|m|h)$/;
 // role names travel in a header as a comma separated list
@@ -41,6 +46,9 @@ export function parseManifest(raw: string): Manifest {
   if (!m || typeof m !== "object") bad("manifest must be a yaml object");
   if (!m.slug || !SLUG_RE.test(m.slug)) {
     bad("slug must match [a-z][a-z0-9-]{1,30}");
+  }
+  if (String(m.slug).replace(/--pr-\d{1,6}$/, "").includes("--")) {
+    bad(`slug must not contain "--": that separator is reserved for previews`);
   }
   if (RESERVED_SLUGS.has(m.slug)) {
     bad(`slug "${m.slug}" is reserved by the platform, pick another one`);
@@ -117,6 +125,23 @@ export function parseManifest(raw: string): Manifest {
   });
   if (protect.length > 32) bad(`at most 32 protected paths, got ${protect.length}`);
 
+  // build commands run in a sandboxed container; still, one line each, no
+  // control characters, and an image name that is only an image name
+  const line = (v: unknown, what: string, fallback: string | null) => {
+    if (v === undefined || v === null) return fallback;
+    const s = String(v);
+    if (/[\r\n\0]/.test(s) || s.length > 500) bad(`build.${what} must be a single line of at most 500 characters`);
+    return s.trim() || fallback;
+  };
+  const image = line(m.build?.image, "image", "node:20-bookworm-slim")!;
+  if (!/^[a-z0-9][a-z0-9._\/:@-]{0,199}$/.test(image)) bad(`build.image is not an image name: ${image.slice(0, 60)}`);
+  const build = {
+    image,
+    // null: npm ci when a lockfile exists, npm install otherwise
+    install: m.build?.install === "" ? "" : line(m.build?.install, "install", null),
+    command: line(m.build?.command, "command", "npm run build")!,
+  };
+
   return {
     name,
     slug: m.slug,
@@ -133,5 +158,6 @@ export function parseManifest(raw: string): Manifest {
     env,
     roles,
     protect,
+    build,
   };
 }

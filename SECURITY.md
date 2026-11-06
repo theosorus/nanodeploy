@@ -38,6 +38,10 @@ days; this is a hobby project, not a vendor.
 | Passwords resist offline guessing and online guessing | scrypt (N=2^15, r=8, p=1, per-password salt). Ten characters minimum, the most common passwords refused. After five failures per address or per account, each attempt doubles the wait, up to five minutes. An unknown username takes as long to refuse as a wrong password. |
 | Sign-in pages cannot be abused from another site | every POST on the auth host must carry the auth host's own Origin; pages refuse framing and load scripts from the auth host only (CSP). Redirects after sign-in only go to the apps domain, on the scheme and port in use. |
 | Access rules cannot be dodged with odd paths | protected paths are compared case-insensitively, percent-decoded and with dot segments resolved, which can only make a path look more protected, never less. Apps also check the role in their own code (`requireRole`). |
+| Git builds cannot reach the platform or the forge credentials | the commit's archive is downloaded by the control plane; the build container receives none of its tokens, runs as uid 1000 with every capability dropped and `no-new-privileges`, 1.5 GB of memory, 512 processes, ten minutes, on `nanodeploy_build`, a network that carries nothing of the platform (no app, no postgres, no socket proxy). Archive entries other than files and directories (links) are skipped, and paths are kept inside the workspace. |
+| Webhooks cannot be forged or replayed | GitHub deliveries are checked against the HMAC-SHA256 of their raw body with the app's webhook secret, GitLab ones against the hook's secret token, both in constant time, before the body is parsed. Each delivery id is accepted once. A delivery can only queue a build of a repository and branch already connected, at a commit the control plane then downloads from the forge itself. Pull requests from forks are never built. |
+| Forge credentials are useless without the server's key | the GitHub App private key, GitLab tokens and webhook secrets are stored encrypted (AES-256-GCM) with `NANODEPLOY_SECRET_KEY`, which lives in `.env`, not in the database. GitHub installation tokens last one hour and are never written down. |
+| A repository cannot take over another app | a connection ties a repository branch to one slug; a build whose `app.yaml` names another slug fails. `--pr-` slugs are reserved for previews: an upload cannot claim one. |
 | gate cannot read secrets | its database role sees its own schema and six columns of the apps table (slug, name, access, groups, roles, protect): never env values or app database passwords. It has no Docker access. |
 | The console cannot be driven from another website | state-changing requests that are not token-authenticated must be same-origin. `multipart/form-data` is a CORS simple request, so `/api/deploy` would otherwise be reachable by cross-site fetch using an admin's cookie. |
 | A broken app cannot take the gateway down | a site file that Caddy refuses is rolled back and the previous config reloaded, so one bad app never freezes route updates for the others. Platform subdomains (`deploy`, `auth`, `id`, `www`) are reserved. |
@@ -73,6 +77,14 @@ These are real. Decide whether they matter for your setup before you deploy.
   realistic, but nothing slows such an attempt. Putting the console behind
   Cloudflare Access, or any other outer layer, is recommended and cheap
   (exclude `auth.` and the apps, not just `deploy.`).
+- **A build runs code from the repository and its dependencies.** The sandbox
+  limits what it can reach, not what it can do inside: a malicious dependency
+  can still fill its 1.5 GB, use the CPU for ten minutes, talk to the internet,
+  and ship a backend that does whatever it wants once deployed (an app is
+  arbitrary code, as always). Connect repositories you trust.
+- **Previews share the production variables.** A preview receives the values of
+  the variables its `app.yaml` declares, copied from the production app: an API
+  key used in production is used by previews too.
 - **Rate limits live in memory.** Restarting gate resets the counters.
 - **No email.** Nanodeploy sends no mail: an invitation or a forgotten password
   is a link an administrator hands over. A second factor (TOTP) is not there yet;
@@ -105,6 +117,9 @@ These are real. Decide whether they matter for your setup before you deploy.
   takes effect on the next request.
 - `POSTGRES_PASSWORD`: change it in Postgres first (`ALTER ROLE postgres
   PASSWORD ...`), then in `.env`, then restart the control plane.
+- `NANODEPLOY_SECRET_KEY`: rotating it makes the stored forge credentials
+  unreadable. Remove the forges in the Git tab, change the key, restart the
+  control plane, connect them again.
 - `GATE_DB_PASSWORD`: change it in `.env`, then `docker compose up -d
   control-plane gate`. The control plane sets it on the database role at start.
 - `POCKETID_ENCRYPTION_KEY`: only for an upgrade still importing from Pocket ID;

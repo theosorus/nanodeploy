@@ -101,6 +101,14 @@ http://deploy.{$APPS_DOMAIN} {
 	handle @deploykey {
 		reverse_proxy control-plane:8000
 	}
+	# GitHub and GitLab webhooks: no session, the control plane checks each
+	# delivery's signature or secret token before reading it
+	handle /hooks/* {
+		request_body {
+			max_size 2MB
+		}
+		reverse_proxy control-plane:8000
+	}
 	# the sign-in callback of the console's own session
 	handle /_nd/* {
 		reverse_proxy gate:4000

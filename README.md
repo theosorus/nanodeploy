@@ -98,6 +98,44 @@ Access is a dropdown, not a redeploy, and a redeploy never changes it back:
 **groups** (people you pick), or **public** (the whole internet — the dashboard
 warns you). Env values are write-only: you can replace a secret, not read it back.
 
+## Push to deploy, from GitHub or GitLab
+
+Connect a forge in the Git tab, pick a repository and a branch, and every push to
+it deploys. **GitHub**: one click creates a private GitHub App for your server
+(GitHub's manifest flow), you choose which repositories it may read. **GitLab**:
+paste a project access token, the webhook is installed for you.
+
+A push queues a build. One build runs at a time, so a 4 GB machine is never
+building twice:
+
+1. the control plane downloads the commit's archive (the forge token never
+   enters the build);
+2. `npm ci` (or `npm install`) and `npm run build` run in a throwaway container
+   as uid 1000, with no capability, 1.5 GB of memory, and a network of its own
+   that reaches the package registry and nothing of the platform;
+3. the result goes through the same release pipeline as a dropped zip: a new
+   version, live, with the commit in its history;
+4. the commit gets a green or red status, linking to the app or to the build log.
+
+Each pull request gets a **preview** at `<app>--pr-<n>.apps.example.com`, for
+accounts of your server only, with its own empty database and the production
+app's variables. It sleeps like any app (zero memory at rest), is updated by each
+push to the branch, and goes away when the pull request is closed. Pull requests
+from forks are never built.
+
+Change how a repository builds in `app.yaml`:
+
+```yaml
+build:
+  image: node:20-bookworm-slim   # default
+  install: npm ci                # default: npm ci with a lockfile, npm install without
+  command: npm run build         # must leave dist/ (and server.js if there is a backend)
+```
+
+Behind a home router, the webhook must reach `https://deploy.apps.example.com/hooks/`:
+if the console sits behind Cloudflare Access, let that path through. "Build now"
+in the Git tab deploys the branch head without a webhook.
+
 ## Analytics, without a script in your apps
 
 The Analytics tab reads what the machine already knows: Caddy's access log

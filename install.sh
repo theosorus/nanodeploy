@@ -52,6 +52,7 @@ if [ ! -f .env ]; then
   set_var POSTGRES_PASSWORD "$(openssl rand -hex 24)"
   set_var DEPLOY_TOKEN "$(openssl rand -hex 24)"
   set_var GATE_DB_PASSWORD "$(openssl rand -hex 24)"
+  set_var NANODEPLOY_SECRET_KEY "$(openssl rand -hex 32)"
   chmod 600 .env
   ok "generated .env with fresh secrets"
   warn "edit .env now to set APPS_DOMAIN and APPS_DIR, then run install.sh again"
@@ -66,6 +67,13 @@ if ! grep -q '^GATE_DB_PASSWORD=.' .env; then
   ok "added GATE_DB_PASSWORD to .env"
 fi
 
+# same for the key that encrypts forge credentials (Git deploys)
+if ! grep -q '^NANODEPLOY_SECRET_KEY=.' .env; then
+  grep -q '^NANODEPLOY_SECRET_KEY=' .env || printf '\nNANODEPLOY_SECRET_KEY=\n' >> .env
+  set_var NANODEPLOY_SECRET_KEY "$(openssl rand -hex 32)"
+  ok "added NANODEPLOY_SECRET_KEY to .env"
+fi
+
 source_env
 
 # every one of these has cost someone an evening of debugging
@@ -74,7 +82,7 @@ source_env
 case "$APPS_DOMAIN" in *.*) ;; *) die "APPS_DOMAIN must be a domain name, got '$APPS_DOMAIN'";; esac
 [ -n "${APPS_DIR:-}" ] || die "APPS_DIR is empty in .env"
 case "$APPS_DIR" in /*) ;; *) die "APPS_DIR must be an absolute path, got '$APPS_DIR'";; esac
-for secret in POSTGRES_PASSWORD DEPLOY_TOKEN GATE_DB_PASSWORD; do
+for secret in POSTGRES_PASSWORD DEPLOY_TOKEN GATE_DB_PASSWORD NANODEPLOY_SECRET_KEY; do
   eval "value=\${$secret:-}"
   [ -n "$value" ] || die "$secret is empty in .env, delete .env and rerun to regenerate the secrets"
 done
@@ -86,6 +94,7 @@ mkdir -p "$APPS_DIR"
 docker network create nanodeploy_edge 2>/dev/null && ok "network nanodeploy_edge" || ok "network nanodeploy_edge exists"
 docker network create --internal nanodeploy_data 2>/dev/null && ok "network nanodeploy_data" || ok "network nanodeploy_data exists"
 docker network create nanodeploy_apps 2>/dev/null && ok "network nanodeploy_apps" || ok "network nanodeploy_apps exists"
+docker network create nanodeploy_build 2>/dev/null && ok "network nanodeploy_build" || ok "network nanodeploy_build exists"
 ok "apps dir $APPS_DIR"
 
 say "3/5 building the caddy image with the sablier plugin"

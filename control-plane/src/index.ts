@@ -5,13 +5,17 @@ import type { Context, Next } from "hono";
 import { timingSafeEqual } from "node:crypto";
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { parseManifest, RESERVED_SLUGS } from "./manifest.js";
+import { parseManifest, RESERVED_SLUGS, isPreviewSlug } from "./manifest.js";
 import * as store from "./db.js";
 import * as dk from "./docker.js";
 import { writeSite, applySite, dropSite } from "./caddy.js";
 import * as accounts from "./accounts.js";
 import * as releases from "./releases.js";
 import * as analytics from "./analytics.js";
+import * as builds from "./builds.js";
+import * as forges from "./forges.js";
+import * as secrets from "./secrets.js";
+import { randomBytes } from "node:crypto";
 
 const APPS_DIR = process.env.APPS_DIR ?? "/srv/apps";
 const TOKEN = process.env.DEPLOY_TOKEN ?? "";
@@ -32,7 +36,8 @@ type Env = { Variables: { deployKeySlug?: string } };
 const app = new Hono<Env>();
 
 
-const SLUG_RE = /^[a-z][a-z0-9-]{1,30}$/;
+// an app slug, or a pull request preview of one (<slug>--pr-<n>)
+const SLUG_RE = /^[a-z][a-z0-9-]{1,30}(--pr-\d{1,6})?$/;
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 // env keys owned by the platform: not user-settable, not listed in the UI
 const PLATFORM_ENV = new Set(["DATABASE_URL"]);
@@ -214,6 +219,9 @@ async function readUpload(c: Context<Env>) {
     manifest = releases.readBundle(bytes);
   } catch (err: any) {
     return { error: err?.message ?? "invalid bundle", status: 400 as const };
+  }
+  if (isPreviewSlug(manifest.slug)) {
+    return { error: `"--pr-" slugs are made by the platform for pull request previews`, status: 400 as const };
   }
   const keySlug = c.get("deployKeySlug");
   if (keySlug && keySlug !== manifest.slug) {
@@ -552,28 +560,37 @@ app.post("/api/apps/:slug/env", async (c) => {
   });
 });
 
+// Removes an app with everything the platform made for it. The postgres
+// database survives on purpose, the /data volume does not: the dashboard says
+// both out loud before asking. A pull request preview loses its database too.
+async function removeApp(slug: string, dropDatabase: boolean): Promise<{ routeDropped: boolean } | null> {
+  // re-validate the slug against the database: the rm below must never run
+  // against a path that is not a real app directory
+  const appRow = await store.getApp(slug);
+  if (!appRow) return null;
+  await dk.removeContainer(slug);
+  await dk.removeDataVolume(slug);
+  if (dropDatabase) await store.dropAppDatabase(slug);
+  await store.deleteApp(slug);
+  // a forgotten key must not be able to bring a deleted app back
+  await store.deleteDeployKeysOf(slug);
+  await accounts.deleteAppGrants(slug);
+  await releases.deleteAll(slug);
+  await analytics.forgetApp(slug);
+  await rm(join(APPS_DIR, slug), { recursive: true, force: true });
+  const routeDropped = await dropSite(slug);
+  await pruneAll();
+  return { routeDropped };
+}
+
 app.delete("/api/apps/:slug", async (c) => {
   const slug = slugParam(c);
   if (!slug) return c.json({ error: "unknown app" }, 404);
   return runLocked(slug, async () => {
-    // re-validate the slug against the database: the rm below must never run
-    // against a path that is not a real app directory
-    const appRow = await store.getApp(slug);
-    if (!appRow) return c.json({ error: "unknown app" }, 404);
-    await dk.removeContainer(slug);
-    await dk.removeDataVolume(slug);
-    await store.deleteApp(slug);
-    // a forgotten key must not be able to bring a deleted app back
-    await store.deleteDeployKeysOf(slug);
-    await accounts.deleteAppGrants(slug);
-    await releases.deleteAll(slug);
-    await analytics.forgetApp(slug);
-    await rm(join(APPS_DIR, slug), { recursive: true, force: true });
-    const dropped = await dropSite(slug);
-    await pruneAll();
-    // the postgres database survives on purpose, the /data volume does not:
-    // the dashboard says both out loud before asking for confirmation
-    if (!dropped) {
+    const preview = Boolean((await store.getApp(slug)) && isPreviewSlug(slug));
+    const out = await removeApp(slug, preview);
+    if (!out) return c.json({ error: "unknown app" }, 404);
+    if (!out.routeDropped) {
       // dropping the file broke the whole config, so it was put back: the route
       // survives the app and has to be removed by hand
       return c.json(
@@ -584,7 +601,7 @@ app.delete("/api/apps/:slug", async (c) => {
         502,
       );
     }
-    return c.json({ ok: true, note: "postgres database kept, drop it manually if needed" });
+    return c.json({ ok: true, note: preview ? "preview removed with its database" : "postgres database kept, drop it manually if needed" });
   });
 });
 
@@ -848,11 +865,176 @@ app.get("/api/apps/:slug/analytics", async (c) => {
   return detail ? c.json(detail) : c.json({ error: "unknown app" }, 404);
 });
 
+/* ---------- git: providers, connections, builds ---------- */
+
+// Webhooks come from GitHub or GitLab, not from a browser: caddy lets them in
+// without a session, and they prove themselves by signature (GitHub) or by the
+// secret token set on the hook (GitLab).
+async function hook(kind: "github" | "gitlab", id: string | null, c: Context) {
+  const body = Buffer.from(await c.req.arrayBuffer());
+  if (body.length > 2 * 1024 * 1024) return c.json({ error: "payload too large" }, 413);
+  const out = await builds.webhook(kind, id, c.req.raw.headers, body);
+  return c.json({ message: out.message }, out.status as any);
+}
+app.post("/hooks/github", (c) => hook("github", null, c));
+app.post("/hooks/gitlab/:id", (c) => hook("gitlab", c.req.param("id"), c));
+
+app.get("/api/git", async (c) => {
+  const providers = await builds.listProviders();
+  return c.json({
+    ready: secrets.ready(),
+    consoleOrigin: builds.CONSOLE_ORIGIN,
+    providers: providers.map((p) => ({
+      id: p.id,
+      kind: p.kind,
+      name: p.name,
+      installUrl: p.kind === "github" ? `${p.config.htmlUrl}/installations/new` : null,
+    })),
+    connections: await builds.listConnections(),
+    builds: await builds.listBuilds(30),
+  });
+});
+
+const needSecrets = (c: Context) =>
+  secrets.ready() ? null : c.json({ error: "NANODEPLOY_SECRET_KEY is not set: run ./install.sh, then restart the control plane" }, 400);
+
+// Step one of GitHub's manifest flow: the dashboard posts this manifest to
+// GitHub in a form. The state ties the answer to this request.
+app.post("/api/git/github/manifest", async (c) => {
+  const missing = needSecrets(c);
+  if (missing) return missing;
+  const { org } = (await jsonBody<{ org?: string }>(c)) ?? {};
+  if (org && !/^[A-Za-z0-9-]{1,39}$/.test(org)) return c.json({ error: "invalid organization name" }, 400);
+  const state = randomBytes(16).toString("hex");
+  await store.setSetting("git.github.state", `${state}:${Date.now()}`);
+  const name = `nanodeploy-${process.env.APPS_DOMAIN!.split(".")[0]}`.slice(0, 26) + `-${randomBytes(3).toString("hex")}`;
+  const base = org ? `${forges.GITHUB_WEB}/organizations/${org}/settings/apps/new` : `${forges.GITHUB_WEB}/settings/apps/new`;
+  return c.json({ action: `${base}?state=${state}`, manifest: JSON.stringify(forges.githubManifest(name, builds.CONSOLE_ORIGIN)) });
+});
+
+// Step two: GitHub sends the browser back with a one-hour code, traded here for
+// the app's id, private key and webhook secret. Then on to installing it.
+app.get("/api/git/github/callback", async (c) => {
+  const missing = needSecrets(c);
+  if (missing) return missing;
+  const [state, at] = ((await store.getSetting("git.github.state")) ?? "").split(":");
+  const given = c.req.query("state") ?? "";
+  if (!state || given !== state || Date.now() - Number(at) > 3_600_000) {
+    return c.text("This GitHub answer does not match a request from this dashboard, or it is more than an hour old.", 400);
+  }
+  await store.setSetting("git.github.state", "");
+  try {
+    const app = await forges.githubConvert(c.req.query("code") ?? "");
+    await builds.addGithub(app);
+    return c.redirect(`${app.htmlUrl}/installations/new`, 302);
+  } catch (err: any) {
+    return c.text(`GitHub refused the code: ${err?.message ?? err}`, 502);
+  }
+});
+
+app.post("/api/git/gitlab", async (c) => {
+  const missing = needSecrets(c);
+  if (missing) return missing;
+  const { project, token } = (await jsonBody<{ project?: string; token?: string }>(c)) ?? {};
+  if (!project || !/^[A-Za-z0-9._\/-]{1,200}$/.test(project) || !token || token.length > 200) {
+    return c.json({ error: "expected { project: \"group/name\", token }" }, 400);
+  }
+  try {
+    return c.json({ id: await builds.addGitlab(project, token) });
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? "gitlab refused" }, 502);
+  }
+});
+
+const idParam = (c: Context) => (/^\d{1,18}$/.test(c.req.param("id") ?? "") ? c.req.param("id")! : null);
+
+app.delete("/api/git/providers/:id", async (c) => {
+  const id = idParam(c);
+  if (!id) return c.json({ error: "unknown provider" }, 404);
+  try {
+    await builds.removeProvider(id);
+    return c.json({ ok: true });
+  } catch (err: any) {
+    return c.json({ error: err?.message }, 400);
+  }
+});
+
+app.get("/api/git/providers/:id/repos", async (c) => {
+  const id = idParam(c);
+  const p = id ? await builds.getProvider(id) : null;
+  if (!p) return c.json({ error: "unknown provider" }, 404);
+  try {
+    return c.json({ repos: await forges.forgeOf(p).repos() });
+  } catch (err: any) {
+    return c.json({ error: err?.message }, 502);
+  }
+});
+
+app.post("/api/git/connections", async (c) => {
+  const b = (await jsonBody<{ providerId?: string; repoId?: string; branch?: string; rootDir?: string; previews?: boolean }>(c)) ?? {};
+  if (!b.providerId || !b.repoId || !b.branch) return c.json({ error: "expected { providerId, repoId, branch }" }, 400);
+  try {
+    const conn = await builds.connect({
+      providerId: String(b.providerId),
+      repoId: String(b.repoId),
+      branch: b.branch,
+      rootDir: b.rootDir ?? ".",
+      previews: b.previews !== false,
+    });
+    return c.json(conn);
+  } catch (err: any) {
+    return c.json({ error: err?.message ?? "could not connect" }, 400);
+  }
+});
+
+app.patch("/api/git/connections/:id", async (c) => {
+  const id = idParam(c);
+  if (!id) return c.json({ error: "unknown connection" }, 404);
+  const b = (await jsonBody<{ previews?: boolean; branch?: string }>(c)) ?? {};
+  try {
+    await builds.updateConnection(id, { previews: typeof b.previews === "boolean" ? b.previews : undefined, branch: b.branch });
+    return c.json({ ok: true });
+  } catch (err: any) {
+    return c.json({ error: err?.message }, 400);
+  }
+});
+
+app.delete("/api/git/connections/:id", async (c) => {
+  const id = idParam(c);
+  if (!id) return c.json({ error: "unknown connection" }, 404);
+  await builds.disconnect(id);
+  return c.json({ ok: true });
+});
+
+app.post("/api/git/connections/:id/build", async (c) => {
+  const id = idParam(c);
+  if (!id) return c.json({ error: "unknown connection" }, 404);
+  try {
+    const b = await builds.buildHead(id);
+    return c.json({ ok: true, build: b?.id ?? null, note: b ? undefined : "this commit is already being built" });
+  } catch (err: any) {
+    return c.json({ error: err?.message }, 502);
+  }
+});
+
+app.get("/api/git/builds/:id", async (c) => {
+  const id = idParam(c);
+  const b = id ? await builds.getBuild(id) : null;
+  if (!b) return c.json({ error: "unknown build" }, 404);
+  return c.json({ ...b, log: b.log.split("\n") });
+});
+
 app.get("/", async (c) => c.html(await readFile("./public/index.html", "utf8")));
 app.use("/*", serveStatic({ root: "./public" }));
 
 serve({ fetch: app.fetch, port: 8000 });
 analytics.start();
+await builds.init({
+  lock: runLocked,
+  removeApp: async (slug, dropDatabase) => {
+    await runLocked(slug, () => removeApp(slug, dropDatabase));
+  },
+});
 console.log("nanodeploy control plane on :8000");
 
 // wait for caddy and the docker socket proxy to settle before healing
