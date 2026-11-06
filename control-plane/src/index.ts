@@ -11,7 +11,7 @@ import { parseManifest, RESERVED_SLUGS } from "./manifest.js";
 import * as store from "./db.js";
 import * as dk from "./docker.js";
 import { writeSite, applySite, dropSite } from "./caddy.js";
-import * as people from "./people.js";
+import * as accounts from "./accounts.js";
 
 const APPS_DIR = process.env.APPS_DIR ?? "/srv/apps";
 const TOKEN = process.env.DEPLOY_TOKEN ?? "";
@@ -45,6 +45,9 @@ const GROUP_NAME_RE = /^[\p{L}\p{N}._'-]+$/u;
 
 await store.initState();
 await store.migrateState();
+await store.initGate();
+await accounts.importFromPocketId();
+await accounts.bootstrapLinks();
 
 // A deploy is prepared here, next to the live app, and only moved into place
 // once the image is built and the migrations ran. Inside APPS_DIR so the final
@@ -89,25 +92,21 @@ const deployKeyRoutes = (c: Context, slug: string) => {
 const sessionOk = (c: Context) => Boolean(c.req.header("remote-sub"));
 
 const sessionGroups = (c: Context) =>
-  (c.req.header("remote-groups") ?? "")
+  Buffer.from(c.req.header("remote-groups") ?? "", "latin1").toString("utf8")
     .split(",")
     .map((g) => g.trim())
     .filter(Boolean);
 
-// Full platform access: the CLI token, or a signed-in account flagged as admin
-// in the identity provider (the owner always is). Console access follows that
-// one flag, never a named group, so no group edit can ever lock the owner out.
-// Before an identity provider is wired up there is only the owner, so a bare
-// session is allowed through to bootstrap the first setup.
+// Full platform access: the CLI token, or a signed-in account that is an
+// administrator in gate. gate already refused anyone else on the console host;
+// this is the second lock, read fresh from the database on every request so a
+// demotion takes effect on the next click. There is no "no accounts yet, let
+// everyone in" mode any more: the first administrator is made from a link the
+// control plane prints in its logs.
 const adminOk = async (c: Context) => {
   if (tokenOk(c)) return true;
   if (!sessionOk(c)) return false;
-  if (!people.configured()) return true;
-  const me = await people.findBySession(
-    c.req.header("remote-sub") ?? "",
-    c.req.header("remote-email") ?? "",
-  );
-  return Boolean(me?.isAdmin);
+  return Boolean((await accounts.findById(c.req.header("remote-sub") ?? ""))?.isAdmin);
 };
 
 const isMe = (c: Context) => c.req.path === "/api/me";
@@ -406,6 +405,8 @@ async function deployFromStaging(
     env,
     image,
     declared_env: manifest.env,
+    roles: manifest.roles,
+    protect: manifest.protect,
   };
   await store.upsertApp(row as any);
   await store.touchDeploy(manifest.slug);
@@ -554,6 +555,8 @@ app.get("/api/apps", async (c) => {
         groups: a.groups,
         hasBackend: a.port !== null,
         hasDatabase: a.db_user !== null,
+        roles: a.roles ?? [],
+        protect: a.protect ?? [],
         warm: a.warm,
         idleTimeout: a.idle_timeout,
         env: Object.fromEntries(envKeys.map((k) => [k, k in a.env ? "set" : "unset"])),
@@ -658,6 +661,7 @@ app.delete("/api/apps/:slug", async (c) => {
     await store.deleteApp(slug);
     // a forgotten key must not be able to bring a deleted app back
     await store.deleteDeployKeysOf(slug);
+    await accounts.deleteAppGrants(slug);
     await rm(join(APPS_DIR, slug), { recursive: true, force: true });
     const dropped = await dropSite(slug);
     await pruneAll();
@@ -739,18 +743,13 @@ app.delete("/api/apps/:slug/keys/:id", async (c) => {
     : c.json({ error: "unknown key" }, 404);
 });
 
-/* ---------- people, proxied from Pocket ID so accounts live in one place ---------- */
+/* ---------- people: accounts and groups, stored in gate's schema ---------- */
+
+const errorOf = (err: any) => String(err?.message ?? err).slice(0, 300);
 
 app.get("/api/people", async (c) => {
-  if (!people.configured()) {
-    return c.json({ configured: false, people: [], groups: [] });
-  }
-  try {
-    const [list, groups] = await Promise.all([people.listPeople(), people.listGroups()]);
-    return c.json({ configured: true, people: list, groups });
-  } catch (err: any) {
-    return c.json({ configured: true, error: err.message, people: [], groups: [] }, 502);
-  }
+  const [list, groups] = await Promise.all([accounts.listPeople(), accounts.listGroups()]);
+  return c.json({ configured: true, people: list, groups, authOrigin: accounts.AUTH_ORIGIN });
 });
 
 app.post("/api/people", async (c) => {
@@ -759,13 +758,21 @@ app.post("/api/people", async (c) => {
   // separate, explicit step (POST /api/people/:id/admin), so inviting someone is
   // safe and never hands out control of the machine.
   const { username, email, firstName } = (await jsonBody<Record<string, string>>(c)) ?? {};
-  if (!username?.trim() || !email?.trim()) {
-    return c.json({ error: "username and email are required" }, 400);
-  }
+  if (!username?.trim()) return c.json({ error: "username is required" }, 400);
   try {
-    return c.json(await people.invite({ username: username.trim(), email: email.trim(), firstName }));
-  } catch (err: any) {
-    return c.json({ error: err.message }, 502);
+    return c.json(await accounts.invite({ username, email: email ?? "", firstName }));
+  } catch (err) {
+    return c.json({ error: errorOf(err) }, 400);
+  }
+});
+
+// a link to set a password or a passkey: for a forgotten password, a lost
+// phone, or an invitation that expired
+app.post("/api/people/:id/link", async (c) => {
+  try {
+    return c.json({ link: await accounts.signInLink(c.req.param("id")) });
+  } catch (err) {
+    return c.json({ error: errorOf(err) }, 404);
   }
 });
 
@@ -774,12 +781,20 @@ app.post("/api/people/:id/groups", async (c) => {
   if (!Array.isArray(groupIds) || groupIds.some((g) => typeof g !== "string")) {
     return c.json({ error: "groupIds must be a list of strings" }, 400);
   }
-  await people.setGroups(c.req.param("id"), groupIds);
+  const known = new Set((await accounts.listGroups()).map((g) => g.id));
+  if (groupIds.some((g) => !known.has(g))) return c.json({ error: "unknown group" }, 400);
+  await accounts.setGroups(c.req.param("id"), groupIds);
   return c.json({ ok: true });
 });
 
 app.delete("/api/people/:id", async (c) => {
-  await people.removePerson(c.req.param("id"));
+  const id = c.req.param("id");
+  if (id === c.req.header("remote-sub")) return c.json({ error: "you cannot remove your own account" }, 400);
+  const target = await accounts.findById(id);
+  if (target?.isAdmin && (await accounts.adminCount()) <= 1) {
+    return c.json({ error: "this is the last administrator" }, 400);
+  }
+  await accounts.removePerson(id);
   return c.json({ ok: true });
 });
 
@@ -787,13 +802,17 @@ app.post("/api/groups", async (c) => {
   const { name } = (await jsonBody<{ name: string }>(c)) ?? {};
   const clean = String(name ?? "").replace(/[\r\n"\\]/g, "").trim().slice(0, 64);
   if (!GROUP_NAME_RE.test(clean)) {
-    return c.json({ error: "group name not allowed in caddy config" }, 400);
+    return c.json({ error: "group name: letters, digits, dots, dashes, underscores" }, 400);
   }
-  return c.json(await people.createGroup(clean));
+  try {
+    return c.json(await accounts.createGroup(clean));
+  } catch (err) {
+    return c.json({ error: errorOf(err) }, 400);
+  }
 });
 
-// Grant or revoke console access. It follows the identity provider's admin flag,
-// never a group, so no group edit can lock the owner out.
+// Grant or revoke console access. It follows the account's admin flag, never a
+// group, so no group edit can lock the owner out.
 app.post("/api/people/:id/admin", async (c) => {
   const body = await jsonBody<{ admin?: unknown }>(c);
   if (!body || typeof body.admin !== "boolean") {
@@ -803,28 +822,23 @@ app.post("/api/people/:id/admin", async (c) => {
   if (!body.admin) {
     // never let an admin revoke their own access, and never leave the console
     // with nobody able to manage it
-    const me = await people.findBySession(
-      c.req.header("remote-sub") ?? "",
-      c.req.header("remote-email") ?? "",
-    );
-    if (me && me.id === id) {
+    if (id === c.req.header("remote-sub")) {
       return c.json({ error: "you cannot remove your own console access" }, 400);
     }
-    if ((await people.adminCount()) <= 1) {
+    if ((await accounts.adminCount()) <= 1) {
       return c.json({ error: "this is the last administrator" }, 400);
     }
   }
   try {
-    await people.setAdmin(id, body.admin);
+    await accounts.setAdmin(id, body.admin);
     return c.json({ ok: true });
-  } catch (err: any) {
-    return c.json({ error: err.message }, 502);
+  } catch (err) {
+    return c.json({ error: errorOf(err) }, 404);
   }
 });
 
-// Groups only decide who may open an app set to "groups". A rename must follow
-// through to every app that references the group by name and to the caddy site
-// that enforces it, or that app would quietly allow the wrong people.
+// Groups decide who may open an app set to "groups", by name. A rename must
+// follow through to every app that references the group.
 function appsUsingGroup(apps: store.AppRow[], name: string) {
   return apps.filter((a) => a.access === "groups" && a.groups.includes(name));
 }
@@ -833,30 +847,27 @@ app.patch("/api/groups/:id", async (c) => {
   const { name } = (await jsonBody<{ name: string }>(c)) ?? {};
   const clean = String(name ?? "").replace(/[\r\n"\\]/g, "").trim().slice(0, 64);
   if (!GROUP_NAME_RE.test(clean)) {
-    return c.json({ error: "group name not allowed in caddy config" }, 400);
+    return c.json({ error: "group name: letters, digits, dots, dashes, underscores" }, 400);
   }
-  const groups = await people.listGroups().catch(() => null);
-  const old = groups?.find((g) => g.id === c.req.param("id"));
+  const old = (await accounts.listGroups()).find((g) => g.id === c.req.param("id"));
   if (!old) return c.json({ error: "no such group" }, 404);
   if (old.name === clean) return c.json({ ok: true });
   try {
-    await people.renameGroup(c.req.param("id"), clean);
-  } catch (err: any) {
-    return c.json({ error: err.message }, 502);
+    await accounts.renameGroup(old.id, clean);
+  } catch (err) {
+    return c.json({ error: errorOf(err) }, 400);
   }
   for (const row of appsUsingGroup(await store.listApps(), old.name)) {
     await runLocked(row.slug, async () => {
       const next = row.groups.map((g) => (g === old.name ? clean : g));
       await store.setAccess(row.slug, row.access, next);
-      await applySite((await store.getApp(row.slug))!);
     });
   }
   return c.json({ ok: true });
 });
 
 app.delete("/api/groups/:id", async (c) => {
-  const groups = await people.listGroups().catch(() => null);
-  const g = groups?.find((x) => x.id === c.req.param("id"));
+  const g = (await accounts.listGroups()).find((x) => x.id === c.req.param("id"));
   if (!g) return c.json({ error: "no such group" }, 404);
   const used = appsUsingGroup(await store.listApps(), g.name);
   if (used.length > 0) {
@@ -867,18 +878,47 @@ app.delete("/api/groups/:id", async (c) => {
       409,
     );
   }
-  try {
-    await people.deleteGroup(c.req.param("id"));
-    return c.json({ ok: true });
-  } catch (err: any) {
-    return c.json({ error: err.message }, 502);
-  }
+  await accounts.deleteGroup(g.id);
+  return c.json({ ok: true });
 });
+
+/* ---------- app roles: declared by the manifest, granted here ---------- */
+
+app.get("/api/apps/:slug/roles", async (c) => {
+  const slug = slugParam(c);
+  const row = slug ? await store.getApp(slug) : null;
+  if (!row) return c.json({ error: "unknown app" }, 404);
+  return c.json({ roles: row.roles, protect: row.protect, grants: await accounts.grantsOf(row.slug) });
+});
+
+app.post("/api/apps/:slug/roles", async (c) => {
+  const slug = slugParam(c);
+  const row = slug ? await store.getApp(slug) : null;
+  if (!row) return c.json({ error: "unknown app" }, 404);
+  const body = await jsonBody<{ role?: string; kind?: string; id?: string; granted?: boolean }>(c);
+  if (!body || typeof body.granted !== "boolean" || !body.role || !body.id) {
+    return c.json({ error: "expected { role, kind, id, granted }" }, 400);
+  }
+  if (!row.roles.includes(body.role)) return c.json({ error: "this app does not declare that role" }, 400);
+  if (body.kind !== "user" && body.kind !== "group") return c.json({ error: "kind is user or group" }, 400);
+  if (body.granted && !(await accounts.subjectExists(body.kind, body.id))) {
+    return c.json({ error: `unknown ${body.kind}` }, 404);
+  }
+  await accounts.setGrant(row.slug, { role: body.role, kind: body.kind, id: body.id }, body.granted);
+  return c.json({ ok: true });
+});
+
+// Identity headers carry UTF-8 bytes, which node reads as latin1: "Zoé" would
+// show as "ZoÃ©" without this.
+const utf8Header = (c: Context, name: string) => {
+  const v = c.req.header(name);
+  return v === undefined ? undefined : Buffer.from(v, "latin1").toString("utf8");
+};
 
 app.get("/api/me", async (c) =>
   c.json({
-    name: c.req.header("Remote-Name") ?? c.req.header("Remote-User") ?? "",
-    email: c.req.header("Remote-Email") ?? "",
+    name: utf8Header(c, "Remote-Name") ?? utf8Header(c, "Remote-User") ?? "",
+    email: utf8Header(c, "Remote-Email") ?? "",
     // the identity provider subject equals the Pocket ID user id, so the People
     // tab can tell which row is you and refuse to let you demote yourself
     sub: c.req.header("Remote-Sub") ?? null,

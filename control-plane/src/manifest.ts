@@ -12,11 +12,19 @@ export type Manifest = {
   database: { enabled: boolean; migrations: string };
   idle: { timeout: string; warm: boolean };
   env: string[];
+  roles: string[];
+  protect: { path: string; role: string }[];
 };
 
 const SLUG_RE = /^[a-z][a-z0-9-]{1,30}$/;
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 const IDLE_RE = /^\d+(ms|s|m|h)$/;
+// role names travel in a header as a comma separated list
+const ROLE_RE = /^[a-z][a-z0-9_-]{0,31}$/;
+// a protected path lands in a caddy path matcher and in gate's own matcher:
+// plain characters, and "*" only as a trailing wildcard, the one form both
+// read the same way
+const PROTECT_RE = /^\/[A-Za-z0-9._~\/-]*\*?$/;
 const NAME_MAX = 60;
 const ENV_MAX = 64;
 // These subdomains belong to the platform. An app that claimed one would emit a
@@ -91,6 +99,24 @@ export function parseManifest(raw: string): Manifest {
     }
   }
 
+  const roles = [...new Set(Array.isArray(m.roles) ? m.roles : [])];
+  if (roles.length > 16) bad(`at most 16 roles, got ${roles.length}`);
+  for (const r of roles) {
+    if (typeof r !== "string" || !ROLE_RE.test(r)) {
+      bad(`role names must match [a-z][a-z0-9_-]*, got: ${String(r).slice(0, 40)}`);
+    }
+  }
+  const protect = (Array.isArray(m.protect) ? m.protect : []).map((p: any) => {
+    const path = String(p?.path ?? "");
+    const role = String(p?.role ?? "");
+    if (!PROTECT_RE.test(path) || path.length > 128) {
+      bad(`protect path must start with / and may only end with *, got: ${path.slice(0, 60)}`);
+    }
+    if (!roles.includes(role)) bad(`protect ${path} needs role "${role}", which is not in roles`);
+    return { path, role };
+  });
+  if (protect.length > 32) bad(`at most 32 protected paths, got ${protect.length}`);
+
   return {
     name,
     slug: m.slug,
@@ -105,5 +131,7 @@ export function parseManifest(raw: string): Manifest {
     // warm apps opt out of scale-to-zero: they stay up and restart with docker
     idle: { timeout, warm: m.idle?.warm === true },
     env,
+    roles,
+    protect,
   };
 }

@@ -1,12 +1,20 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import type { Context } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { desc, eq } from "drizzle-orm";
 import { db } from "./db.js";
 import { notes } from "./schema.js";
 import { tryGetUser } from "./auth.js";
 
 const app = new Hono();
+
+// requireRole and friends throw HTTPException: answer JSON, never a stack trace
+app.onError((err, c) => {
+  if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
+  console.error(err);
+  return c.json({ error: "internal error" }, 500);
+});
 
 // an app can be switched to public from the dashboard, which removes the
 // identity headers: answer 401 instead of crashing on a missing user

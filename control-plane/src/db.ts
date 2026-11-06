@@ -2,6 +2,7 @@ import postgres from "postgres";
 import { createHash, randomBytes } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { initGateSchema } from "./gate-schema.js";
 
 const admin = postgres(process.env.POSTGRES_URL!, { max: 2, idle_timeout: 20 });
 
@@ -59,6 +60,10 @@ export type AppRow = {
   image: string | null;
   deployed_at: string;
   declared_env: string[];
+  // declared by the manifest on every deploy: the roles this app understands
+  // and the paths that need one. Who holds a role is decided in the dashboard.
+  roles: string[];
+  protect: { path: string; role: string }[];
 };
 
 // added after the first release, existing installs need the column too
@@ -66,6 +71,8 @@ export async function migrateState() {
   try {
     await admin`alter table apps add column if not exists warm boolean not null default false`;
     await admin`alter table apps add column if not exists declared_env text[] not null default '{}'`;
+    await admin`alter table apps add column if not exists roles text[] not null default '{}'`;
+    await admin`alter table apps add column if not exists protect jsonb not null default '[]'`;
   } catch (err: any) {
     // postgres.js surfaces the "already exists" notice as an error, harmless
     if (String(err?.code) !== "42701") throw err;
@@ -84,6 +91,13 @@ export async function migrateState() {
       last_used_at timestamptz
     )`;
 }
+
+// after migrateState: the gate role is granted columns added there
+export const initGate = () =>
+  initGateSchema(admin, new URL(process.env.POSTGRES_URL!).pathname.replace(/^\//, ""));
+
+// the accounts module shares the connection: one small pool per process
+export const sql = admin;
 
 /* ---------- deploy keys ---------- */
 
@@ -151,9 +165,12 @@ export const getApp = (slug: string) =>
 // INSERT ... ON CONFLICT would null the NOT NULL columns a partial row omits,
 // and a bare update must not touch deployed_at: only a real deploy bumps it.
 export async function upsertApp(row: Partial<AppRow> & { slug: string }) {
+  // postgres.js sends a JS array as a postgres array: protect is jsonb, say so
+  if (Array.isArray(row.protect)) row = { ...row, protect: admin.json(row.protect) as any };
   const existing = await getApp(row.slug);
   if (existing) {
     const merged = { ...existing, ...row, deployed_at: existing.deployed_at };
+    if (Array.isArray(merged.protect)) merged.protect = admin.json(merged.protect) as any;
     await admin`update apps set ${admin(merged)} where slug = ${row.slug}`;
   } else {
     await admin`insert into apps ${admin(row)}`;

@@ -22,6 +22,25 @@ jobs:
       - run: npm run build
         working-directory: control-plane
 
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: gate/package-lock.json
+      - run: npm ci
+        working-directory: gate
+      - run: npm run typecheck
+        working-directory: gate
+      # the access rules are the security boundary: tested on their own
+      - run: npm test
+        working-directory: gate
+      - run: npm run build
+        working-directory: gate
+
   dashboard:
     runs-on: ubuntu-latest
     steps:

@@ -174,6 +174,26 @@ sans attendre `gate`. Le skill demande désormais une clé au lieu du jeton.
 
 ## 2. Axe 1 : utilisateurs, mots de passe, rôles, clés d'accès
 
+> **Livré en phase 1.** `gate/` remplace tinyauth et Pocket ID. Ce qui a changé
+> par rapport au plan ci-dessous, après implémentation :
+>
+> * **Sessions liées à un hôte.** Au lieu d'un cookie partagé sur le domaine
+>   parent (2.7), une session racine vit sur `auth.` et chaque autre hôte reçoit
+>   sa propre session via un code à usage unique (60 s), en cookie `__Host-`. Un
+>   cookie copié par une app ne sert que sur cette app : testé. La console en
+>   profite, avec une session de 12 h maximum depuis la dernière preuve
+>   d'identité.
+> * **Manifeste à plat**, compatible avec l'existant : `access` garde ses trois
+>   valeurs (`private` joue le rôle de `members`, `groups` de `restricted`), et
+>   `roles` / `protect` sont des clés de premier niveau.
+> * **Pas de rôle implicite `viewer`** : `Remote-Roles` ne contient que les rôles
+>   déclarés et détenus.
+> * **Pas encore** : TOTP, code par email, OIDC externe. Les pages de connexion
+>   parlent français et anglais (le dashboard garde ses 10 langues).
+> * **Le schéma `gate` est créé par le control plane**, seul à avoir le droit de
+>   créer des rôles Postgres ; il gère aussi comptes, groupes et rôles
+>   directement en base, sans API interne.
+
 ### 2.1 Le besoin, reformulé
 
 1. **Un seul annuaire**, compréhensible : une personne = un compte, quel que soit
@@ -1483,7 +1503,7 @@ Chaque phase est livrable seule et laisse la plateforme dans un état cohérent.
 | Phase | Contenu | Pourquoi à ce moment | Effort |
 |---|---|---|---|
 | **0. Durcissement** (fait) | cookie de session retiré avant les apps (C1), accès non écrasé au redéploiement (C2), déploiement préparé à côté puis basculé (C3), clés de déploiement par app (C4) | bugs réels, petits correctifs, prérequis à tout le reste | fait |
-| **1. `gate`** | annuaire, mot de passe, passkey, sessions, rôles par app, chemins protégés, identité optionnelle, clés `ndk_` et `ndd_`, migration Pocket ID, UI Personnes et Accès | c'est ton premier axe, et l'axe 2 (nominatif) et l'axe 3 (clés pour la CI et l'agent) s'appuient dessus | 8 à 12 j |
+| **1. `gate`** (fait) | annuaire, mot de passe, passkey, sessions liées à l'hôte, rôles par app, chemins protégés, identité optionnelle, clés `ndk_`, migration Pocket ID, UI Personnes et Rôles | c'est ton premier axe, et l'axe 2 (nominatif) et l'axe 3 (clés pour la CI et l'agent) s'appuient dessus | fait |
 | **2. Releases** | dossiers de release, bascule atomique, table `releases`, rollback, snapshots avant migration, "Nouvelle version" avec diff, historique | fondation obligatoire de Git ; apporte déjà le remplacement à chaud par zip | 5 à 7 j |
 | **3. Analytics** | logs Caddy, ingesteur, événements Docker, échantillons, activité nominative depuis `gate`, onglet Analytics, beacon | indépendant, mais plus riche une fois `gate` et les releases en place (déploiements sur la frise) | 5 à 7 j |
 | **4. Git** | GitHub App (manifest), webhooks, archive, builder sandbox, file, statuts, puis GitLab.com | repose sur les releases | 8 à 11 j |

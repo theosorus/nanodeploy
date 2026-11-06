@@ -162,18 +162,46 @@ api<Note[]>("/api/notes", undefined, { onWaking: () => setStatus("waking") });
 
 ## User identity
 
-The app does not handle login. Caddy authenticates, then injects `Remote-Sub`,
-`Remote-Email`, `Remote-Name` and `Remote-Groups`. Read them through
-`server/auth.ts`, never by hand.
+The app does not handle login. The gateway (gate) checks access, then injects
+`Remote-Sub`, `Remote-Email`, `Remote-Name`, `Remote-Groups` and
+`Remote-Roles`. Read them through `server/auth.ts`, never by hand: it also
+decodes names written in any script.
 
 ```typescript
 const user = tryGetUser(c);   // null when the request carries no identity
+requireRole(c, "moderator");  // 401 if signed out, 403 without the role
 ```
 
-An app switched to `public` from the dashboard receives no identity header at
-all. Every route that needs a user therefore answers 401 when `tryGetUser`
-returns null; that is what avoids a cascade of 500s. `getUser(c)`, which throws,
-is only justified in an app that will always stay private.
+On a `public` app, a visitor who is not signed in has no identity header, and a
+signed-in one does. Every route that needs a user therefore answers 401 when
+`tryGetUser` returns null; that is what avoids a cascade of 500s. `getUser(c)`,
+which throws, is only justified in an app that will always stay private.
+
+### Public app, managed by a few people
+
+The common case: anyone can read and post, a few trusted people moderate or
+edit. Never build a login, an admin password or a "secret admin URL" for that.
+Declare a role and the paths it guards in `app.yaml`:
+
+```yaml
+access: public
+roles: [moderator]
+protect:
+  - { path: /api/admin/*, role: moderator }
+```
+
+- The gateway refuses a protected path to anyone without the role, before the
+  request reaches the app. The route still calls `requireRole(c, "moderator")`:
+  two locks, so a mistyped rule never opens it.
+- Who is a moderator is decided in the dashboard (the app's panel, Roles), not
+  in code. Administrators hold every role.
+- In the frontend, `src/identity.ts` gives `getMe()` (`/_nd/me`), `hasRole()`,
+  `loginUrl()` and `logoutUrl`. Show a discreet "sign in" link (footer) to
+  anonymous visitors, and the moderation controls only when
+  `hasRole(me, "moderator")`. Hiding a button is comfort; the server check is
+  the security.
+- Put moderation endpoints under the protected prefix (`/api/admin/...`), and
+  keep the public endpoints outside it.
 
 Every user-owned table carries an `ownerId` column filled with `user.id`, and
 **every read filters on it**. That filter is the entire authorisation model:
@@ -220,6 +248,8 @@ slug: depenses          # becomes depenses.<domain>, [a-z0-9-] only
 access: private         # public | private | groups, used when the app is created;
                         # later changes are made in the dashboard, not here
 groups: []
+roles: []               # e.g. [moderator]; given to people in the dashboard
+protect: []             # e.g. - { path: /api/admin/*, role: moderator }
 frontend: true
 backend:
   entry: server.js
@@ -305,7 +335,8 @@ Reach for these rather than reinventing them; each one was paid for once.
 - [ ] every route under `/api/*`
 - [ ] every user-owned table filtered by `ownerId`, on reads and on writes
 - [ ] every input type-checked and length-bounded, every list query limited
-- [ ] no authentication code in the app
+- [ ] no authentication code in the app; moderation through `roles` and
+      `protect`, with `requireRole` on each protected route
 - [ ] every API call through `src/client.ts`
 - [ ] loading, waking, empty and error states all written
 - [ ] slug unique, lowercase, no underscore, not a reserved name

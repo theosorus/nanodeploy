@@ -33,6 +33,9 @@ cat > "$WORK/demo/app.yaml" <<EOF
 name: Smoke
 slug: smoke
 access: public
+roles: [moderator]
+protect:
+  - { path: /api/admin/*, role: moderator }
 frontend: true
 backend:
   entry: server.js
@@ -128,11 +131,22 @@ done
 echo "$B" | grep -q '"ok":true' && ok "backend answers after sablier wake" || bad "no wake: $B"
 check "$(docker inspect -f '{{.State.Status}}' app-smoke)" "running" "container running"
 
+echo "== gate: public app with a protected back office =="
+check "$(code -H "Host: smoke.$DOM" $BASE/api/admin/anything)" "401" "protected path asks an anonymous visitor to sign in"
+L=$(curl -s -o /dev/null -w '%{redirect_url}' -H "Host: smoke.$DOM" -H 'Accept: text/html' $BASE/api/admin/anything)
+echo "$L" | grep -q "auth.$DOM/login?to=" && ok "a browser is sent to the sign-in page" || bad "no sign-in redirect: $L"
+json -H "Host: smoke.$DOM" $BASE/_nd/me | grep -q '"anonymous":true' && ok "/_nd/me on an app host" || bad "/_nd/me"
+check "$(code -H "Host: smoke.$DOM" -H 'Cookie: nd_s=forged; __Host-nd_s=forged' $BASE/api/admin/x)" "401" "forged session cookie -> 401"
+check "$(code -H "Host: smoke.$DOM" -H "Authorization: Bearer ndk_$(printf 'A%.0s' $(seq 43))" $BASE/api/admin/x)" \
+  "401" "unknown access key -> 401"
+check "$(code -H "Host: auth.$DOM" "$BASE/verify?app=smoke")" "404" "forward-auth endpoint not reachable from outside"
+check "$(code -H "Host: auth.$DOM" $BASE/login)" "200" "sign-in page"
+
 echo "== platform cookie never reaches an app =="
 # tinyauth's cookies live on the parent domain, so the browser sends them to
 # every app: an app backend holding an admin's session could drive the console
-C=$(json -H "Host: smoke.$DOM" -H 'Cookie: theme=dark; tinyauth-session-1a2b3c4d=SECRET; lang=fr' $BASE/api/cookie)
-echo "$C" | grep -q '"cookie":"theme=dark; lang=fr"' && ok "tinyauth cookie stripped, app cookies kept" \
+C=$(json -H "Host: smoke.$DOM" -H 'Cookie: theme=dark; tinyauth-session-1a2b3c4d=SECRET; __Host-nd_s=S2; lang=fr' $BASE/api/cookie)
+echo "$C" | grep -q '"cookie":"theme=dark; lang=fr"' && ok "platform cookies stripped, app cookies kept" \
   || bad "cookie reached the app: $C"
 
 echo "== a failed deploy leaves the live version alone =="

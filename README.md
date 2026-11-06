@@ -37,8 +37,7 @@ drag of a `.zip`.
 | Caddy + Sablier plugin | routing, static files, waking apps | ~25 MB |
 | Sablier | stops and starts containers on demand | ~15 MB |
 | Postgres 16 | one database and one role per app | ~60 MB |
-| Pocket ID | accounts, passkeys, groups | ~15 MB |
-| tinyauth | forward-auth in front of every private app | ~10 MB |
+| gate | accounts, passwords, passkeys, app roles, access checks | ~40 MB |
 | control plane | uploads, provisioning, routes | ~50 MB |
 | two socket proxies | least-privilege Docker access | ~10 MB |
 
@@ -93,13 +92,30 @@ warns you). Env values are write-only: you can replace a secret, not read it bac
 
 <img src="docs/people.png" alt="The people tab: invite by email, group chips, admin group" width="560">
 
-No passwords anywhere. Invite by email, hand over a single-use link, the person
-enrolls a passkey. That one account opens every app they're allowed to see, and
-your apps write zero auth code — the gateway hands them the user in a header.
+Invite someone from the dashboard, hand over the single-use link, and they
+choose a password, a passkey, or both. That one account opens every app they're
+allowed to see, and your apps write zero auth code: the gateway hands them the
+user, and their roles in that app, in headers.
 
-The console can deploy code and drive Docker, so whoever reaches it has root on
-the machine. A fresh install is single-user and open; invite a second person and
-the dashboard makes you pick an admin group first.
+**Public app, private moderation.** An app can be open to the whole internet
+and still have a back office:
+
+```yaml
+access: public
+roles: [moderator]
+protect:
+  - { path: /api/admin/*, role: moderator }
+```
+
+Anyone reads and posts; `/api/admin/*` asks for a sign-in and the role. Who is a
+moderator is a click in the app's panel. On public pages the app still learns
+who is signed in, so it can show the moderation buttons to the right people.
+
+Each person has an account page at `auth.apps.example.com`: password, passkeys,
+and personal access keys for scripts that call their apps. A session is bound
+to one host: an app never receives a cookie it could replay anywhere else. The
+console asks you to confirm it is you every 12 hours, and only accounts flagged
+as administrators reach it. Scripts and AI agents get a deploy key per app.
 
 ## How it is wired
 
@@ -109,8 +125,7 @@ flowchart LR
     tun --> caddy[Caddy + Sablier plugin]
 
     subgraph edge[network: edge]
-        caddy --- auth[tinyauth]
-        auth --- pid[Pocket ID]
+        caddy --- gate[gate<br/>sign-in, access checks]
         caddy --- sab[Sablier]
         cp[control plane]
         sab --- sp2[socket proxy<br/>start / stop only]
@@ -136,7 +151,7 @@ flowchart LR
 ```
 
 One rule: **an app reaches the gateway and its own database, nothing else.** The
-Docker socket, Sablier, tinyauth and the control plane sit on a network no app
+Docker socket, Sablier, gate and the control plane sit on a network no app
 joins — an app is arbitrary code, and the socket is a root escape. Even Sablier
 and the control plane never touch the raw socket; each gets a proxy scoped to its
 job. Apps run non-root, all capabilities dropped, read-only filesystem, 256 MB
@@ -156,9 +171,13 @@ $EDITOR .env          # set APPS_DOMAIN and APPS_DIR
 ./install.sh          # builds and starts everything
 ```
 
-Then point your tunnel at `http://localhost:8080`, create your account at
-`https://id.apps.example.com`, wire an OIDC client for tinyauth, and put a Pocket
-ID API key in `.env`. The installer prints each step with your domain filled in.
+Then point your tunnel at `http://localhost:8080` and open the one-time link the
+control plane prints in its logs (`docker compose logs control-plane | grep -A1
+SETUP`) to create your administrator account. The installer prints each step
+with your domain filled in. Upgrading from a version that used Pocket ID? Start
+it once with `docker compose --profile legacy up -d pocket-id` and restart the
+control plane: accounts and groups are imported with their ids, so no app loses
+its data, and everyone gets a link to set a password or a new passkey.
 
 > **The wildcard is not optional.** The tunnel rule says where a request goes
 > once it arrives; the `*` DNS record is what makes it arrive. With the first but
@@ -205,7 +224,8 @@ Stated plainly, because finding out later is worse:
 - **Websockets don't survive sleeping.** Poll, or use reconnecting SSE.
 - **The first request after sleeping gets a waiting page**, not JSON — the
   template's fetch wrapper retries it; a bare `fetch` breaks silently.
-- **No rate limiting.** Put the console behind an outer access layer.
+- **Rate limiting covers sign-in only.** Put the console behind an outer access
+  layer if it is reachable from the internet.
 
 [SECURITY.md](SECURITY.md) is the full threat model: what is enforced, and what
 is deliberately not.

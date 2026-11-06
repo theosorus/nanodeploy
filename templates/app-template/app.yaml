@@ -4,6 +4,10 @@ slug: mon-app            # becomes mon-app.<APPS_DOMAIN>, [a-z0-9-] only
 access: private          # public | private | groups. Applied when the app is
                          # created; afterwards the dashboard owns it
 groups: []               # only used when access is groups
+roles: []                # roles this app understands, e.g. [moderator]. Who
+                         # holds them is decided in the dashboard
+protect: []              # paths that need a role, checked by the gateway:
+                         #   - { path: /api/admin/*, role: moderator }
 frontend: true
 backend:
   entry: server.js       # bundled by npm run build, never a folder

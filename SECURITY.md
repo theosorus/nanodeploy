@@ -19,20 +19,26 @@ days; this is a hobby project, not a vendor.
 - **The control plane is trusted, apps are not.** The control plane builds
   images and drives Docker, which is equivalent to root on the host. Apps are
   treated as hostile code that happens to be yours.
-- **You own every account.** Accounts are created by you in Pocket ID. There is
+- **You own every account.** Accounts are created by an administrator, from the
+  dashboard or the first-start link in the control plane's logs. There is
   no public signup anywhere in the stack.
 
 ## What is enforced
 
 | Boundary | How |
 |---|---|
-| Apps cannot reach Docker or the control plane | apps sit only on `nanodeploy_apps`, which carries Caddy and Postgres and nothing else. The socket proxies, Sablier, tinyauth and the control plane share no network with any app, so an app cannot reach `control-plane:8000` and forge `Remote-*` headers to drive the platform. |
+| Apps cannot reach Docker or the control plane | apps sit only on `nanodeploy_apps`, which carries Caddy and Postgres and nothing else. The socket proxies, Sablier, gate and the control plane share no network with any app, so an app cannot reach `control-plane:8000` and forge `Remote-*` headers to drive the platform. |
 | Apps cannot escalate in their container | non-root user, `cap_drop: ALL`, `no-new-privileges`, read-only root filesystem (only the `/data` volume and a `noexec` `/tmp` are writable), 256 MB memory cap, 128 pid cap. |
 | Apps cannot read each other's data | one Postgres database and one role per app, `CONNECT` revoked from `public` on every database including the platform's own and the `postgres` maintenance database. |
 | Identity cannot be forged | Caddy strips every inbound `Remote-*` header before forward-auth re-injects it, and `request_header` is explicitly ordered before `forward_auth`. |
 | The console cannot be driven by a stranger | every `/api/*` route requires the exact deploy token (compared in constant time), a per-app deploy key, or a browser session of an administrator. |
 | A deploy key cannot reach beyond its app | a key (`ndd_` + 43 random characters) is stored as a SHA-256 hash and bound to one slug. It opens three routes only: deploying a bundle whose `app.yaml` names that slug, reading that app's logs, and `/api/me`. An unknown or revoked key is refused outright and never falls back to the session check. Deleting an app revokes its keys. |
-| Apps never see the platform session | tinyauth sets its cookies on the parent domain, so browsers send them to every app. Caddy removes every `tinyauth-*` cookie from the request inside each app's `/api/*` route, after forward-auth has read it: an app backend never receives a session it could replay against the console. An app's own cookies are kept. |
+| A session cannot be replayed on another host | gate keeps a root session on the auth host and gives each other host its own session, through a one-time code (60 s, single use, bound to that host). Its cookies are `__Host-` cookies, so the browser never sends one host's session to another. A cookie an app might copy is useless anywhere else, and Caddy removes it from the requests an app receives anyway, along with any `tinyauth-*` cookie left from an older install and any `ndk_` access key. Signing out ends the root session and every host session made from it. |
+| The console needs a recent, administrator sign-in | gate lets a browser reach `deploy.` only for an account flagged as administrator that proved who it is within the last 12 hours; the control plane checks the flag again, from the database, on every request. Personal access keys never open the console. |
+| Passwords resist offline guessing and online guessing | scrypt (N=2^15, r=8, p=1, per-password salt). Ten characters minimum, the most common passwords refused. After five failures per address or per account, each attempt doubles the wait, up to five minutes. An unknown username takes as long to refuse as a wrong password. |
+| Sign-in pages cannot be abused from another site | every POST on the auth host must carry the auth host's own Origin; pages refuse framing and load scripts from the auth host only (CSP). Redirects after sign-in only go to the apps domain, on the scheme and port in use. |
+| Access rules cannot be dodged with odd paths | protected paths are compared case-insensitively, percent-decoded and with dot segments resolved, which can only make a path look more protected, never less. Apps also check the role in their own code (`requireRole`). |
+| gate cannot read secrets | its database role sees its own schema and six columns of the apps table (slug, name, access, groups, roles, protect): never env values or app database passwords. It has no Docker access. |
 | The console cannot be driven from another website | state-changing requests that are not token-authenticated must be same-origin. `multipart/form-data` is a CORS simple request, so `/api/deploy` would otherwise be reachable by cross-site fetch using an admin's cookie. |
 | A broken app cannot take the gateway down | a site file that Caddy refuses is rolled back and the previous config reloaded, so one bad app never freezes route updates for the others. Platform subdomains (`deploy`, `auth`, `id`, `www`) are reserved. |
 | Docker cannot be reached by Sablier | Sablier talks to its own socket proxy, allowed only to list, inspect, start and stop. It cannot build images or exec. |
@@ -61,15 +67,16 @@ These are real. Decide whether they matter for your setup before you deploy.
   backups.
 - **The control plane is root-equivalent.** It can build images and exec into
   containers through its socket proxy. Compromising it compromises the host.
-  Whoever is in the admin group has that power.
-- **Until you pick an admin group, every account is an administrator.** A fresh
-  install is single-user, so this is fine while you are alone. The dashboard
-  refuses to create a second account until you have chosen the group, and warns
-  in red until then.
-- **There is no rate limiting.** The deploy token is 48 hex characters and
-  compared in constant time, so guessing it online is not realistic, but nothing
-  slows an attacker down. Putting the console behind Cloudflare Access, or any
-  other outer layer, is recommended and cheap.
+  Every administrator has that power.
+- **Rate limiting covers sign-in, not the API.** The deploy token is 48 hex
+  characters and deploy keys 256 random bits, so guessing them online is not
+  realistic, but nothing slows such an attempt. Putting the console behind
+  Cloudflare Access, or any other outer layer, is recommended and cheap
+  (exclude `auth.` and the apps, not just `deploy.`).
+- **Rate limits live in memory.** Restarting gate resets the counters.
+- **No email.** Nanodeploy sends no mail: an invitation or a forgotten password
+  is a link an administrator hands over. A second factor (TOTP) is not there yet;
+  a passkey is the strong option.
 - **The waiting page is served with a 200.** When a sleeping app is woken, the
   first request gets Sablier's HTML page instead of the app's answer. Clients
   must retry; the template's `src/client.ts` does. This is a correctness trap
@@ -86,7 +93,10 @@ These are real. Decide whether they matter for your setup before you deploy.
   takes effect on the next request.
 - `POSTGRES_PASSWORD`: change it in Postgres first (`ALTER ROLE postgres
   PASSWORD ...`), then in `.env`, then restart the control plane.
-- `POCKETID_ENCRYPTION_KEY`: do not rotate casually, Pocket ID encrypts stored
+- `GATE_DB_PASSWORD`: change it in `.env`, then `docker compose up -d
+  control-plane gate`. The control plane sets it on the database role at start.
+- `POCKETID_ENCRYPTION_KEY`: only for an upgrade still importing from Pocket ID;
+  do not rotate casually, Pocket ID encrypts stored
   data with it.
 - An app's database password is regenerated only if you delete its row; there is
   no rotation command yet.
