@@ -25,6 +25,16 @@
 	}
 }
 
+# Platform cookies never reach an app backend. tinyauth names its cookies
+# tinyauth-session-<id>, tinyauth-csrf-<id>... on the parent domain, so the
+# browser sends them to every app. Used inside an app's handle, after
+# forward_auth has read them. The second line drops the "; " left at the front
+# when the removed cookie came first; an app's own cookies are kept.
+(nanodeploy_hide_session) {
+	request_header Cookie "(^|;\s*)tinyauth-[^=;]*=[^;]*" ""
+	request_header Cookie "^;\s*" ""
+}
+
 # identity headers are gateway-owned, never accept them from a client
 (nanodeploy_strip) {
 	request_header -Remote-User
@@ -59,6 +69,14 @@ http://deploy.{$APPS_DOMAIN} {
 	# "docker compose up -d caddy".
 	@cli header Authorization "Bearer {$DEPLOY_TOKEN}"
 	handle @cli {
+		reverse_proxy control-plane:8000
+	}
+	# per-app deploy keys skip the login too. Caddy cannot know whether a key is
+	# valid, only its exact shape: the control plane checks it against the
+	# database and answers 401 for anything else, and a key only ever opens the
+	# deploy and logs routes of its own app.
+	@deploykey header_regexp Authorization ^Bearer\sndd_[A-Za-z0-9_-]{43}$
+	handle @deploykey {
 		reverse_proxy control-plane:8000
 	}
 	handle {

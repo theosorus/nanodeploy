@@ -217,7 +217,8 @@ an app from itself.
 name: Expenses
 slug: depenses          # becomes depenses.<domain>, [a-z0-9-] only
                         # deploy, auth, id and www are reserved by the platform
-access: private         # public | private | groups
+access: private         # public | private | groups, used when the app is created;
+                        # later changes are made in the dashboard, not here
 groups: []
 frontend: true
 backend:
@@ -249,11 +250,21 @@ env: [OPENAI_API_KEY]   # names only, values are typed in the dashboard
 9. **Deploy**: `npm run deploy`. That builds the frontend, bundles the server,
    zips `dist/ server.js app.yaml migrations/` and posts it to the control
    plane. Needs `NANODEPLOY_URL` and `NANODEPLOY_TOKEN` in the environment.
+   The token must be a **deploy key** (`ndd_...`) for this app's slug: ask the
+   user to create one in the dashboard (the app's panel, or "deploy key for a
+   new app" before the first deploy). Never ask for the server's
+   `DEPLOY_TOKEN`: it controls the whole machine, a deploy key only this app. A
+   `403` saying the key "is for" another app means `app.yaml` and the key
+   disagree on the slug.
 
 After a successful deploy, give the URL and list the environment variables still
 waiting for a value, if any.
 
 ## Changing an existing app
+
+A failed deployment changes nothing: the running version stays live. Changing
+`access` in `app.yaml` has no effect on an existing app, say so and point the user
+to the dashboard instead.
 
 A deployment replaces the image and the container, but **never the database**. A
 schema change therefore goes through a new migration: edit `server/schema.ts`,

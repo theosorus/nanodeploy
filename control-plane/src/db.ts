@@ -1,5 +1,5 @@
 import postgres from "postgres";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -70,6 +70,75 @@ export async function migrateState() {
     // postgres.js surfaces the "already exists" notice as an error, harmless
     if (String(err?.code) !== "42701") throw err;
   }
+  // Deploy keys: a credential that can deploy one app and nothing else, so a CI
+  // job or an AI agent never needs the root DEPLOY_TOKEN. Not tied to the apps
+  // row on purpose: a key may be created before the first deploy of its slug.
+  await admin`
+    create table if not exists deploy_keys (
+      id bigserial primary key,
+      slug text not null,
+      key_hash bytea not null unique,
+      hint text not null,
+      label text not null,
+      created_at timestamptz not null default now(),
+      last_used_at timestamptz
+    )`;
+}
+
+/* ---------- deploy keys ---------- */
+
+// 32 random bytes, base64url: 43 characters after the prefix. The prefix makes a
+// leaked key recognisable (and greppable) and lets caddy route it without a
+// session; the length is fixed so the caddy matcher can be exact.
+export const DEPLOY_KEY_RE = /^ndd_[A-Za-z0-9_-]{43}$/;
+
+// a random 256-bit key does not need a slow hash: nobody brute forces 2^256
+const hashKey = (key: string) => createHash("sha256").update(key).digest();
+
+export type DeployKey = {
+  id: string;
+  slug: string;
+  hint: string;
+  label: string;
+  created_at: string;
+  last_used_at: string | null;
+};
+
+export async function createDeployKey(slug: string, label: string) {
+  const key = `ndd_${randomBytes(32).toString("base64url")}`;
+  const hint = `ndd_…${key.slice(-4)}`;
+  const [row] = await admin<DeployKey[]>`
+    insert into deploy_keys (slug, key_hash, hint, label)
+    values (${slug}, ${hashKey(key)}, ${hint}, ${label})
+    returning id, slug, hint, label, created_at, last_used_at`;
+  // the only time the plain key exists outside the caller's hands
+  return { ...row, key };
+}
+
+export const listDeployKeys = (slug: string) =>
+  admin<DeployKey[]>`
+    select id, slug, hint, label, created_at, last_used_at
+    from deploy_keys where slug = ${slug} order by created_at`;
+
+export async function deleteDeployKey(slug: string, id: string) {
+  const rows = await admin`delete from deploy_keys where slug = ${slug} and id = ${id} returning id`;
+  return rows.length > 0;
+}
+
+export const deleteDeployKeysOf = (slug: string) =>
+  admin`delete from deploy_keys where slug = ${slug}`;
+
+// Returns the slug the key may deploy, or null. last_used_at is refreshed at
+// most once a minute: it is shown in the dashboard, not used for auth.
+export async function verifyDeployKey(key: string): Promise<{ id: string; slug: string } | null> {
+  if (!DEPLOY_KEY_RE.test(key)) return null;
+  const [row] = await admin<{ id: string; slug: string }[]>`
+    select id, slug from deploy_keys where key_hash = ${hashKey(key)}`;
+  if (!row) return null;
+  await admin`
+    update deploy_keys set last_used_at = now()
+    where id = ${row.id} and (last_used_at is null or last_used_at < now() - interval '1 minute')`;
+  return row;
 }
 
 export const listApps = () =>

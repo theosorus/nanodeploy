@@ -30,7 +30,9 @@ days; this is a hobby project, not a vendor.
 | Apps cannot escalate in their container | non-root user, `cap_drop: ALL`, `no-new-privileges`, read-only root filesystem (only the `/data` volume and a `noexec` `/tmp` are writable), 256 MB memory cap, 128 pid cap. |
 | Apps cannot read each other's data | one Postgres database and one role per app, `CONNECT` revoked from `public` on every database including the platform's own and the `postgres` maintenance database. |
 | Identity cannot be forged | Caddy strips every inbound `Remote-*` header before forward-auth re-injects it, and `request_header` is explicitly ordered before `forward_auth`. |
-| The console cannot be driven by a stranger | every `/api/*` route requires either the exact deploy token (compared in constant time) or a browser session in the admin group. |
+| The console cannot be driven by a stranger | every `/api/*` route requires the exact deploy token (compared in constant time), a per-app deploy key, or a browser session of an administrator. |
+| A deploy key cannot reach beyond its app | a key (`ndd_` + 43 random characters) is stored as a SHA-256 hash and bound to one slug. It opens three routes only: deploying a bundle whose `app.yaml` names that slug, reading that app's logs, and `/api/me`. An unknown or revoked key is refused outright and never falls back to the session check. Deleting an app revokes its keys. |
+| Apps never see the platform session | tinyauth sets its cookies on the parent domain, so browsers send them to every app. Caddy removes every `tinyauth-*` cookie from the request inside each app's `/api/*` route, after forward-auth has read it: an app backend never receives a session it could replay against the console. An app's own cookies are kept. |
 | The console cannot be driven from another website | state-changing requests that are not token-authenticated must be same-origin. `multipart/form-data` is a CORS simple request, so `/api/deploy` would otherwise be reachable by cross-site fetch using an admin's cookie. |
 | A broken app cannot take the gateway down | a site file that Caddy refuses is rolled back and the previous config reloaded, so one bad app never freezes route updates for the others. Platform subdomains (`deploy`, `auth`, `id`, `www`) are reserved. |
 | Docker cannot be reached by Sablier | Sablier talks to its own socket proxy, allowed only to list, inspect, start and stop. It cannot build images or exec. |
@@ -79,6 +81,9 @@ These are real. Decide whether they matter for your setup before you deploy.
 
 - `DEPLOY_TOKEN`: change it in `.env`, then `docker compose up -d caddy
   control-plane`. Caddy matches the literal token, so both containers need it.
+  Prefer deploy keys for anything that leaves the server.
+- A deploy key: revoke it in the app's panel and create a new one. Revoking
+  takes effect on the next request.
 - `POSTGRES_PASSWORD`: change it in Postgres first (`ALTER ROLE postgres
   PASSWORD ...`), then in `.env`, then restart the control plane.
 - `POCKETID_ENCRYPTION_KEY`: do not rotate casually, Pocket ID encrypts stored

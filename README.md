@@ -50,7 +50,7 @@ opt out of sleeping for that same 40 MB, permanently.
 ```bash
 cp -r templates/app-template my-app && cd my-app
 npm install
-export NANODEPLOY_URL=https://deploy.apps.example.com NANODEPLOY_TOKEN=...
+export NANODEPLOY_URL=https://deploy.apps.example.com NANODEPLOY_TOKEN=ndd_...
 npm run deploy
 ```
 
@@ -58,12 +58,21 @@ Your machine builds; the server compiles nothing. It gets a zip, builds a small
 image, runs migrations once, and puts the container back to sleep. No terminal?
 Drag the zip onto the dashboard.
 
+The token is a **deploy key**: made in the dashboard (an app's panel, or "deploy
+key for a new app" before its first deploy), it deploys that one app and reads
+its logs, nothing else. Give one to each CI job or AI agent; the server's own
+`DEPLOY_TOKEN` can do everything and should stay on the server.
+
+A deploy is prepared next to the running version and only swapped in once the
+image is built and the migrations ran: a broken bundle fails without touching
+what is live.
+
 The whole contract is one file:
 
 ```yaml
 name: Expenses
 slug: expenses          # -> expenses.apps.example.com
-access: private         # public | private | groups
+access: private         # public | private | groups, for a new app only
 backend: { entry: server.js, port: 3000 }
 database: { enabled: true, migrations: ./migrations }
 idle: { timeout: 10m, warm: false }
@@ -75,7 +84,8 @@ env: [OPENAI_API_KEY]   # names only, values are typed in the dashboard
 <img src="docs/app-detail.png" alt="An app's detail panel: access mode, environment variables, recent logs" width="560">
 
 Click an app for its access mode, environment variables, logs and live memory.
-Access is a dropdown, not a redeploy: **private** (accounts you created),
+Access is a dropdown, not a redeploy, and a redeploy never changes it back:
+`access` in `app.yaml` only applies when the app is created. **private** (accounts you created),
 **groups** (people you pick), or **public** (the whole internet — the dashboard
 warns you). Env values are write-only: you can replace a secret, not read it back.
 
@@ -186,7 +196,8 @@ same starting point: `cp -r`, edit, `npm run deploy`.
 
 Stated plainly, because finding out later is worse:
 
-- **No rollback.** A deploy replaces the container. Keep your bundles.
+- **No rollback.** A deploy replaces the container once it succeeds. Keep your
+  bundles.
 - **Apps see each other** on a shared network. Don't put an app open to strangers
   next to something sensitive.
 - **App secrets sit in clear text** in the control database. Encrypt backups.

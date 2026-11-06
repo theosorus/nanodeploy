@@ -34,6 +34,12 @@ export function renderSite(app: AppRow) {
   const body: string[] = [];
   if (app.port) {
     body.push(`\t\thandle /api/* {`);
+    // The tinyauth cookies are set on the parent domain, so the browser sends
+    // them to every app, public ones included, and reverse_proxy relays them to
+    // the backend. An app is arbitrary code that reaches the internet: with the
+    // session cookie of an admin who visits it, it could drive the console from
+    // outside. forward_auth has already read them by the time this handle runs.
+    body.push(`\t\t\timport nanodeploy_hide_session`);
     if (!app.warm) {
       // sablier is an unordered directive: it must live inside a route block or
       // the whole site fails to parse (caddy then keeps its previous config and

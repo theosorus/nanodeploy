@@ -158,6 +158,13 @@
     font-family: var(--mono); font-size: 12px; color: var(--soft); line-height: 1.45;
   }
   .empty { color: var(--soft); padding: var(--s6) 0; }
+  .newkey { margin: 0 0 var(--s6); }
+  .newkey .note { margin: 0; }
+  /* a freshly minted key: shown once, selectable in one click */
+  .keybox { border: 1px solid var(--live); border-radius: var(--radius); padding: var(--s3); margin: var(--s2) 0; }
+  .keybox code { display: block; font-family: var(--mono); font-size: 12px; word-break: break-all; user-select: all; margin-top: var(--s2); }
+  .keyrow { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); border-top: 1px solid var(--rule); padding: var(--s2) 0; }
+  .keyrow .num { font-size: 13px; }
   .note { color: var(--soft); font-size: 13px; }
 
   .warn { border: 1px solid var(--danger); border-radius: var(--radius); padding: var(--s4); margin-bottom: var(--s5); }
@@ -215,6 +222,16 @@
       <span id="drop-text"></span>
     </button>
     <input type="file" id="file" accept=".zip" hidden>
+
+    <div class="newkey">
+      <div class="label" id="newkey-title"></div>
+      <div class="field">
+        <input id="newkey-slug" class="num" autocomplete="off" spellcheck="false">
+        <button class="act" id="newkey-create"></button>
+      </div>
+      <p class="note" id="newkey-note"></p>
+      <div id="newkey-result"></div>
+    </div>
 
     <div id="apps"></div>
   </section>
@@ -281,17 +298,8 @@ const I18N = {
     deployedAt: "déployée {when}",
     notAdminTitle: "Ce compte n'administre pas le serveur",
     notAdminBody: "Vous pouvez utiliser les apps auxquelles vous avez accès, mais pas piloter la plateforme. Demandez à l'administrateur de vous ajouter au groupe {group}.",
-    adminTitle: "Administration de la console",
-    adminOpen: "Attention : tout compte capable de se connecter contrôle ce serveur. Il peut déployer du code et piloter Docker. Choisissez un groupe d'administrateurs.",
-    adminSet: "Console réservée au groupe {group}.",
-    adminPinned: "Défini par ADMIN_GROUP dans .env, non modifiable ici.",
-    adminSave: "Appliquer",
-    adminNoGroup: "Créez d'abord un groupe ci-dessous, puis ajoutez-vous dedans.",
-    inviteNeedsAdmin: "Choisissez un groupe d'administrateurs avant d'inviter quelqu'un : sinon le nouveau compte contrôlerait aussi le serveur.",
     peopleOffHtml: 'La gestion des comptes n\'est pas branchée. Créez une clé API dans Pocket ID, mettez-la dans <span class="num">POCKETID_API_KEY</span>, puis relancez le control plane.',
     openPocketId: "Ouvrir Pocket ID",
-    idAdmin: "admin Pocket ID",
-    inviteTitle: "Inviter quelqu'un",
     usernamePh: "identifiant",
     emailPh: "email",
     invite: "Inviter",
@@ -356,17 +364,8 @@ const I18N = {
     deployedAt: "deployed {when}",
     notAdminTitle: "This account does not administer the server",
     notAdminBody: "You can use the apps you have access to, but not drive the platform. Ask the administrator to add you to the {group} group.",
-    adminTitle: "Console administration",
-    adminOpen: "Warning: every account that can sign in controls this server. It can deploy code and drive Docker. Pick an admin group.",
-    adminSet: "Console restricted to the {group} group.",
-    adminPinned: "Set by ADMIN_GROUP in .env, not editable here.",
-    adminSave: "Apply",
-    adminNoGroup: "Create a group below first, then add yourself to it.",
-    inviteNeedsAdmin: "Pick an admin group before inviting anyone, otherwise the new account would control this server too.",
     peopleOffHtml: 'Account management is not wired up. Create an API key in Pocket ID, put it in <span class="num">POCKETID_API_KEY</span> and restart the control plane.',
     openPocketId: "Open Pocket ID",
-    idAdmin: "Pocket ID admin",
-    inviteTitle: "Invite someone",
     usernamePh: "username",
     emailPh: "email",
     invite: "Invite",
@@ -431,17 +430,8 @@ const I18N = {
     deployedAt: "desplegada {when}",
     notAdminTitle: "Esta cuenta no administra el servidor",
     notAdminBody: "Puedes usar las apps a las que tienes acceso, pero no gestionar la plataforma. Pide al administrador que te añada al grupo {group}.",
-    adminTitle: "Administración de la consola",
-    adminOpen: "Atención: toda cuenta que pueda iniciar sesión controla este servidor. Puede desplegar código y manejar Docker. Elige un grupo de administradores.",
-    adminSet: "Consola restringida al grupo {group}.",
-    adminPinned: "Definido por ADMIN_GROUP en .env, no editable aquí.",
-    adminSave: "Aplicar",
-    adminNoGroup: "Crea primero un grupo abajo y luego añádete a él.",
-    inviteNeedsAdmin: "Elige un grupo de administradores antes de invitar a alguien; de lo contrario la nueva cuenta también controlaría este servidor.",
     peopleOffHtml: 'La gestión de cuentas no está configurada. Crea una clave API en Pocket ID, ponla en <span class="num">POCKETID_API_KEY</span> y reinicia el control plane.',
     openPocketId: "Abrir Pocket ID",
-    idAdmin: "admin de Pocket ID",
-    inviteTitle: "Invitar a alguien",
     usernamePh: "usuario",
     emailPh: "email",
     invite: "Invitar",
@@ -506,17 +496,8 @@ const I18N = {
     deployedAt: "bereitgestellt {when}",
     notAdminTitle: "Dieses Konto verwaltet den Server nicht",
     notAdminBody: "Du kannst die Apps nutzen, auf die du Zugriff hast, aber die Plattform nicht steuern. Bitte den Administrator, dich zur Gruppe {group} hinzuzufügen.",
-    adminTitle: "Konsolenverwaltung",
-    adminOpen: "Achtung: Jedes Konto, das sich anmelden kann, steuert diesen Server. Es kann Code bereitstellen und Docker steuern. Wähle eine Administratorgruppe.",
-    adminSet: "Konsole auf die Gruppe {group} beschränkt.",
-    adminPinned: "Durch ADMIN_GROUP in .env festgelegt, hier nicht änderbar.",
-    adminSave: "Anwenden",
-    adminNoGroup: "Erstelle zuerst unten eine Gruppe und füge dich dann hinzu.",
-    inviteNeedsAdmin: "Wähle eine Administratorgruppe, bevor du jemanden einlädst, sonst würde das neue Konto diesen Server ebenfalls steuern.",
     peopleOffHtml: 'Die Kontoverwaltung ist nicht eingerichtet. Erstelle einen API-Schlüssel in Pocket ID, trage ihn in <span class="num">POCKETID_API_KEY</span> ein und starte die Control Plane neu.',
     openPocketId: "Pocket ID öffnen",
-    idAdmin: "Pocket-ID-Admin",
-    inviteTitle: "Jemanden einladen",
     usernamePh: "Benutzername",
     emailPh: "E-Mail",
     invite: "Einladen",
@@ -581,17 +562,8 @@ const I18N = {
     deployedAt: "distribuita {when}",
     notAdminTitle: "Questo account non amministra il server",
     notAdminBody: "Puoi usare le app a cui hai accesso, ma non gestire la piattaforma. Chiedi all'amministratore di aggiungerti al gruppo {group}.",
-    adminTitle: "Amministrazione della console",
-    adminOpen: "Attenzione: ogni account in grado di accedere controlla questo server. Può distribuire codice e gestire Docker. Scegli un gruppo di amministratori.",
-    adminSet: "Console riservata al gruppo {group}.",
-    adminPinned: "Impostato da ADMIN_GROUP in .env, non modificabile qui.",
-    adminSave: "Applica",
-    adminNoGroup: "Crea prima un gruppo qui sotto, poi aggiungiti.",
-    inviteNeedsAdmin: "Scegli un gruppo di amministratori prima di invitare qualcuno, altrimenti il nuovo account controllerebbe anche questo server.",
     peopleOffHtml: 'La gestione degli account non è configurata. Crea una chiave API in Pocket ID, inseriscila in <span class="num">POCKETID_API_KEY</span> e riavvia il control plane.',
     openPocketId: "Apri Pocket ID",
-    idAdmin: "admin di Pocket ID",
-    inviteTitle: "Invita qualcuno",
     usernamePh: "nome utente",
     emailPh: "email",
     invite: "Invita",
@@ -656,17 +628,8 @@ const I18N = {
     deployedAt: "implantada {when}",
     notAdminTitle: "Esta conta não administra o servidor",
     notAdminBody: "Você pode usar as apps a que tem acesso, mas não gerenciar a plataforma. Peça ao administrador para adicioná-lo ao grupo {group}.",
-    adminTitle: "Administração do console",
-    adminOpen: "Atenção: toda conta que consegue entrar controla este servidor. Ela pode implantar código e operar o Docker. Escolha um grupo de administradores.",
-    adminSet: "Console restrito ao grupo {group}.",
-    adminPinned: "Definido por ADMIN_GROUP no .env, não editável aqui.",
-    adminSave: "Aplicar",
-    adminNoGroup: "Crie primeiro um grupo abaixo e depois adicione-se a ele.",
-    inviteNeedsAdmin: "Escolha um grupo de administradores antes de convidar alguém, senão a nova conta também controlaria este servidor.",
     peopleOffHtml: 'O gerenciamento de contas não está configurado. Crie uma chave de API no Pocket ID, coloque-a em <span class="num">POCKETID_API_KEY</span> e reinicie o control plane.',
     openPocketId: "Abrir Pocket ID",
-    idAdmin: "admin do Pocket ID",
-    inviteTitle: "Convidar alguém",
     usernamePh: "usuário",
     emailPh: "email",
     invite: "Convidar",
@@ -731,17 +694,8 @@ const I18N = {
     deployedAt: "uitgerold {when}",
     notAdminTitle: "Dit account beheert de server niet",
     notAdminBody: "Je kunt de apps gebruiken waar je toegang toe hebt, maar het platform niet beheren. Vraag de beheerder om je toe te voegen aan de groep {group}.",
-    adminTitle: "Consolebeheer",
-    adminOpen: "Let op: elk account dat kan inloggen beheert deze server. Het kan code uitrollen en Docker aansturen. Kies een beheerdersgroep.",
-    adminSet: "Console beperkt tot de groep {group}.",
-    adminPinned: "Ingesteld door ADMIN_GROUP in .env, hier niet te wijzigen.",
-    adminSave: "Toepassen",
-    adminNoGroup: "Maak eerst hieronder een groep en voeg jezelf eraan toe.",
-    inviteNeedsAdmin: "Kies een beheerdersgroep voordat je iemand uitnodigt, anders zou het nieuwe account deze server ook beheren.",
     peopleOffHtml: 'Accountbeheer is niet ingesteld. Maak een API-sleutel aan in Pocket ID, zet die in <span class="num">POCKETID_API_KEY</span> en herstart de control plane.',
     openPocketId: "Pocket ID openen",
-    idAdmin: "Pocket ID-beheerder",
-    inviteTitle: "Iemand uitnodigen",
     usernamePh: "gebruikersnaam",
     emailPh: "e-mail",
     invite: "Uitnodigen",
@@ -806,17 +760,8 @@ const I18N = {
     deployedAt: "развёрнуто {when}",
     notAdminTitle: "Этот аккаунт не администрирует сервер",
     notAdminBody: "Вы можете пользоваться приложениями, к которым у вас есть доступ, но не управлять платформой. Попросите администратора добавить вас в группу {group}.",
-    adminTitle: "Администрирование консоли",
-    adminOpen: "Внимание: любой аккаунт, способный войти, управляет этим сервером. Он может развёртывать код и управлять Docker. Выберите группу администраторов.",
-    adminSet: "Консоль ограничена группой {group}.",
-    adminPinned: "Задано ADMIN_GROUP в .env, здесь не изменяется.",
-    adminSave: "Применить",
-    adminNoGroup: "Сначала создайте группу ниже, затем добавьте себя в неё.",
-    inviteNeedsAdmin: "Выберите группу администраторов перед приглашением, иначе новый аккаунт тоже будет управлять сервером.",
     peopleOffHtml: 'Управление аккаунтами не настроено. Создайте ключ API в Pocket ID, укажите его в <span class="num">POCKETID_API_KEY</span> и перезапустите control plane.',
     openPocketId: "Открыть Pocket ID",
-    idAdmin: "админ Pocket ID",
-    inviteTitle: "Пригласить человека",
     usernamePh: "имя пользователя",
     emailPh: "эл. почта",
     invite: "Пригласить",
@@ -881,17 +826,8 @@ const I18N = {
     deployedAt: "部署于 {when}",
     notAdminTitle: "此账户不管理该服务器",
     notAdminBody: "你可以使用有权限的应用，但无法管理平台。请管理员将你加入 {group} 群组。",
-    adminTitle: "控制台管理",
-    adminOpen: "注意：任何能够登录的账户都可以控制此服务器，可以部署代码并操作 Docker。请选择一个管理员群组。",
-    adminSet: "控制台已限定为 {group} 群组。",
-    adminPinned: "由 .env 中的 ADMIN_GROUP 设定，此处不可修改。",
-    adminSave: "应用",
-    adminNoGroup: "请先在下方创建一个群组，然后将自己加入其中。",
-    inviteNeedsAdmin: "邀请他人前请先选择管理员群组，否则新账户也将能够控制此服务器。",
     peopleOffHtml: '账户管理尚未配置。在 Pocket ID 中创建一个 API 密钥，填入 <span class="num">POCKETID_API_KEY</span>，然后重启 control plane。',
     openPocketId: "打开 Pocket ID",
-    idAdmin: "Pocket ID 管理员",
-    inviteTitle: "邀请成员",
     usernamePh: "用户名",
     emailPh: "邮箱",
     invite: "邀请",
@@ -956,17 +892,8 @@ const I18N = {
     deployedAt: "{when} にデプロイ",
     notAdminTitle: "このアカウントはサーバーを管理できません",
     notAdminBody: "アクセス権のあるアプリは利用できますが、プラットフォームの操作はできません。管理者に {group} グループへの追加を依頼してください。",
-    adminTitle: "コンソール管理",
-    adminOpen: "警告: サインインできるすべてのアカウントがこのサーバーを制御でき、コードのデプロイや Docker の操作が可能です。管理者グループを選択してください。",
-    adminSet: "コンソールを {group} グループに限定しました。",
-    adminPinned: ".env の ADMIN_GROUP で設定されており、ここでは変更できません。",
-    adminSave: "適用",
-    adminNoGroup: "先に下でグループを作成し、自分を追加してください。",
-    inviteNeedsAdmin: "誰かを招待する前に管理者グループを選択してください。さもないと新しいアカウントもこのサーバーを制御できてしまいます。",
     peopleOffHtml: 'アカウント管理が設定されていません。Pocket ID で API キーを作成し、<span class="num">POCKETID_API_KEY</span> に設定して control plane を再起動してください。',
     openPocketId: "Pocket ID を開く",
-    idAdmin: "Pocket ID 管理者",
-    inviteTitle: "メンバーを招待",
     usernamePh: "ユーザー名",
     emailPh: "メール",
     invite: "招待",
@@ -1128,6 +1055,111 @@ const I18N_PEOPLE = {
   },
 };
 for (const l of Object.keys(I18N_PEOPLE)) Object.assign(I18N[l], I18N_PEOPLE[l]);
+// Deploy keys: one credential per app, for CI jobs and AI agents, so the server
+// token never has to leave the machine. Same merge as I18N_PEOPLE.
+const I18N_KEYS = {
+  en: {
+    keysTitle: "Deploy keys",
+    keysNote: "A deploy key can deploy this app and read its logs, nothing else. Give it to a CI job or an AI agent instead of the server token.",
+    keysNone: "No key yet.", keyLabelPh: "What it is for (e.g. GitHub Actions)", keyCreate: "Create a key",
+    keyRevoke: "Revoke", keyRevokeConfirm: "Revoke {hint}? Anything using it stops deploying.",
+    keyShownOnce: "Copy it now, it will not be shown again:", keyLastUsed: "used {when}", keyNeverUsed: "never used",
+    newAppKeyTitle: "Deploy key for a new app",
+    newAppKeyNote: "Lets an agent or a CI deploy an app that does not exist yet, under this name only.",
+    newAppSlugPh: "app-name", slugInvalid: "Lowercase letters, digits and dashes, starting with a letter.",
+  },
+  fr: {
+    keysTitle: "Clés de déploiement",
+    keysNote: "Une clé de déploiement peut déployer cette app et lire ses logs, rien d'autre. Donnez-la à une CI ou à un agent IA à la place du jeton du serveur.",
+    keysNone: "Aucune clé pour l'instant.", keyLabelPh: "À quoi elle sert (ex. GitHub Actions)", keyCreate: "Créer une clé",
+    keyRevoke: "Révoquer", keyRevokeConfirm: "Révoquer {hint} ? Ce qui l'utilise ne pourra plus déployer.",
+    keyShownOnce: "Copiez-la maintenant, elle ne sera plus affichée :", keyLastUsed: "utilisée {when}", keyNeverUsed: "jamais utilisée",
+    newAppKeyTitle: "Clé de déploiement pour une nouvelle app",
+    newAppKeyNote: "Permet à un agent ou une CI de déployer une app qui n'existe pas encore, sous ce nom uniquement.",
+    newAppSlugPh: "nom-de-l-app", slugInvalid: "Minuscules, chiffres et tirets, en commençant par une lettre.",
+  },
+  es: {
+    keysTitle: "Claves de despliegue",
+    keysNote: "Una clave de despliegue puede desplegar esta app y leer sus logs, nada más. Dásela a una CI o a un agente de IA en lugar del token del servidor.",
+    keysNone: "Aún no hay claves.", keyLabelPh: "Para qué sirve (p. ej. GitHub Actions)", keyCreate: "Crear una clave",
+    keyRevoke: "Revocar", keyRevokeConfirm: "¿Revocar {hint}? Lo que la use dejará de desplegar.",
+    keyShownOnce: "Cópiala ahora, no se volverá a mostrar:", keyLastUsed: "usada {when}", keyNeverUsed: "nunca usada",
+    newAppKeyTitle: "Clave de despliegue para una app nueva",
+    newAppKeyNote: "Permite a un agente o a una CI desplegar una app que aún no existe, solo con este nombre.",
+    newAppSlugPh: "nombre-de-la-app", slugInvalid: "Minúsculas, cifras y guiones, empezando por una letra.",
+  },
+  de: {
+    keysTitle: "Deploy-Schlüssel",
+    keysNote: "Ein Deploy-Schlüssel kann diese App bereitstellen und ihre Logs lesen, sonst nichts. Gib ihn einer CI oder einem KI-Agenten statt des Server-Tokens.",
+    keysNone: "Noch kein Schlüssel.", keyLabelPh: "Wofür er ist (z. B. GitHub Actions)", keyCreate: "Schlüssel erstellen",
+    keyRevoke: "Widerrufen", keyRevokeConfirm: "{hint} widerrufen? Alles, was ihn nutzt, kann nicht mehr bereitstellen.",
+    keyShownOnce: "Jetzt kopieren, er wird nicht noch einmal angezeigt:", keyLastUsed: "genutzt {when}", keyNeverUsed: "nie genutzt",
+    newAppKeyTitle: "Deploy-Schlüssel für eine neue App",
+    newAppKeyNote: "Erlaubt einem Agenten oder einer CI, eine noch nicht existierende App bereitzustellen, nur unter diesem Namen.",
+    newAppSlugPh: "app-name", slugInvalid: "Kleinbuchstaben, Ziffern und Bindestriche, beginnend mit einem Buchstaben.",
+  },
+  it: {
+    keysTitle: "Chiavi di deploy",
+    keysNote: "Una chiave di deploy può pubblicare questa app e leggerne i log, nient'altro. Dalla a una CI o a un agente IA al posto del token del server.",
+    keysNone: "Ancora nessuna chiave.", keyLabelPh: "A cosa serve (es. GitHub Actions)", keyCreate: "Crea una chiave",
+    keyRevoke: "Revoca", keyRevokeConfirm: "Revocare {hint}? Ciò che la usa non potrà più pubblicare.",
+    keyShownOnce: "Copiala ora, non verrà più mostrata:", keyLastUsed: "usata {when}", keyNeverUsed: "mai usata",
+    newAppKeyTitle: "Chiave di deploy per una nuova app",
+    newAppKeyNote: "Permette a un agente o a una CI di pubblicare un'app che non esiste ancora, solo con questo nome.",
+    newAppSlugPh: "nome-app", slugInvalid: "Minuscole, cifre e trattini, iniziando con una lettera.",
+  },
+  pt: {
+    keysTitle: "Chaves de deploy",
+    keysNote: "Uma chave de deploy pode publicar esta app e ler os seus logs, mais nada. Dê-a a uma CI ou a um agente de IA em vez do token do servidor.",
+    keysNone: "Ainda não há chaves.", keyLabelPh: "Para que serve (ex. GitHub Actions)", keyCreate: "Criar uma chave",
+    keyRevoke: "Revogar", keyRevokeConfirm: "Revogar {hint}? O que a usa deixa de poder publicar.",
+    keyShownOnce: "Copie-a agora, não voltará a ser mostrada:", keyLastUsed: "usada {when}", keyNeverUsed: "nunca usada",
+    newAppKeyTitle: "Chave de deploy para uma nova app",
+    newAppKeyNote: "Permite a um agente ou a uma CI publicar uma app que ainda não existe, só com este nome.",
+    newAppSlugPh: "nome-da-app", slugInvalid: "Minúsculas, algarismos e hífenes, a começar por uma letra.",
+  },
+  nl: {
+    keysTitle: "Deploy-sleutels",
+    keysNote: "Een deploy-sleutel kan deze app uitrollen en de logs lezen, verder niets. Geef hem aan een CI of een AI-agent in plaats van de servertoken.",
+    keysNone: "Nog geen sleutel.", keyLabelPh: "Waarvoor hij dient (bv. GitHub Actions)", keyCreate: "Sleutel maken",
+    keyRevoke: "Intrekken", keyRevokeConfirm: "{hint} intrekken? Wat hem gebruikt kan niet meer uitrollen.",
+    keyShownOnce: "Kopieer hem nu, hij wordt niet opnieuw getoond:", keyLastUsed: "gebruikt {when}", keyNeverUsed: "nooit gebruikt",
+    newAppKeyTitle: "Deploy-sleutel voor een nieuwe app",
+    newAppKeyNote: "Laat een agent of een CI een app uitrollen die nog niet bestaat, alleen onder deze naam.",
+    newAppSlugPh: "app-naam", slugInvalid: "Kleine letters, cijfers en streepjes, beginnend met een letter.",
+  },
+  ru: {
+    keysTitle: "Ключи деплоя",
+    keysNote: "Ключ деплоя может развернуть это приложение и читать его логи, и ничего больше. Отдайте его CI или ИИ-агенту вместо токена сервера.",
+    keysNone: "Ключей пока нет.", keyLabelPh: "Для чего он (например, GitHub Actions)", keyCreate: "Создать ключ",
+    keyRevoke: "Отозвать", keyRevokeConfirm: "Отозвать {hint}? Всё, что его использует, больше не сможет деплоить.",
+    keyShownOnce: "Скопируйте сейчас, он больше не будет показан:", keyLastUsed: "использован {when}", keyNeverUsed: "ни разу не использован",
+    newAppKeyTitle: "Ключ деплоя для нового приложения",
+    newAppKeyNote: "Позволяет агенту или CI развернуть приложение, которого ещё нет, только под этим именем.",
+    newAppSlugPh: "imya-prilozheniya", slugInvalid: "Строчные латинские буквы, цифры и дефисы, начиная с буквы.",
+  },
+  zh: {
+    keysTitle: "部署密钥",
+    keysNote: "部署密钥只能部署此应用并读取其日志，别无其他。请把它交给 CI 或 AI 代理，而不是服务器令牌。",
+    keysNone: "还没有密钥。", keyLabelPh: "用途（例如 GitHub Actions）", keyCreate: "创建密钥",
+    keyRevoke: "撤销", keyRevokeConfirm: "撤销 {hint}？使用它的地方将无法再部署。",
+    keyShownOnce: "请立即复制，之后不会再显示：", keyLastUsed: "{when}使用", keyNeverUsed: "从未使用",
+    newAppKeyTitle: "新应用的部署密钥",
+    newAppKeyNote: "允许代理或 CI 部署一个尚不存在的应用，仅限此名称。",
+    newAppSlugPh: "app-name", slugInvalid: "小写字母、数字和连字符，以字母开头。",
+  },
+  ja: {
+    keysTitle: "デプロイキー",
+    keysNote: "デプロイキーはこのアプリのデプロイとログの閲覧だけができます。サーバーのトークンの代わりに CI や AI エージェントに渡してください。",
+    keysNone: "まだキーはありません。", keyLabelPh: "用途（例: GitHub Actions）", keyCreate: "キーを作成",
+    keyRevoke: "無効化", keyRevokeConfirm: "{hint} を無効化しますか？これを使うものはデプロイできなくなります。",
+    keyShownOnce: "今すぐコピーしてください。二度と表示されません:", keyLastUsed: "{when}に使用", keyNeverUsed: "未使用",
+    newAppKeyTitle: "新しいアプリのデプロイキー",
+    newAppKeyNote: "まだ存在しないアプリを、この名前に限りエージェントや CI がデプロイできるようにします。",
+    newAppSlugPh: "app-name", slugInvalid: "英小文字・数字・ハイフンのみ、先頭は英字。",
+  },
+};
+for (const l of Object.keys(I18N_KEYS)) Object.assign(I18N[l], I18N_KEYS[l]);
 
 const SUPPORTED = new Set(LANGS.map(([c]) => c));
 const savedLang = (() => { try { return localStorage.getItem("nanodeploy.lang"); } catch { return null; } })();
@@ -1150,6 +1182,10 @@ function renderStatic() {
   $("memory-label").textContent = t("memoryLabel");
   $("gauge-note").textContent = t("gaugeNote");
   $("drop-text").innerHTML = t("dropHtml");
+  $("newkey-title").textContent = t("newAppKeyTitle");
+  $("newkey-slug").placeholder = t("newAppSlugPh");
+  $("newkey-create").textContent = t("keyCreate");
+  $("newkey-note").textContent = t("newAppKeyNote");
 }
 
 function setLang(lang) {
@@ -1173,6 +1209,8 @@ const state = {
   // slug whose access select was just moved to "groups" but which has no group
   // yet: show the chips and only call the API once one is picked
   pendingGroups: null,
+  // deploy keys per slug, and the one key just created (its only display)
+  keys: {}, freshKey: null,
 };
 let toastTimer;
 
@@ -1337,6 +1375,14 @@ function renderDetail(a, host) {
       </div>`).join("")}
       <button class="act" data-saveenv="${a.slug}">${t("envSave")}</button>` : ""}
 
+    <h3 class="label">${t("keysTitle")}</h3>
+    <p class="note" style="margin:0 0 8px">${t("keysNote")}</p>
+    ${renderKeys(a.slug)}
+    <div class="field" style="margin-top:8px">
+      <input data-keylabel="${a.slug}" placeholder="${t("keyLabelPh")}" maxlength="60">
+      <button class="act" data-newkey="${a.slug}">${t("keyCreate")}</button>
+    </div>
+
     <h3 class="label">${t("logsTitle")}</h3>
     <pre class="logs" data-logs="${a.slug}">${esc(state.logs[a.slug] ?? t("logsLoading"))}</pre>
 
@@ -1348,6 +1394,45 @@ function renderDetail(a, host) {
     ${a.deployedAt ? `<p class="note" style="margin:16px 0 0">${esc(t("deployedAt", { when: ago(a.deployedAt) }))}</p>` : ""}
     <p class="note" style="margin:8px 0 0">${t("detailNote")}</p>
   </div>`;
+}
+
+// The plain key exists once, in the creation response: show it with the two
+// lines a CI job or an agent needs, then forget it on the next panel change.
+function keyBox(slug, key) {
+  const url = location.origin;
+  return `<div class="keybox">
+    <span class="note">${t("keyShownOnce")}</span>
+    <code>${esc(key)}</code>
+    <code>export NANODEPLOY_URL=${esc(url)} NANODEPLOY_TOKEN=${esc(key)}</code>
+  </div>`;
+}
+
+function renderKeys(slug) {
+  const fresh = state.freshKey?.slug === slug ? keyBox(slug, state.freshKey.key) : "";
+  const list = state.keys[slug];
+  if (!list) return fresh;
+  const rows = list.map((k) => `<div class="keyrow">
+      <span style="min-width:0"><span class="num">${esc(k.hint)}</span> · ${esc(k.label)}
+        <span class="note">· ${esc(k.last_used_at ? t("keyLastUsed", { when: ago(k.last_used_at) }) : t("keyNeverUsed"))}</span></span>
+      <button class="act danger" data-revokekey="${slug}" data-keyid="${esc(k.id)}" data-keyhint="${esc(k.hint)}">${t("keyRevoke")}</button>
+    </div>`).join("");
+  return fresh + (rows || `<p class="note" style="margin:0">${t("keysNone")}</p>`);
+}
+
+async function loadKeys(slug) {
+  try {
+    const { keys } = await api(`/api/apps/${slug}/keys`);
+    state.keys[slug] = keys;
+  } catch {
+    return;
+  }
+  if (state.open === slug && !editingDetail()) renderApps();
+}
+
+async function createKey(slug, label) {
+  const created = await api(`/api/apps/${slug}/keys`, { method: "POST", body: JSON.stringify({ label }) });
+  state.freshKey = { slug, key: created.key };
+  return created;
 }
 
 function bindApps() {
@@ -1362,7 +1447,9 @@ function bindApps() {
   document.querySelectorAll("[data-open]").forEach((el) => {
     el.onclick = () => {
       state.open = state.open === el.dataset.open ? null : el.dataset.open;
+      state.freshKey = null;
       renderApps(); // loads the logs of whatever is now open
+      if (state.open) loadKeys(state.open);
     };
   });
 
@@ -1423,6 +1510,32 @@ function bindApps() {
       await api(`/api/apps/${slug}/env`, { method: "POST", body: JSON.stringify(patch) });
       toast(t("envSaved"));
       loadApps();
+    });
+  });
+
+  document.querySelectorAll("[data-keylabel]").forEach((el) => (el.onclick = (e) => e.stopPropagation()));
+
+  document.querySelectorAll("[data-newkey]").forEach((el) => {
+    el.onclick = fail(async (e) => {
+      e.stopPropagation();
+      const slug = el.dataset.newkey;
+      const label = document.querySelector(`[data-keylabel="${slug}"]`)?.value.trim() ?? "";
+      await createKey(slug, label);
+      document.activeElement?.blur();
+      await loadKeys(slug);
+      renderApps();
+    });
+  });
+
+  document.querySelectorAll("[data-revokekey]").forEach((el) => {
+    el.onclick = fail(async (e) => {
+      e.stopPropagation();
+      const slug = el.dataset.revokekey;
+      if (!confirm(t("keyRevokeConfirm", { hint: el.dataset.keyhint }))) return;
+      await api(`/api/apps/${slug}/keys/${el.dataset.keyid}`, { method: "DELETE" });
+      if (state.freshKey?.slug === slug) state.freshKey = null;
+      await loadKeys(slug);
+      renderApps();
     });
   });
 
@@ -1680,6 +1793,21 @@ drop.ondrop = (e) => {
   e.preventDefault();
   drop.classList.remove("over");
   if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]);
+};
+
+// a key for an app that is not deployed yet: the agent's first deploy creates it
+const SLUG_RE = /^[a-z][a-z0-9-]{1,30}$/;
+$("newkey-create").onclick = async () => {
+  const slug = $("newkey-slug").value.trim();
+  if (!SLUG_RE.test(slug)) return toast(t("slugInvalid"));
+  try {
+    const created = await createKey(slug, "");
+    state.freshKey = null; // shown here, not in a panel
+    $("newkey-result").innerHTML = keyBox(slug, created.key);
+    $("newkey-slug").value = "";
+  } catch (err) {
+    toast(t("fail") + err.message);
+  }
 };
 
 /* ---------- startup ---------- */

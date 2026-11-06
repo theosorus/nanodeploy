@@ -135,10 +135,12 @@ le rejouer contre `deploy.apps.example.com` depuis l'extérieur, via le tunnel.
 Le garde `sameOrigin` ne l'arrête pas : une requête serveur à serveur n'a ni
 `Origin` ni `Sec-Fetch-Site`, et elle est traitée comme un appel CLI
 (`index.ts:97`). Résultat possible : déployer du code arbitraire avec la session
-de l'admin. **À confirmer par un test** (déployer une app qui journalise l'en-tête
-`Cookie`, la visiter connecté). Correctif immédiat : retirer le cookie de session
-dans `nanodeploy_strip` avant de proxyfier vers une app (Caddy sait remplacer une
-sous-chaîne d'en-tête par regex). Correctif durable : la session de console
+de l'admin. **Confirmé** : le code de tinyauth v5.1.3 nomme ses cookies
+`tinyauth-session-<id>` (et `-csrf`, `-redirect`, `-oauth`), les pose sur le
+domaine parent par défaut (`SubdomainsEnabled: true`), et un test avec Caddy
+2.11.4 montre que le backend d'une app publique les recevait. **Corrigé en phase
+0** : Caddy retire tout cookie `tinyauth-*` dans la route `/api/*` de chaque app,
+après le forward-auth. Correctif durable : la session de console
 devient un cookie distinct, limité à l'hôte `deploy.` (voir 2.7).
 
 **C2. Un redéploiement écrase le mode d'accès choisi dans le dashboard.**
@@ -153,14 +155,20 @@ d'écraser.
 **C3. Le site est cassé pendant toute la durée d'un déploiement.**
 `doDeploy()` commence par `rm -rf` du dossier de l'app (`index.ts:212`), puis
 extrait, migre et builde l'image. Pendant ce temps Caddy sert un dossier vide ou
-partiel. Si le build Docker échoue, l'app reste sans frontend et sans retour
-arrière. C'est le premier chantier de l'axe 3.
+partiel. **Constaté en test** : si le build Docker échoue, le nouveau frontend
+reste en ligne alors que le backend est resté sur l'ancienne image, donc l'app
+tourne à moitié mise à jour, et le dossier sur disque n'a plus de quoi
+reconstruire l'image. **Corrigé en phase 0** : extraction dans un dossier de
+préparation, image construite avant les migrations, bascule par `rename` seulement
+quand tout a réussi. Les releases de l'axe 3 vont plus loin (historique, rollback).
 
 **C4. Le jeton racine est donné aux agents IA.**
 Le skill demande `NANODEPLOY_TOKEN` pour déployer, c'est-à-dire le `DEPLOY_TOKEN`,
 équivalent root sur la machine (build d'images, exec dans les conteneurs). Un
-agent qui itère sur une app n'a besoin que de déployer *cette* app. Les clés de
-déploiement par app (2.6) règlent ça.
+agent qui itère sur une app n'a besoin que de déployer *cette* app. **Corrigé en
+phase 0** : les clés de déploiement `ndd_` de la section 2.6 existent déjà dans le
+control plane actuel (table `deploy_keys`, routage Caddy, panneau du dashboard),
+sans attendre `gate`. Le skill demande désormais une clé au lieu du jeton.
 
 ---
 
@@ -1020,7 +1028,8 @@ d'un coup.
   pour pouvoir les retélécharger.
 
 **Le nouvel ordre d'un déploiement** (chaque étape peut échouer sans abîmer la
-version en ligne, jusqu'à la bascule) :
+version en ligne, jusqu'à la bascule ; la phase 0 en livre déjà la partie
+"préparer à côté puis basculer", sans l'historique) :
 
 ```mermaid
 flowchart TD
@@ -1473,7 +1482,7 @@ Chaque phase est livrable seule et laisse la plateforme dans un état cohérent.
 
 | Phase | Contenu | Pourquoi à ce moment | Effort |
 |---|---|---|---|
-| **0. Durcissement** | test et correctif du cookie transmis aux apps (C1), accès non écrasé au redéploiement (C2), plus de `rm -rf` avant le build : extraction dans un dossier temporaire puis échange (C3, version minimale avant les releases) | trois bugs réels, petits correctifs, prérequis à tout le reste | 1 à 2 j |
+| **0. Durcissement** (fait) | cookie de session retiré avant les apps (C1), accès non écrasé au redéploiement (C2), déploiement préparé à côté puis basculé (C3), clés de déploiement par app (C4) | bugs réels, petits correctifs, prérequis à tout le reste | fait |
 | **1. `gate`** | annuaire, mot de passe, passkey, sessions, rôles par app, chemins protégés, identité optionnelle, clés `ndk_` et `ndd_`, migration Pocket ID, UI Personnes et Accès | c'est ton premier axe, et l'axe 2 (nominatif) et l'axe 3 (clés pour la CI et l'agent) s'appuient dessus | 8 à 12 j |
 | **2. Releases** | dossiers de release, bascule atomique, table `releases`, rollback, snapshots avant migration, "Nouvelle version" avec diff, historique | fondation obligatoire de Git ; apporte déjà le remplacement à chaud par zip | 5 à 7 j |
 | **3. Analytics** | logs Caddy, ingesteur, événements Docker, échantillons, activité nominative depuis `gate`, onglet Analytics, beacon | indépendant, mais plus riche une fois `gate` et les releases en place (déploiements sur la frise) | 5 à 7 j |

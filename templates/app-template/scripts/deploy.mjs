@@ -7,8 +7,11 @@ import { readFile, rm } from "node:fs/promises";
 
 const url = process.env.NANODEPLOY_URL;
 const token = process.env.NANODEPLOY_TOKEN;
+// NANODEPLOY_TOKEN is normally a deploy key (ndd_...) for this app, made in the
+// dashboard: it can deploy this app and nothing else.
 if (!url || !token) {
   console.error("set NANODEPLOY_URL and NANODEPLOY_TOKEN in your shell first");
+  console.error("(a deploy key for this app: dashboard > the app > Deploy keys)");
   process.exit(1);
 }
 

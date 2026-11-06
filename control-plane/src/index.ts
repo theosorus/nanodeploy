@@ -4,10 +4,10 @@ import { Hono } from "hono";
 import type { Context, Next } from "hono";
 import AdmZip from "adm-zip";
 import { timingSafeEqual } from "node:crypto";
-import { readFile, rm, mkdir, readdir, stat } from "node:fs/promises";
+import { readFile, rm, mkdir, mkdtemp, readdir, rename, stat } from "node:fs/promises";
 import { lookup } from "node:dns/promises";
 import { join } from "node:path";
-import { parseManifest } from "./manifest.js";
+import { parseManifest, RESERVED_SLUGS } from "./manifest.js";
 import * as store from "./db.js";
 import * as dk from "./docker.js";
 import { writeSite, applySite, dropSite } from "./caddy.js";
@@ -26,7 +26,10 @@ if (TOKEN.length < 24) {
   process.exit(1);
 }
 
-const app = new Hono();
+// set by the auth middleware when the caller is a deploy key: the only slug it
+// may deploy
+type Env = { Variables: { deployKeySlug?: string } };
+const app = new Hono<Env>();
 
 // upload sanity: disk and ram are constrained on the target machine
 const MAX_BUNDLE_BYTES = 100 * 1024 * 1024;
@@ -43,6 +46,15 @@ const GROUP_NAME_RE = /^[\p{L}\p{N}._'-]+$/u;
 await store.initState();
 await store.migrateState();
 
+// A deploy is prepared here, next to the live app, and only moved into place
+// once the image is built and the migrations ran. Inside APPS_DIR so the final
+// move is a rename on the same filesystem. The dot keeps it out of slug space
+// (slugs start with a letter), so caddy never serves anything from it.
+const STAGING_DIR = join(APPS_DIR, ".staging");
+// leftovers of a deploy interrupted by a crash or a power cut
+await rm(STAGING_DIR, { recursive: true, force: true });
+await mkdir(STAGING_DIR, { recursive: true });
+
 /* ---------- auth ---------- */
 
 // Two callers: the CLI with the exact bearer token, the browser with a
@@ -55,6 +67,23 @@ const tokenOk = (c: Context) => {
   const a = Buffer.from(given.slice(7));
   const b = Buffer.from(TOKEN);
   return a.length === b.length && timingSafeEqual(a, b);
+};
+
+// A deploy key (ndd_...) is bound to one slug. It may deploy that app and read
+// its logs, nothing else: no env, no access mode, no other app, no accounts.
+// That is the credential to hand to a CI job or an AI agent, never the token.
+const deployKeyOf = async (c: Context): Promise<{ id: string; slug: string } | null> => {
+  const given = c.req.header("authorization");
+  if (!given?.startsWith("Bearer ndd_")) return null;
+  return store.verifyDeployKey(given.slice(7));
+};
+
+const deployKeyRoutes = (c: Context, slug: string) => {
+  const { method, path } = c.req;
+  if (method === "POST" && path === "/api/deploy") return true; // slug checked there
+  if (method === "GET" && path === `/api/apps/${slug}/logs`) return true;
+  if (method === "GET" && path === "/api/me") return true;
+  return false;
 };
 
 const sessionOk = (c: Context) => Boolean(c.req.header("remote-sub"));
@@ -102,8 +131,24 @@ const sameOrigin = (c: Context) => {
   }
 };
 
-app.use("/api/*", async (c: Context, next: Next) => {
+app.use("/api/*", async (c: Context<Env>, next: Next) => {
   const viaToken = tokenOk(c);
+  if (!viaToken) {
+    const key = await deployKeyOf(c);
+    if (key) {
+      // a key carries no ambient authority, so the cross-origin guard does not
+      // apply, but it opens only its own short list of routes
+      if (!deployKeyRoutes(c, key.slug)) {
+        return c.json({ error: `this deploy key only deploys ${key.slug}` }, 403);
+      }
+      c.set("deployKeySlug", key.slug);
+      return await next();
+    }
+    if (c.req.header("authorization")?.startsWith("Bearer ndd_")) {
+      // revoked or mistyped key: never fall through to the session check
+      return c.json({ error: "unknown or revoked deploy key" }, 401);
+    }
+  }
   if (!viaToken && !SAFE_METHODS.has(c.req.method) && !sameOrigin(c)) {
     return c.json({ error: "cross-origin request refused" }, 403);
   }
@@ -198,24 +243,84 @@ app.post("/api/deploy", async (c) => {
   }
 
   const { slug } = manifest;
+  const keySlug = c.get("deployKeySlug");
+  if (keySlug && keySlug !== slug) {
+    return c.json(
+      { error: `this deploy key is for ${keySlug}, the bundle's app.yaml says ${slug}` },
+      403,
+    );
+  }
   return runLocked(slug, async () => {
     try {
       return await c.json(await doDeploy(manifest, bytes));
     } catch (err: any) {
-      return c.json({ error: err?.message ?? "deploy failed" }, 500);
+      // an image built for a deploy that then failed is referenced by nothing
+      await pruneAll();
+      return c.json(
+        {
+          error: err?.message ?? "deploy failed",
+          // only true when it failed before the swap: after it, the new files
+          // are live and the container may be half replaced
+          note: err?.beforeSwap ? "the running version was left untouched" : undefined,
+        },
+        500,
+      );
     }
   });
 });
 
 async function doDeploy(manifest: ReturnType<typeof parseManifest>, zip: Buffer) {
   const dir = join(APPS_DIR, manifest.slug);
-  await rm(dir, { recursive: true, force: true });
-  await mkdir(dir, { recursive: true });
-  new AdmZip(zip).extractAllTo(dir, true);
+  // Everything up to the swap happens in a staging directory: the live app keeps
+  // serving its files the whole time, and a deploy that fails anywhere before the
+  // swap (bad bundle, image build error, failed migration) leaves it untouched.
+  // It used to delete the live directory first, so the site was broken for the
+  // whole build, and a failed build left the new frontend live over the old
+  // backend, with no server.js on disk to rebuild the image from.
+  const staging = await mkdtemp(join(STAGING_DIR, `${manifest.slug}-`));
+  const progress = { swapped: false };
+  try {
+    return await deployFromStaging(manifest, zip, staging, dir, progress);
+  } catch (err: any) {
+    if (!progress.swapped && err && typeof err === "object") err.beforeSwap = true;
+    throw err;
+  } finally {
+    // gone already when the swap succeeded
+    await rm(staging, { recursive: true, force: true });
+  }
+}
+
+// Moves the staged bundle into place. Two renames on one filesystem: the window
+// where the directory is missing lasts microseconds, not the length of a build.
+async function swapInto(staging: string, dir: string) {
+  const old = `${staging}.previous`;
+  const hadOld = await rename(dir, old).then(
+    () => true,
+    (err) => {
+      if (err?.code === "ENOENT") return false;
+      throw err;
+    },
+  );
+  try {
+    await rename(staging, dir);
+  } catch (err) {
+    if (hadOld) await rename(old, dir);
+    throw err;
+  }
+  if (hadOld) await rm(old, { recursive: true, force: true });
+}
+
+async function deployFromStaging(
+  manifest: ReturnType<typeof parseManifest>,
+  zip: Buffer,
+  staging: string,
+  dir: string,
+  progress: { swapped: boolean },
+) {
+  new AdmZip(zip).extractAllTo(staging, true);
   // zip headers can lie about sizes: measure the extracted bundle for real
-  const { bytes, files } = await dirStats(dir);
+  const { bytes, files } = await dirStats(staging);
   if (files > MAX_BUNDLE_ENTRIES || bytes > MAX_BUNDLE_UNPACKED) {
-    await rm(dir, { recursive: true, force: true });
     throw new Error("bundle exceeds the unpacked size limits");
   }
 
@@ -229,6 +334,33 @@ async function doDeploy(manifest: ReturnType<typeof parseManifest>, zip: Buffer)
     else log.push(`env ${key} is declared but not set yet, set it in the dashboard`);
   }
 
+  // The manifest only sets the access mode of a new app. After that the
+  // dashboard owns it: a redeploy used to put back whatever app.yaml said, so an
+  // app made private in the dashboard silently went public again on the next
+  // deploy. Say so when the two disagree instead of overwriting.
+  let access = manifest.access;
+  let groups = manifest.groups;
+  if (previous) {
+    access = previous.access as typeof access;
+    groups = previous.groups;
+    const sameGroups =
+      previous.groups.length === manifest.groups.length &&
+      previous.groups.every((g) => manifest.groups.includes(g));
+    if (previous.access !== manifest.access || (manifest.access === "groups" && !sameGroups)) {
+      log.push(
+        `access kept as "${previous.access}" (set in the dashboard), app.yaml says ` +
+          `"${manifest.access}": change it in the dashboard if you meant it`,
+      );
+    }
+  }
+
+  // The image is built before any migration: a build that fails must not leave
+  // the database migrated for code that never shipped.
+  let image: string | null = previous?.image ?? null;
+  if (manifest.backend) {
+    image = await dk.buildImage(staging, manifest.slug, manifest.backend.entry, manifest.backend.port);
+  }
+
   let dbUser: string | null = previous?.db_user ?? null;
   let dbPassword: string | null = previous?.db_password ?? null;
 
@@ -238,13 +370,15 @@ async function doDeploy(manifest: ReturnType<typeof parseManifest>, zip: Buffer)
     dbPassword = creds.password;
     env.DATABASE_URL = store.databaseUrl(creds.user, creds.password);
     // parseManifest already jailed the migrations path inside the bundle
-    const applied = await store.runMigrations(join(dir, manifest.database.migrations), env.DATABASE_URL);
+    const applied = await store.runMigrations(join(staging, manifest.database.migrations), env.DATABASE_URL);
     log.push(applied.length ? `applied ${applied.length} migration(s)` : "no new migrations");
   }
 
-  let image: string | null = previous?.image ?? null;
-  if (manifest.backend) {
-    image = await dk.buildImage(dir, manifest.slug, manifest.backend.entry, manifest.backend.port);
+  // point of no return: the new files go live
+  await swapInto(staging, dir);
+  progress.swapped = true;
+
+  if (manifest.backend && image) {
     await dk.runContainer({
       slug: manifest.slug,
       image,
@@ -262,8 +396,8 @@ async function doDeploy(manifest: ReturnType<typeof parseManifest>, zip: Buffer)
   const row = {
     slug: manifest.slug,
     name: manifest.name,
-    access: manifest.access,
-    groups: manifest.groups,
+    access,
+    groups,
     port: manifest.backend?.port ?? null,
     idle_timeout: manifest.idle.timeout,
     warm: manifest.idle.warm,
@@ -522,6 +656,8 @@ app.delete("/api/apps/:slug", async (c) => {
     await dk.removeContainer(slug);
     await dk.removeDataVolume(slug);
     await store.deleteApp(slug);
+    // a forgotten key must not be able to bring a deleted app back
+    await store.deleteDeployKeysOf(slug);
     await rm(join(APPS_DIR, slug), { recursive: true, force: true });
     const dropped = await dropSite(slug);
     await pruneAll();
@@ -566,6 +702,41 @@ app.post("/api/apps/:slug/wake", async (c) => {
       return c.json({ error: err?.message ?? "failed to start container" }, 500);
     }
   });
+});
+
+/* ---------- deploy keys ---------- */
+
+// Keyed by slug, not by app row: a key can be made before the first deploy, so
+// an agent can ship a brand new app without ever seeing the root token.
+const keySlug = (c: Context): string | null => {
+  const slug = slugParam(c);
+  return slug && !RESERVED_SLUGS.has(slug) ? slug : null;
+};
+
+app.get("/api/apps/:slug/keys", async (c) => {
+  const slug = keySlug(c);
+  if (!slug) return c.json({ error: "invalid app name" }, 400);
+  return c.json({ keys: await store.listDeployKeys(slug) });
+});
+
+app.post("/api/apps/:slug/keys", async (c) => {
+  const slug = keySlug(c);
+  if (!slug) return c.json({ error: "invalid app name" }, 400);
+  const body = await jsonBody<{ label?: unknown }>(c);
+  const label = String(body?.label ?? "").replace(/[\r\n]/g, " ").trim().slice(0, 60) || "deploy key";
+  if ((await store.listDeployKeys(slug)).length >= 20) {
+    return c.json({ error: "20 keys at most per app, revoke an old one first" }, 400);
+  }
+  return c.json(await store.createDeployKey(slug, label));
+});
+
+app.delete("/api/apps/:slug/keys/:id", async (c) => {
+  const slug = keySlug(c);
+  const id = c.req.param("id");
+  if (!slug || !/^\d{1,18}$/.test(id)) return c.json({ error: "unknown key" }, 404);
+  return (await store.deleteDeployKey(slug, id))
+    ? c.json({ ok: true })
+    : c.json({ error: "unknown key" }, 404);
 });
 
 /* ---------- people, proxied from Pocket ID so accounts live in one place ---------- */
@@ -714,6 +885,8 @@ app.get("/api/me", async (c) =>
     domain: process.env.APPS_DOMAIN,
     admin: await adminOk(c),
     viaToken: tokenOk(c),
+    // set when the caller is a deploy key: the app it is allowed to deploy
+    deployKeyFor: c.get("deployKeySlug") ?? null,
     groups: sessionGroups(c),
   }));
 
