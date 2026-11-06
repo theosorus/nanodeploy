@@ -7,6 +7,10 @@
 	# http:// and drop browsers back to plain http after they sign in.
 	servers {
 		trusted_proxies static private_ranges
+		# Behind a Cloudflare tunnel every request comes from cloudflared: the
+		# visitor's address is in CF-Connecting-IP. Analytics count visitors by
+		# it; without this line the whole internet would be one visitor.
+		client_ip_headers CF-Connecting-IP X-Forwarded-For
 	}
 	# loopback only: the admin API has no auth, and apps share a network with
 	# caddy. The control plane reloads caddy by docker exec, not through this.

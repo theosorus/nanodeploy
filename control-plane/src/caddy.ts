@@ -64,6 +64,12 @@ function appRoutes(app: AppRow, indent: string): string[] {
 export function renderSite(app: AppRow) {
   const host = `${app.slug}.${DOMAIN}`;
   const lines: string[] = [`http://${host} {`, `\timport nanodeploy_strip`];
+  // one access log for every app: the control plane reads it for analytics.
+  // Caddy masks Cookie and Authorization in it by default.
+  lines.push(`\tlog {`, `\t\toutput file /var/log/caddy/apps.log {`, `\t\t\troll_size 20MiB`, `\t\t\troll_keep 3`, `\t\t}`, `\t\tformat json`, `\t}`);
+  // page views of a single-page app: the browser beacons each navigation here.
+  // Answered by caddy itself, it costs no process; the access log records it.
+  lines.push(`\thandle /_nd/e {`, `\t\trespond 204`, `\t}`);
   // sign-in callback, /_nd/me, /_nd/login, /_nd/logout: served by gate on
   // every app host, before any access check
   lines.push(`\thandle /_nd/* {`, `\t\treverse_proxy gate:4000`, `\t}`);

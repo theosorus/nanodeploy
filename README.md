@@ -98,6 +98,22 @@ Access is a dropdown, not a redeploy, and a redeploy never changes it back:
 **groups** (people you pick), or **public** (the whole internet — the dashboard
 warns you). Env values are write-only: you can replace a secret, not read it back.
 
+## Analytics, without a script in your apps
+
+The Analytics tab reads what the machine already knows: Caddy's access log
+(visitors, page views, referrers, countries, devices, errors, latency), Docker's
+events (when each app woke up, went to sleep, crashed or ran out of memory, and
+how long a cold start took), a memory sample of each awake app every minute, and,
+for apps that are not public, which accounts used them on which days.
+
+No cookie, no third-party script, no extra service. A visitor is counted with a
+hash of a salt that changes every midnight, the app, the address and the browser:
+countable within a day, never followable from one day or one app to the next.
+Addresses are not stored. Behind Cloudflare, the country comes from its header for
+free. A single-page app reports its client-side navigations with one call,
+`trackPage()` in the template's `src/analytics.ts`. Set `TIMEZONE` in `.env` so
+"today" starts at your midnight.
+
 ## One account for everything
 
 <img src="docs/people.png" alt="The people tab: invite by email, group chips, admin group" width="560">
@@ -225,6 +241,9 @@ same starting point: `cp -r`, edit, `npm run deploy`.
 
 Stated plainly, because finding out later is worse:
 
+- **Analytics are approximate by design.** One person on two days counts twice;
+  a privacy-minded browser behind a VPN may count twice in one day. Bots are
+  filtered by user agent only.
 - **History is short.** Ten versions per app keep their files, three their
   image, three their database snapshot. Older ones are cleaned up.
 - **Apps see each other** on a shared network. Don't put an app open to strangers

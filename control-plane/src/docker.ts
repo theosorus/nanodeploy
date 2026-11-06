@@ -348,3 +348,54 @@ export async function restoreDatabase(db: string, file: string) {
     await rm(tmp, { recursive: true, force: true });
   }
 }
+
+/* ---------- container events, for analytics ---------- */
+
+export type AppEvent = { slug: string; action: string; exitCode: number | null; at: number };
+
+// Follows start, stop, kill, die and oom of app containers, and reconnects if
+// the stream drops (a restart of the socket proxy, a docker upgrade).
+export function followAppEvents(onEvent: (e: AppEvent) => void) {
+  const connect = async () => {
+    try {
+      const stream: any = await docker.getEvents({
+        filters: JSON.stringify({
+          type: ["container"],
+          label: ["nanodeploy.slug"],
+          event: ["start", "stop", "kill", "die", "oom"],
+        }) as any,
+      });
+      let buffer = "";
+      stream.on("data", (chunk: Buffer) => {
+        buffer += chunk.toString("utf8");
+        let nl: number;
+        while ((nl = buffer.indexOf("\n")) >= 0) {
+          const line = buffer.slice(0, nl).trim();
+          buffer = buffer.slice(nl + 1);
+          if (!line) continue;
+          try {
+            const e = JSON.parse(line);
+            const attrs = e.Actor?.Attributes ?? {};
+            const slug = attrs["nanodeploy.slug"];
+            if (!slug) continue;
+            const exit = attrs.exitCode === undefined ? null : Number(attrs.exitCode);
+            onEvent({ slug, action: e.Action ?? e.status, exitCode: exit, at: Math.floor((e.timeNano ?? e.time * 1e9) / 1e6) });
+          } catch {
+            // a partial or foreign line: skip it
+          }
+        }
+      });
+      let retried = false;
+      const retry = () => {
+        if (retried) return;
+        retried = true;
+        setTimeout(connect, 5000);
+      };
+      stream.once("end", retry);
+      stream.once("error", retry);
+    } catch {
+      setTimeout(connect, 5000);
+    }
+  };
+  connect();
+}

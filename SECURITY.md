@@ -81,6 +81,13 @@ These are real. Decide whether they matter for your setup before you deploy.
   first request gets Sablier's HTML page instead of the app's answer. Clients
   must retry; the template's `src/client.ts` does. This is a correctness trap
   more than a security one, but an API consumer that ignores it will misbehave.
+- **The access log holds addresses for a few days.** Caddy writes every request
+  of every app to one JSON log (three files of 20 MB at most, rotated), with the
+  client address and user agent, cookies and authorization headers masked. The
+  control plane reads it and stores only aggregates and a daily-salted visitor
+  hash. The salt is replaced every midnight. For apps that are not public,
+  administrators see which accounts used them on which days; the account page
+  says so.
 - **Database snapshots sit on the server, in clear.** Before each migration the
   app's database is dumped to `APPS_DIR/.snapshots/<slug>/` (directory 0700,
   files 0600, the last three kept). Caddy mounts `APPS_DIR` read-only but only

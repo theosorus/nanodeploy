@@ -21,6 +21,8 @@ volumes:
   caddy_config:
   pg_data:
   pocketid_data:
+  # caddy's access log, read by the control plane for analytics
+  caddy_logs:
 
 services:
   caddy:
@@ -47,6 +49,7 @@ services:
       - ${APPS_DIR}:/srv/apps:ro
       - caddy_data:/data
       - caddy_config:/config
+      - caddy_logs:/var/log/caddy
     # edge for gate and sablier, apps for the reverse_proxy targets
     networks: [edge, apps]
 
@@ -94,6 +97,8 @@ services:
       BUILD: 1
       EXEC: 1
       VOLUMES: 1
+      # analytics follow app containers waking up, sleeping and crashing
+      EVENTS: 1
       POST: 1
       ALLOW_START: 1
       ALLOW_STOP: 1
@@ -183,12 +188,15 @@ services:
       GATE_DB_PASSWORD: ${GATE_DB_PASSWORD}
       PUBLIC_SCHEME: ${PUBLIC_SCHEME:-https}
       PUBLIC_PORT: ${PUBLIC_PORT:-}
+      # analytics: where a day starts, for "today" and the daily visitor count
+      TIMEZONE: ${TIMEZONE:-UTC}
       # upgrade only: import accounts from a Pocket ID still running (legacy)
       POCKETID_URL: http://pocket-id:1411
       POCKETID_API_KEY: ${POCKETID_API_KEY:-}
     volumes:
       - ${APPS_DIR}:/srv/apps
       - ./caddy/conf.d:/etc/caddy/conf.d
+      - caddy_logs:/var/log/caddy:ro
     networks: [edge, data]
     depends_on:
       postgres:

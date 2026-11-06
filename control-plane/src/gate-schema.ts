@@ -134,6 +134,18 @@ export async function initGateSchema(admin: Sql, dbName: string) {
       primary key (slug, role, subject_kind, subject_id)
     );
 
+    -- who used which app, one row per person, app and day: what the analytics
+    -- page shows for apps that are not public. Never a log of each click.
+    create table if not exists gate.member_activity (
+      slug text not null,
+      user_id text not null references gate.users(id) on delete cascade,
+      day date not null,
+      first_seen timestamptz not null,
+      last_seen timestamptz not null,
+      requests int not null default 0,
+      primary key (slug, user_id, day)
+    );
+
     create table if not exists gate.audit (
       id bigserial primary key,
       at timestamptz not null default now(),

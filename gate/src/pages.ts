@@ -254,7 +254,8 @@ export function accountPage(t: T, lang: Lang, v: AccountView) {
       <button type="submit">${esc(t("createKey"))}</button>
     </form>
 
-    <form method="post" action="/logout" style="margin-top:48px"><button type="submit">${esc(t("signOut"))}</button></form>`,
+    <p class="soft" style="margin-top:48px">${esc(t("privacyNote"))}</p>
+    <form method="post" action="/logout"><button type="submit">${esc(t("signOut"))}</button></form>`,
     { wide: true, script: true });
 }
 

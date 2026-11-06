@@ -9,6 +9,7 @@ import type { Manifest } from "./manifest.js";
 import * as store from "./db.js";
 import * as dk from "./docker.js";
 import { applySite } from "./caddy.js";
+import * as analytics from "./analytics.js";
 
 // Layout of an app on disk:
 //   <APPS_DIR>/<slug>/releases/<n>/   app.yaml, dist/, server.js, migrations/
@@ -290,6 +291,7 @@ async function snapshot(slug: string, db: string, release: number) {
 // The running container is stopped for the restore: pg_restore --clean must
 // drop the tables the app is using. A warm app is started again afterwards.
 async function restore(slug: string, db: string, file: string, restart: boolean) {
+  analytics.quiet(slug, 120_000);
   await dk.stopContainer(slug);
   await store.disconnectDatabase(db);
   await dk.restoreDatabase(db, file);
@@ -375,6 +377,7 @@ export async function promote(id: string): Promise<Outcome> {
     }
 
     if (m.backend && image) {
+      analytics.quiet(slug);
       await dk.runContainer({ slug, image, port: m.backend.port, idleTimeout: m.idle.timeout, warm: m.idle.warm, env });
       // a cold app goes straight back to sleep: a running container sablier did
       // not start would have no session and never scale back down on its own
@@ -418,6 +421,7 @@ export async function promote(id: string): Promise<Outcome> {
     }
     log.push(`release ${r.number} is live`);
     await finish(id, "live", log, { image, migrations_applied: applied, db_snapshot: snapshotFile });
+    await analytics.markDeploy(slug, r.number, Boolean(m.backend && m.idle.warm));
     await prune(slug);
     return { ok: true, url: `https://${host}`, log, release: r.number };
   } catch (err: any) {
@@ -499,6 +503,7 @@ export async function rollback(slug: string, targetId: string, withDatabase: boo
   if (app.env?.DATABASE_URL) env.DATABASE_URL = app.env.DATABASE_URL;
 
   if (m.backend && image) {
+    analytics.quiet(slug);
     await dk.runContainer({ slug, image, port: m.backend.port, idleTimeout: m.idle.timeout, warm: m.idle.warm, env });
     if (!m.idle.warm) await dk.stopContainer(slug);
   } else {
@@ -533,6 +538,7 @@ export async function rollback(slug: string, targetId: string, withDatabase: boo
   if (!routed) log.push("WARNING: caddy refused the route, the previous config was kept");
   log.push(`release ${number} is live (files of release ${target.number})`);
   await finish(row.id, "live", log, { image });
+  await analytics.markDeploy(slug, number, Boolean(m.backend && m.idle.warm));
   await prune(slug);
   return { ok: true, url: `https://${slug}.${process.env.APPS_DOMAIN}`, log, release: number };
 }

@@ -142,6 +142,12 @@ check "$(code -H "Host: smoke.$DOM" -H "Authorization: Bearer ndk_$(printf 'A%.0
 check "$(code -H "Host: auth.$DOM" "$BASE/verify?app=smoke")" "404" "forward-auth endpoint not reachable from outside"
 check "$(code -H "Host: auth.$DOM" $BASE/login)" "200" "sign-in page"
 
+echo "== analytics =="
+check "$(code -H "Host: smoke.$DOM" "$BASE/_nd/e?p=%2Fhello")" "204" "page-view beacon answered by caddy"
+check "$(code -H "Host: deploy.$DOM" -H "$AUTH" "$BASE/api/apps/smoke/analytics?range=24h")" "200" "app analytics"
+json -H "Host: deploy.$DOM" -H "$AUTH" $BASE/api/analytics | grep -q '"slug":"smoke"' && ok "analytics overview lists the app" \
+  || bad "overview without the app"
+
 echo "== platform cookie never reaches an app =="
 # tinyauth's cookies live on the parent domain, so the browser sends them to
 # every app: an app backend holding an admin's session could drive the console

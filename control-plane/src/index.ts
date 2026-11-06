@@ -11,6 +11,7 @@ import * as dk from "./docker.js";
 import { writeSite, applySite, dropSite } from "./caddy.js";
 import * as accounts from "./accounts.js";
 import * as releases from "./releases.js";
+import * as analytics from "./analytics.js";
 
 const APPS_DIR = process.env.APPS_DIR ?? "/srv/apps";
 const TOKEN = process.env.DEPLOY_TOKEN ?? "";
@@ -45,6 +46,7 @@ await accounts.importFromPocketId();
 await accounts.bootstrapLinks();
 
 await releases.init();
+await analytics.init();
 
 /* ---------- auth ---------- */
 
@@ -403,6 +405,7 @@ async function reconcile() {
           rebuilt || status === "missing" || (fresh.warm && status === "sleeping");
         if (!needsRecreate) return;
 
+        analytics.quiet(fresh.slug);
         await dk.runContainer({
           slug: fresh.slug,
           image,
@@ -531,6 +534,7 @@ app.post("/api/apps/:slug/env", async (c) => {
     const env = { ...current.env, ...patch };
     await store.upsertApp({ slug, env } as any);
     if (current.image && current.port) {
+      analytics.quiet(slug);
       await dk.runContainer({
         slug,
         image: current.image,
@@ -563,6 +567,7 @@ app.delete("/api/apps/:slug", async (c) => {
     await store.deleteDeployKeysOf(slug);
     await accounts.deleteAppGrants(slug);
     await releases.deleteAll(slug);
+    await analytics.forgetApp(slug);
     await rm(join(APPS_DIR, slug), { recursive: true, force: true });
     const dropped = await dropSite(slug);
     await pruneAll();
@@ -831,10 +836,23 @@ app.get("/api/me", async (c) =>
     groups: sessionGroups(c),
   }));
 
+/* ---------- analytics ---------- */
+
+app.get("/api/analytics", async (c) => c.json(await analytics.overview()));
+
+app.get("/api/apps/:slug/analytics", async (c) => {
+  const slug = slugParam(c);
+  const range = c.req.query("range") ?? "24h";
+  if (!slug || !["24h", "7d", "30d"].includes(range)) return c.json({ error: "unknown app or range" }, 404);
+  const detail = await analytics.appDetail(slug, range as "24h" | "7d" | "30d");
+  return detail ? c.json(detail) : c.json({ error: "unknown app" }, 404);
+});
+
 app.get("/", async (c) => c.html(await readFile("./public/index.html", "utf8")));
 app.use("/*", serveStatic({ root: "./public" }));
 
 serve({ fetch: app.fetch, port: 8000 });
+analytics.start();
 console.log("nanodeploy control plane on :8000");
 
 // wait for caddy and the docker socket proxy to settle before healing

@@ -200,6 +200,7 @@ app.get("/verify", async (c) => {
     if (d.status === 401) return challenge(c, host, uri, method);
     return refuse(c, method, id!, d.reason);
   }
+  if (id) db.recordActivity(slug, id.user.id);
   return allow(c, id, d.roles);
 });
 
@@ -669,6 +670,11 @@ app.post("/account/keys/:id/delete", async (c) => {
 app.use("/static/*", serveStatic({ root: "./public", rewriteRequestPath: (p) => p.replace(/^\/static/, "") }));
 
 setInterval(() => db.sweep().catch((err) => console.error("sweep failed", err)), 3_600_000).unref();
+setInterval(() => db.flushActivity().catch((err) => console.error("activity flush failed", err)), 60_000).unref();
+// a restart (an upgrade, a reboot) keeps the last minute of activity
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.once(signal, () => db.flushActivity().finally(() => process.exit(0)));
+}
 
 serve({ fetch: app.fetch, port: Number(process.env.PORT ?? 4000) });
 console.log(`gate on :${process.env.PORT ?? 4000} for ${AUTH_ORIGIN}`);

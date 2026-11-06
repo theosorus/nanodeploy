@@ -304,6 +304,45 @@ export const allGrants = (userId: string, groupIds: string[]) =>
     where (subject_kind = 'user' and subject_id = ${userId})
        or (subject_kind = 'group' and subject_id = any(${groupIds}))`;
 
+/* ---------- member activity, for analytics ---------- */
+
+// Counted in memory and written once a minute: this runs on every request of
+// every signed-in person, and one upsert per request would be most of gate's
+// work on a small machine.
+type Activity = { first: Date; last: Date; requests: number };
+const activity = new Map<string, Activity>();
+
+export function recordActivity(slug: string, userId: string) {
+  const now = new Date();
+  const key = `${slug}\u0000${userId}\u0000${now.toISOString().slice(0, 10)}`;
+  const a = activity.get(key);
+  if (a) {
+    a.last = now;
+    a.requests += 1;
+  } else {
+    activity.set(key, { first: now, last: now, requests: 1 });
+  }
+}
+
+export async function flushActivity() {
+  if (activity.size === 0) return;
+  const batch = [...activity.entries()];
+  activity.clear();
+  for (const [key, a] of batch) {
+    const [slug, userId, day] = key.split("\u0000");
+    await sql`
+      insert into gate.member_activity (slug, user_id, day, first_seen, last_seen, requests)
+      values (${slug}, ${userId}, ${day}, ${a.first}, ${a.last}, ${a.requests})
+      on conflict (slug, user_id, day) do update set
+        first_seen = least(gate.member_activity.first_seen, excluded.first_seen),
+        last_seen = greatest(gate.member_activity.last_seen, excluded.last_seen),
+        requests = gate.member_activity.requests + excluded.requests`.catch((err) => {
+      // a removed account cascades away mid-flight: nothing to keep
+      if (err?.code !== "23503") console.error("activity flush failed", err);
+    });
+  }
+}
+
 /* ---------- audit and housekeeping ---------- */
 
 export const audit = (actor: string | null, action: string, target: string | null, detail?: object) =>

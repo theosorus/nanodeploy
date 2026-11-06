@@ -175,6 +175,48 @@
   .rel-state.live { color: var(--live); }
   .rel-state.failed { color: var(--danger); }
   .rel-actions { display: flex; gap: var(--s2); flex: none; flex-wrap: wrap; justify-content: flex-end; }
+
+  /* analytics: one ink for data, ochre for "awake", red only for crashes and
+     always with a word next to it; grid and axes recede */
+  .an-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .an-table th { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--soft); font-weight: 400; text-align: right; padding: 0 0 var(--s2) var(--s3); vertical-align: bottom; }
+  .an-table th:first-child, .an-table td:first-child { text-align: left; padding-left: 0; }
+  .an-table td { border-top: 1px solid var(--rule); padding: var(--s3) 0 var(--s3) var(--s3); text-align: right;
+    font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 13px; white-space: nowrap; }
+  .an-table td:first-child { font-family: var(--ui); font-size: 14px; }
+  .an-table tr[data-an] { cursor: pointer; }
+  .an-table tr[data-an]:hover td, .an-table tr[aria-selected="true"] td { background: var(--surface); }
+  .an-scroll { overflow-x: auto; margin: 0 0 var(--s6); }
+  .an-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3); flex-wrap: wrap; margin: 0 0 var(--s4); }
+  .an-head h2 { margin: 0; font-size: 18px; font-weight: 600; }
+  .seg { display: inline-flex; border: 1px solid var(--rule); border-radius: var(--radius); }
+  .seg button { font: inherit; font-size: 13px; background: none; border: 0; color: var(--soft); padding: 6px 12px; min-height: 36px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 1px; background: var(--rule);
+    border: 1px solid var(--rule); margin: 0 0 var(--s5); }
+  .tile { background: var(--paper); padding: var(--s3); }
+  .tile .label { display: block; margin-bottom: 4px; }
+  .tile .big { font-family: var(--mono); font-size: 22px; font-variant-numeric: tabular-nums; }
+  .chart { margin: 0 0 var(--s5); }
+  .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .chart .axis { fill: var(--soft); font-family: var(--mono); font-size: 10px; }
+  .chart .grid { stroke: var(--rule); stroke-width: 1; }
+  /* the hover target is the whole column, wider and taller than the bar */
+  .chart .bar { fill: var(--ink); pointer-events: none; }
+  .chart .hit:hover + .bar { fill: var(--live); }
+  .chart .hit { fill: transparent; cursor: default; }
+  .legend { display: flex; gap: var(--s4); flex-wrap: wrap; font-size: 12px; color: var(--soft); margin-top: var(--s2); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  .tops { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--s5); margin: 0 0 var(--s5); }
+  .toprow { display: grid; grid-template-columns: 1fr auto; gap: 2px var(--s3); font-size: 13px; padding: 4px 0; }
+  .toprow span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .toprow .num { color: var(--soft); }
+  .toprow b { grid-column: 1 / -1; height: 3px; background: var(--cell); border-radius: 2px; }
+  .toprow b i { display: block; height: 100%; background: var(--ink); border-radius: 2px; }
+  .an-tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--surface); font-size: 12px;
+    padding: 6px 8px; border-radius: var(--radius); white-space: pre; z-index: 10; }
+  .an-tip[hidden] { display: none; }
   .note { color: var(--soft); font-size: 13px; }
 
   .warn { border: 1px solid var(--danger); border-radius: var(--radius); padding: var(--s4); margin-bottom: var(--s5); }
@@ -213,6 +255,7 @@
 
   <nav role="tablist">
     <button role="tab" data-view="apps" aria-selected="true"></button>
+    <button role="tab" data-view="analytics" aria-selected="false"></button>
     <button role="tab" data-view="people" aria-selected="false"></button>
   </nav>
 
@@ -246,10 +289,12 @@
     <div id="apps"></div>
   </section>
 
+  <section id="view-analytics" hidden></section>
   <section id="view-people" hidden></section>
   <section id="view-denied" hidden></section>
 </div>
 <div class="toast" id="toast" hidden></div>
+<div class="an-tip" id="an-tip" role="status" hidden></div>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -1674,6 +1719,473 @@ const I18N_RELEASES = {
 
 for (const l of Object.keys(I18N_RELEASES)) Object.assign(I18N[l], I18N_RELEASES[l]);
 
+// Analytics: traffic from caddy's log, wake and sleep from docker, accounts
+// from gate.
+const I18N_ANALYTICS = {
+  en: {
+    navAnalytics: "Analytics",
+    anTimezone: "Days start at midnight, {tz}.",
+    anApp: "App",
+    anOnline: "Online now",
+    anVisitorsToday: "Visitors today",
+    anPagesToday: "Pages today",
+    anWeek: "Last 7 days",
+    anWakes: "Wakes",
+    anAwake: "Awake",
+    anErrors: "Server errors",
+    anNoApps: "No app yet.",
+    anRange24h: "24 h",
+    anRange7d: "7 days",
+    anRange30d: "30 days",
+    anVisitors: "Visitors",
+    anPages: "Page views",
+    anRequests: "Requests",
+    anP95: "95% of answers under",
+    anColdStart: "Cold start (median)",
+    anVisitorsPer: "Visitors per {unit}",
+    anHour: "hour",
+    anDay: "day",
+    anTimeline: "Awake or asleep",
+    anAwakeLegend: "awake",
+    anDeploy: "deploy",
+    anCrash: "crash",
+    anOom: "out of memory",
+    anMemory: "Memory",
+    anLimit: "limit {mb} MB",
+    anTopPages: "Pages",
+    anReferrers: "Referrers",
+    anCountries: "Countries",
+    anDevices: "Devices",
+    anBrowsers: "Browsers",
+    anPeople: "People",
+    anPeopleNote: "Who used this app: accounts only, never the visitors of a public app.",
+    anLastSeen: "last seen {when}",
+    anDays: "{n} day(s)",
+    anNoData: "No traffic in this period yet.",
+    anVisitorsNote: "A visitor is counted once a day per app, without cookies: the same person on two days counts twice.",
+    anTable: "Show as a table",
+    anMs: "{n} ms",
+    anNone: "none",
+    anRequestsN: "{n} requests",
+  },
+  fr: {
+    navAnalytics: "Analytics",
+    anTimezone: "Les journées commencent à minuit, {tz}.",
+    anApp: "App",
+    anOnline: "En ligne",
+    anVisitorsToday: "Visiteurs aujourd'hui",
+    anPagesToday: "Pages aujourd'hui",
+    anWeek: "7 derniers jours",
+    anWakes: "Réveils",
+    anAwake: "Éveillée",
+    anErrors: "Erreurs serveur",
+    anNoApps: "Aucune app pour l'instant.",
+    anRange24h: "24 h",
+    anRange7d: "7 jours",
+    anRange30d: "30 jours",
+    anVisitors: "Visiteurs",
+    anPages: "Pages vues",
+    anRequests: "Requêtes",
+    anP95: "95 % des réponses en moins de",
+    anColdStart: "Démarrage à froid (médiane)",
+    anVisitorsPer: "Visiteurs par {unit}",
+    anHour: "heure",
+    anDay: "jour",
+    anTimeline: "Éveillée ou en veille",
+    anAwakeLegend: "éveillée",
+    anDeploy: "déploiement",
+    anCrash: "crash",
+    anOom: "mémoire épuisée",
+    anMemory: "Mémoire",
+    anLimit: "limite {mb} Mo",
+    anTopPages: "Pages",
+    anReferrers: "Référents",
+    anCountries: "Pays",
+    anDevices: "Appareils",
+    anBrowsers: "Navigateurs",
+    anPeople: "Personnes",
+    anPeopleNote: "Qui a utilisé cette app : les comptes seulement, jamais les visiteurs d'une app publique.",
+    anLastSeen: "vue {when}",
+    anDays: "{n} jour(s)",
+    anNoData: "Pas encore de trafic sur cette période.",
+    anVisitorsNote: "Un visiteur est compté une fois par jour et par app, sans cookie : la même personne deux jours de suite compte deux fois.",
+    anTable: "Voir en tableau",
+    anMs: "{n} ms",
+    anNone: "aucun",
+    anRequestsN: "{n} requêtes",
+  },
+  es: {
+    navAnalytics: "Analítica",
+    anTimezone: "Los días empiezan a medianoche, {tz}.",
+    anApp: "App",
+    anOnline: "En línea",
+    anVisitorsToday: "Visitantes hoy",
+    anPagesToday: "Páginas hoy",
+    anWeek: "Últimos 7 días",
+    anWakes: "Despertares",
+    anAwake: "Despierta",
+    anErrors: "Errores del servidor",
+    anNoApps: "Aún no hay apps.",
+    anRange24h: "24 h",
+    anRange7d: "7 días",
+    anRange30d: "30 días",
+    anVisitors: "Visitantes",
+    anPages: "Páginas vistas",
+    anRequests: "Peticiones",
+    anP95: "El 95 % de las respuestas en menos de",
+    anColdStart: "Arranque en frío (mediana)",
+    anVisitorsPer: "Visitantes por {unit}",
+    anHour: "hora",
+    anDay: "día",
+    anTimeline: "Despierta o dormida",
+    anAwakeLegend: "despierta",
+    anDeploy: "despliegue",
+    anCrash: "fallo",
+    anOom: "sin memoria",
+    anMemory: "Memoria",
+    anLimit: "límite {mb} MB",
+    anTopPages: "Páginas",
+    anReferrers: "Referentes",
+    anCountries: "Países",
+    anDevices: "Dispositivos",
+    anBrowsers: "Navegadores",
+    anPeople: "Personas",
+    anPeopleNote: "Quién usó esta app: solo cuentas, nunca los visitantes de una app pública.",
+    anLastSeen: "visto {when}",
+    anDays: "{n} día(s)",
+    anNoData: "Aún no hay tráfico en este periodo.",
+    anVisitorsNote: "Un visitante se cuenta una vez al día por app, sin cookies: la misma persona dos días cuenta dos veces.",
+    anTable: "Ver como tabla",
+    anMs: "{n} ms",
+    anNone: "ninguno",
+    anRequestsN: "{n} peticiones",
+  },
+  de: {
+    navAnalytics: "Statistik",
+    anTimezone: "Tage beginnen um Mitternacht, {tz}.",
+    anApp: "App",
+    anOnline: "Gerade online",
+    anVisitorsToday: "Besucher heute",
+    anPagesToday: "Seiten heute",
+    anWeek: "Letzte 7 Tage",
+    anWakes: "Aufwachvorgänge",
+    anAwake: "Wach",
+    anErrors: "Serverfehler",
+    anNoApps: "Noch keine App.",
+    anRange24h: "24 Std.",
+    anRange7d: "7 Tage",
+    anRange30d: "30 Tage",
+    anVisitors: "Besucher",
+    anPages: "Seitenaufrufe",
+    anRequests: "Anfragen",
+    anP95: "95 % der Antworten unter",
+    anColdStart: "Kaltstart (Median)",
+    anVisitorsPer: "Besucher pro {unit}",
+    anHour: "Stunde",
+    anDay: "Tag",
+    anTimeline: "Wach oder schlafend",
+    anAwakeLegend: "wach",
+    anDeploy: "Bereitstellung",
+    anCrash: "Absturz",
+    anOom: "Speicher voll",
+    anMemory: "Speicher",
+    anLimit: "Limit {mb} MB",
+    anTopPages: "Seiten",
+    anReferrers: "Verweise",
+    anCountries: "Länder",
+    anDevices: "Geräte",
+    anBrowsers: "Browser",
+    anPeople: "Personen",
+    anPeopleNote: "Wer diese App genutzt hat: nur Konten, nie die Besucher einer öffentlichen App.",
+    anLastSeen: "zuletzt {when}",
+    anDays: "{n} Tag(e)",
+    anNoData: "In diesem Zeitraum noch kein Verkehr.",
+    anVisitorsNote: "Ein Besucher wird einmal pro Tag und App gezählt, ohne Cookies: dieselbe Person an zwei Tagen zählt doppelt.",
+    anTable: "Als Tabelle zeigen",
+    anMs: "{n} ms",
+    anNone: "keine",
+    anRequestsN: "{n} Anfragen",
+  },
+  it: {
+    navAnalytics: "Statistiche",
+    anTimezone: "I giorni iniziano a mezzanotte, {tz}.",
+    anApp: "App",
+    anOnline: "Online ora",
+    anVisitorsToday: "Visitatori oggi",
+    anPagesToday: "Pagine oggi",
+    anWeek: "Ultimi 7 giorni",
+    anWakes: "Risvegli",
+    anAwake: "Attiva",
+    anErrors: "Errori del server",
+    anNoApps: "Ancora nessuna app.",
+    anRange24h: "24 h",
+    anRange7d: "7 giorni",
+    anRange30d: "30 giorni",
+    anVisitors: "Visitatori",
+    anPages: "Pagine viste",
+    anRequests: "Richieste",
+    anP95: "Il 95% delle risposte sotto",
+    anColdStart: "Avvio a freddo (mediana)",
+    anVisitorsPer: "Visitatori per {unit}",
+    anHour: "ora",
+    anDay: "giorno",
+    anTimeline: "Attiva o in sospensione",
+    anAwakeLegend: "attiva",
+    anDeploy: "deploy",
+    anCrash: "crash",
+    anOom: "memoria esaurita",
+    anMemory: "Memoria",
+    anLimit: "limite {mb} MB",
+    anTopPages: "Pagine",
+    anReferrers: "Referenti",
+    anCountries: "Paesi",
+    anDevices: "Dispositivi",
+    anBrowsers: "Browser",
+    anPeople: "Persone",
+    anPeopleNote: "Chi ha usato questa app: solo account, mai i visitatori di un'app pubblica.",
+    anLastSeen: "visto {when}",
+    anDays: "{n} giorno/i",
+    anNoData: "Ancora nessun traffico in questo periodo.",
+    anVisitorsNote: "Un visitatore è contato una volta al giorno per app, senza cookie: la stessa persona in due giorni conta due volte.",
+    anTable: "Mostra come tabella",
+    anMs: "{n} ms",
+    anNone: "nessuno",
+    anRequestsN: "{n} richieste",
+  },
+  pt: {
+    navAnalytics: "Estatísticas",
+    anTimezone: "Os dias começam à meia-noite, {tz}.",
+    anApp: "App",
+    anOnline: "Online agora",
+    anVisitorsToday: "Visitantes hoje",
+    anPagesToday: "Páginas hoje",
+    anWeek: "Últimos 7 dias",
+    anWakes: "Despertares",
+    anAwake: "Acordada",
+    anErrors: "Erros do servidor",
+    anNoApps: "Ainda não há apps.",
+    anRange24h: "24 h",
+    anRange7d: "7 dias",
+    anRange30d: "30 dias",
+    anVisitors: "Visitantes",
+    anPages: "Páginas vistas",
+    anRequests: "Pedidos",
+    anP95: "95% das respostas em menos de",
+    anColdStart: "Arranque a frio (mediana)",
+    anVisitorsPer: "Visitantes por {unit}",
+    anHour: "hora",
+    anDay: "dia",
+    anTimeline: "Acordada ou a dormir",
+    anAwakeLegend: "acordada",
+    anDeploy: "publicação",
+    anCrash: "falha",
+    anOom: "sem memória",
+    anMemory: "Memória",
+    anLimit: "limite {mb} MB",
+    anTopPages: "Páginas",
+    anReferrers: "Referências",
+    anCountries: "Países",
+    anDevices: "Dispositivos",
+    anBrowsers: "Navegadores",
+    anPeople: "Pessoas",
+    anPeopleNote: "Quem usou esta app: só contas, nunca os visitantes de uma app pública.",
+    anLastSeen: "visto {when}",
+    anDays: "{n} dia(s)",
+    anNoData: "Ainda sem tráfego neste período.",
+    anVisitorsNote: "Um visitante é contado uma vez por dia e por app, sem cookies: a mesma pessoa em dois dias conta duas vezes.",
+    anTable: "Ver como tabela",
+    anMs: "{n} ms",
+    anNone: "nenhum",
+    anRequestsN: "{n} pedidos",
+  },
+  nl: {
+    navAnalytics: "Statistieken",
+    anTimezone: "Dagen beginnen om middernacht, {tz}.",
+    anApp: "App",
+    anOnline: "Nu online",
+    anVisitorsToday: "Bezoekers vandaag",
+    anPagesToday: "Pagina's vandaag",
+    anWeek: "Laatste 7 dagen",
+    anWakes: "Keren gewekt",
+    anAwake: "Wakker",
+    anErrors: "Serverfouten",
+    anNoApps: "Nog geen app.",
+    anRange24h: "24 u",
+    anRange7d: "7 dagen",
+    anRange30d: "30 dagen",
+    anVisitors: "Bezoekers",
+    anPages: "Paginaweergaven",
+    anRequests: "Verzoeken",
+    anP95: "95% van de antwoorden binnen",
+    anColdStart: "Koude start (mediaan)",
+    anVisitorsPer: "Bezoekers per {unit}",
+    anHour: "uur",
+    anDay: "dag",
+    anTimeline: "Wakker of slapend",
+    anAwakeLegend: "wakker",
+    anDeploy: "uitrol",
+    anCrash: "crash",
+    anOom: "geheugen vol",
+    anMemory: "Geheugen",
+    anLimit: "limiet {mb} MB",
+    anTopPages: "Pagina's",
+    anReferrers: "Verwijzers",
+    anCountries: "Landen",
+    anDevices: "Apparaten",
+    anBrowsers: "Browsers",
+    anPeople: "Personen",
+    anPeopleNote: "Wie deze app gebruikte: alleen accounts, nooit de bezoekers van een openbare app.",
+    anLastSeen: "gezien {when}",
+    anDays: "{n} dag(en)",
+    anNoData: "Nog geen verkeer in deze periode.",
+    anVisitorsNote: "Een bezoeker telt één keer per dag per app, zonder cookies: dezelfde persoon op twee dagen telt twee keer.",
+    anTable: "Als tabel tonen",
+    anMs: "{n} ms",
+    anNone: "geen",
+    anRequestsN: "{n} verzoeken",
+  },
+  ru: {
+    navAnalytics: "Аналитика",
+    anTimezone: "Сутки начинаются в полночь, {tz}.",
+    anApp: "Приложение",
+    anOnline: "Сейчас онлайн",
+    anVisitorsToday: "Посетители сегодня",
+    anPagesToday: "Страницы сегодня",
+    anWeek: "Последние 7 дней",
+    anWakes: "Пробуждения",
+    anAwake: "Активно",
+    anErrors: "Ошибки сервера",
+    anNoApps: "Приложений пока нет.",
+    anRange24h: "24 ч",
+    anRange7d: "7 дней",
+    anRange30d: "30 дней",
+    anVisitors: "Посетители",
+    anPages: "Просмотры",
+    anRequests: "Запросы",
+    anP95: "95% ответов быстрее",
+    anColdStart: "Холодный старт (медиана)",
+    anVisitorsPer: "Посетители за {unit}",
+    anHour: "час",
+    anDay: "день",
+    anTimeline: "Активно или спит",
+    anAwakeLegend: "активно",
+    anDeploy: "развёртывание",
+    anCrash: "сбой",
+    anOom: "нехватка памяти",
+    anMemory: "Память",
+    anLimit: "лимит {mb} МБ",
+    anTopPages: "Страницы",
+    anReferrers: "Источники",
+    anCountries: "Страны",
+    anDevices: "Устройства",
+    anBrowsers: "Браузеры",
+    anPeople: "Люди",
+    anPeopleNote: "Кто пользовался приложением: только аккаунты, никогда посетители публичного приложения.",
+    anLastSeen: "был(а) {when}",
+    anDays: "дней: {n}",
+    anNoData: "За этот период трафика ещё нет.",
+    anVisitorsNote: "Посетитель считается раз в день для каждого приложения, без cookie: один человек в два дня считается дважды.",
+    anTable: "Показать таблицей",
+    anMs: "{n} мс",
+    anNone: "нет",
+    anRequestsN: "запросов: {n}",
+  },
+  zh: {
+    navAnalytics: "统计",
+    anTimezone: "每天从午夜开始计算，时区 {tz}。",
+    anApp: "应用",
+    anOnline: "当前在线",
+    anVisitorsToday: "今日访客",
+    anPagesToday: "今日页面",
+    anWeek: "最近 7 天",
+    anWakes: "唤醒次数",
+    anAwake: "运行中",
+    anErrors: "服务器错误",
+    anNoApps: "还没有应用。",
+    anRange24h: "24 小时",
+    anRange7d: "7 天",
+    anRange30d: "30 天",
+    anVisitors: "访客",
+    anPages: "页面浏览",
+    anRequests: "请求",
+    anP95: "95% 的响应低于",
+    anColdStart: "冷启动（中位数）",
+    anVisitorsPer: "每{unit}访客",
+    anHour: "小时",
+    anDay: "天",
+    anTimeline: "运行或休眠",
+    anAwakeLegend: "运行",
+    anDeploy: "部署",
+    anCrash: "崩溃",
+    anOom: "内存耗尽",
+    anMemory: "内存",
+    anLimit: "上限 {mb} MB",
+    anTopPages: "页面",
+    anReferrers: "来源",
+    anCountries: "国家",
+    anDevices: "设备",
+    anBrowsers: "浏览器",
+    anPeople: "人员",
+    anPeopleNote: "谁使用了这个应用：仅限账户，从不包括公开应用的访客。",
+    anLastSeen: "最近 {when}",
+    anDays: "{n} 天",
+    anNoData: "这段时间还没有流量。",
+    anVisitorsNote: "每个访客在每个应用每天只计一次，不使用 cookie：同一个人两天会被计两次。",
+    anTable: "以表格显示",
+    anMs: "{n} 毫秒",
+    anNone: "无",
+    anRequestsN: "{n} 个请求",
+  },
+  ja: {
+    navAnalytics: "アナリティクス",
+    anTimezone: "1 日は {tz} の午前 0 時に始まります。",
+    anApp: "アプリ",
+    anOnline: "オンライン",
+    anVisitorsToday: "今日の訪問者",
+    anPagesToday: "今日のページ",
+    anWeek: "過去 7 日",
+    anWakes: "起動回数",
+    anAwake: "稼働",
+    anErrors: "サーバーエラー",
+    anNoApps: "まだアプリはありません。",
+    anRange24h: "24 時間",
+    anRange7d: "7 日",
+    anRange30d: "30 日",
+    anVisitors: "訪問者",
+    anPages: "ページビュー",
+    anRequests: "リクエスト",
+    anP95: "応答の 95% が",
+    anColdStart: "コールドスタート（中央値）",
+    anVisitorsPer: "{unit}あたりの訪問者",
+    anHour: "時間",
+    anDay: "日",
+    anTimeline: "稼働かスリープか",
+    anAwakeLegend: "稼働",
+    anDeploy: "デプロイ",
+    anCrash: "クラッシュ",
+    anOom: "メモリ不足",
+    anMemory: "メモリ",
+    anLimit: "上限 {mb} MB",
+    anTopPages: "ページ",
+    anReferrers: "参照元",
+    anCountries: "国",
+    anDevices: "デバイス",
+    anBrowsers: "ブラウザ",
+    anPeople: "人",
+    anPeopleNote: "このアプリを使った人: アカウントのみ。公開アプリの訪問者は含みません。",
+    anLastSeen: "最終 {when}",
+    anDays: "{n} 日",
+    anNoData: "この期間はまだトラフィックがありません。",
+    anVisitorsNote: "訪問者はアプリごとに 1 日 1 回、Cookie なしで数えます。同じ人が 2 日来れば 2 回です。",
+    anTable: "表で見る",
+    anMs: "{n} ms",
+    anNone: "なし",
+    anRequestsN: "{n} リクエスト",
+  },
+};
+
+for (const l of Object.keys(I18N_ANALYTICS)) Object.assign(I18N[l], I18N_ANALYTICS[l]);
+
 const SUPPORTED = new Set(LANGS.map(([c]) => c));
 const savedLang = (() => { try { return localStorage.getItem("nanodeploy.lang"); } catch { return null; } })();
 // English is the default; a saved choice wins if it is one we support
@@ -1690,7 +2202,7 @@ function renderStatic() {
   document.title = t("title");
   $("lang").value = LANG;
   document.querySelectorAll("[data-view]").forEach((b) => {
-    b.textContent = t(b.dataset.view === "apps" ? "navApps" : "navPeople");
+    b.textContent = { apps: t("navApps"), analytics: t("navAnalytics"), people: t("navPeople") }[b.dataset.view];
   });
   $("memory-label").textContent = t("memoryLabel");
   $("gauge-note").textContent = t("gaugeNote");
@@ -1708,6 +2220,7 @@ function setLang(lang) {
   renderStatic();
   renderApps();
   if (!$("view-people").hidden) renderPeople(state.peopleError);
+  if (!$("view-analytics").hidden) renderAnalytics();
 }
 
 /* ---------- state ---------- */
@@ -2545,6 +3058,246 @@ function bindPeople() {
   });
 }
 
+/* ---------- analytics ---------- */
+
+state.an = { overview: null, slug: null, range: "24h", detail: null, table: false };
+
+async function loadAnalytics() {
+  try {
+    state.an.overview = await api("/api/analytics");
+    if (!state.an.slug && state.an.overview.apps.length) state.an.slug = state.an.overview.apps[0].slug;
+    if (state.an.slug) state.an.detail = await api(`/api/apps/${state.an.slug}/analytics?range=${state.an.range}`);
+  } catch (err) {
+    toast(t("fail") + err.message);
+  }
+  renderAnalytics();
+}
+
+const fmt = (n) => (n == null ? "-" : Number(n).toLocaleString(LANG));
+const pct = (x) => (x == null ? "-" : Math.round(x * 100).toLocaleString(LANG) + " %");
+
+// Buckets with no traffic are not in the answer: lay out every bucket of the
+// range so a quiet hour shows as a gap, not as a missing column.
+function buckets(d) {
+  const tz = d.timezone;
+  const day = (ms) => new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date(ms));
+  const now = Date.now();
+  const out = [];
+  if (d.unit === "day") {
+    for (let i = 29; i >= 0; i--) out.push({ key: day(now - i * 864e5), at: now - i * 864e5 });
+  } else {
+    const hours = d.range === "24h" ? 24 : 168;
+    const top = Math.floor(now / 36e5) * 36e5;
+    for (let i = hours - 1; i >= 0; i--) out.push({ key: new Date(top - i * 36e5).toISOString().slice(0, 13), at: top - i * 36e5 });
+  }
+  const keyOf = (t) => (d.unit === "day" ? day(new Date(t).getTime()) : new Date(t).toISOString().slice(0, 13));
+  const by = new Map(d.series.map((s) => [keyOf(s.t), s]));
+  return out.map((b) => ({ ...b, ...(by.get(b.key) ?? { visitors: 0, pages: 0, requests: 0, errors: 0 }) }));
+}
+
+function bucketLabel(d, at, long) {
+  const opts = d.unit === "day"
+    ? { timeZone: d.timezone, day: "numeric", month: "short" }
+    : long ? { timeZone: d.timezone, weekday: "short", hour: "2-digit", minute: "2-digit" } : { timeZone: d.timezone, hour: "2-digit" };
+  return new Intl.DateTimeFormat(LANG, opts).format(new Date(at));
+}
+
+const niceMax = (v) => {
+  if (v <= 4) return 4;
+  const p = 10 ** Math.floor(Math.log10(v));
+  return [1, 2, 2.5, 5, 10].map((m) => m * p).find((m) => m >= v);
+};
+
+// One series, so no legend: the title names it. Bars are thin, rounded at the
+// data end, 2 px apart; the grid recedes; each bar has a hover target taller
+// than itself and a <title> for screen readers.
+function visitorsChart(d) {
+  const data = buckets(d);
+  const W = 640, H = 150, L = 30, B = 20, T = 8;
+  const max = niceMax(Math.max(...data.map((x) => x.visitors), 1));
+  const step = (W - L) / data.length;
+  const bw = Math.max(1, step - 2);
+  const y = (v) => T + (H - T - B) * (1 - v / max);
+  const grid = [0, max / 2, max].map((v) => `<line class="grid" x1="${L}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/>
+    <text class="axis" x="${L - 6}" y="${y(v) + 3}" text-anchor="end">${fmt(v)}</text>`).join("");
+  const every = d.unit === "day" ? 5 : d.range === "24h" ? 6 : 24;
+  const bars = data.map((b, i) => {
+    const x = L + i * step + 1;
+    const h = (H - T - B) - (y(b.visitors) - T);
+    const r = Math.min(4, bw / 2, h);
+    const top = y(b.visitors);
+    const base = H - B;
+    const shape = h <= 0 ? "" : `<path class="bar" d="M${x},${base} V${top + r} Q${x},${top} ${x + r},${top} H${x + bw - r} Q${x + bw},${top} ${x + bw},${top + r} V${base} Z"/>`;
+    const tip = `${bucketLabel(d, b.at, true)}\n${t("anVisitors")}: ${fmt(b.visitors)}\n${t("anPages")}: ${fmt(b.pages)}\n${t("anRequestsN", { n: fmt(b.requests) })}`;
+    const label = i % every === 0 ? `<text class="axis" x="${x}" y="${H - 5}">${esc(bucketLabel(d, b.at, false))}</text>` : "";
+    return `<g><rect class="hit" x="${L + i * step}" y="${T}" width="${step}" height="${H - T - B}" data-tip="${esc(tip)}"><title>${esc(tip)}</title></rect>${shape}${label}</g>`;
+  }).join("");
+  const table = state.an.table ? `<div class="an-scroll"><table class="an-table">
+      <tr><th></th><th>${t("anVisitors")}</th><th>${t("anPages")}</th><th>${t("anRequests")}</th><th>${t("anErrors")}</th></tr>
+      ${data.filter((b) => b.requests || b.visitors).map((b) => `<tr><td>${esc(bucketLabel(d, b.at, true))}</td><td>${fmt(b.visitors)}</td>
+        <td>${fmt(b.pages)}</td><td>${fmt(b.requests)}</td><td>${fmt(b.errors)}</td></tr>`).join("")}</table></div>` : "";
+  return `<div class="chart">
+    <div class="label" style="margin-bottom:6px">${esc(t("anVisitorsPer", { unit: d.unit === "day" ? t("anDay") : t("anHour") }))}</div>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t("anVisitorsPer", { unit: d.unit === "day" ? t("anDay") : t("anHour") }))}">${grid}${bars}</svg>
+    <button class="chip" data-antable aria-pressed="${state.an.table}" style="margin-top:8px">${t("anTable")}</button>
+    ${table}
+  </div>`;
+}
+
+// When the app was awake: ochre bands over a quiet track. Deploys are ink
+// ticks, crashes red ticks; each kind is named in the legend and the tooltip,
+// never by colour alone.
+function timelineChart(d) {
+  const tl = d.timeline;
+  const W = 640, H = 44, L = 0;
+  const x = (ms) => L + (W - L) * (ms - tl.from) / (tl.to - tl.from);
+  const span = (a) => `${bucketLabel(d, a.from, true)} → ${bucketLabel(d, a.to, true)}`;
+  const bands = tl.awake.map((a) => {
+    const w = Math.max(1.5, x(a.to) - x(a.from));
+    return `<rect x="${x(a.from)}" y="10" width="${w}" height="16" rx="2" fill="var(--live-fill)" data-tip="${esc(t("anAwakeLegend") + "\n" + span(a))}"><title>${esc(span(a))}</title></rect>`;
+  }).join("");
+  const markName = (k) => ({ deploy: t("anDeploy"), crash: t("anCrash"), oom: t("anOom") }[k]);
+  const marks = tl.markers.map((m) => {
+    const at = new Date(m.at).getTime();
+    const color = m.kind === "deploy" ? "var(--ink)" : "var(--danger)";
+    const tip = `${markName(m.kind)}${m.detail?.release ? " v" + m.detail.release : ""}\n${bucketLabel(d, at, true)}`;
+    return `<g data-tip="${esc(tip)}"><rect x="${x(at) - 5}" y="2" width="10" height="32" fill="transparent"/><line x1="${x(at)}" x2="${x(at)}" y1="4" y2="32" stroke="${color}" stroke-width="2"/>
+      ${m.kind === "deploy" ? "" : `<text x="${x(at)}" y="${H - 1}" text-anchor="middle" font-size="10" fill="var(--danger)">!</text>`}<title>${esc(tip)}</title></g>`;
+  }).join("");
+  const ticks = [0, 0.5, 1].map((f) => {
+    const at = tl.from + f * (tl.to - tl.from);
+    return `<text class="axis" x="${x(at)}" y="${H - 1}" text-anchor="${f === 0 ? "start" : f === 1 ? "end" : "middle"}">${esc(bucketLabel(d, at, true))}</text>`;
+  }).join("");
+  return `<div class="chart">
+    <div class="label" style="margin-bottom:6px">${t("anTimeline")}</div>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t("anTimeline"))}">
+      <rect x="0" y="16" width="${W}" height="4" rx="2" fill="var(--cell)"/>${bands}${marks}${ticks}</svg>
+    <div class="legend"><span><i style="background:var(--live-fill)"></i>${t("anAwakeLegend")}</span>
+      <span><i style="background:var(--ink);width:2px"></i>${t("anDeploy")}</span>
+      <span><i style="background:var(--danger);width:2px"></i>${t("anCrash")}, ${t("anOom")} (!)</span></div>
+  </div>`;
+}
+
+// Memory against the container's hard limit: the gap is the headroom.
+function memoryChart(d) {
+  // a line needs two points: right after a deploy there is only one sample
+  if (d.memory.length < 2) return "";
+  const W = 640, H = 90, L = 30, T = 14, B = 6;
+  const max = Math.max(d.limit, ...d.memory.map((m) => m.mem));
+  const xs = d.memory.map((m) => new Date(m.t).getTime());
+  const x0 = Math.min(...xs), x1 = Math.max(...xs, x0 + 1);
+  const x = (ms) => L + (W - L) * (ms - x0) / (x1 - x0);
+  const y = (v) => T + (H - T - B) * (1 - v / max);
+  const path = d.memory.map((m, i) => `${i ? "L" : "M"}${x(new Date(m.t).getTime()).toFixed(1)},${y(m.mem).toFixed(1)}`).join(" ");
+  const last = d.memory[d.memory.length - 1];
+  return `<div class="chart">
+    <div class="label" style="margin-bottom:6px">${t("anMemory")} · ${mb(last.mem)} ${t("mbUnit")}</div>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t("anMemory"))}">
+      <line class="grid" x1="${L}" x2="${W}" y1="${y(d.limit)}" y2="${y(d.limit)}" stroke-dasharray="4 4"/>
+      <text class="axis" x="${W}" y="${y(d.limit) - 4}" text-anchor="end">${esc(t("anLimit", { mb: Math.round(d.limit / 1048576) }))}</text>
+      <path d="${path}" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linejoin="round"/>
+      ${d.memory.map((m) => `<circle cx="${x(new Date(m.t).getTime())}" cy="${y(m.mem)}" r="6" fill="transparent"
+        data-tip="${esc(bucketLabel(d, new Date(m.t).getTime(), true) + "\n" + mb(m.mem) + " " + t("mbUnit"))}"/>`).join("")}
+    </svg>
+  </div>`;
+}
+
+function topList(title, rows) {
+  const max = Math.max(...rows.map((r) => r.n), 1);
+  return `<div><div class="label" style="margin-bottom:6px">${title}</div>
+    ${rows.length ? rows.map((r) => `<div class="toprow"><span>${esc(r.key)}</span><span class="num">${fmt(r.n)}</span>
+      <b><i style="width:${(100 * r.n / max).toFixed(1)}%"></i></b></div>`).join("") : `<p class="note" style="margin:0">${t("anNone")}</p>`}</div>`;
+}
+
+// tiny 7-day bars in the overview: shape only, the number is in the next column
+function spark(values) {
+  const max = Math.max(...values, 1);
+  return `<svg width="56" height="16" viewBox="0 0 56 16" aria-hidden="true">${values.map((v, i) => {
+    const h = v ? Math.max(2, 14 * v / max) : 0;
+    return h ? `<rect x="${i * 8}" y="${16 - h}" width="6" height="${h}" rx="1" fill="var(--ink)"/>` : `<rect x="${i * 8}" y="15" width="6" height="1" fill="var(--rule)"/>`;
+  }).join("")}</svg>`;
+}
+
+function renderAnalytics() {
+  const view = $("view-analytics");
+  const o = state.an.overview;
+  if (!o) return;
+  if (!o.apps.length) {
+    view.innerHTML = `<p class="empty">${t("anNoApps")}</p>`;
+    return;
+  }
+  const rows = o.apps.map((a) => `<tr data-an="${a.slug}" aria-selected="${a.slug === state.an.slug}" tabindex="0">
+      <td>${esc(a.name)}</td><td>${fmt(a.online)}</td><td>${fmt(a.visitorsToday)}</td><td>${fmt(a.pagesToday)}</td>
+      <td>${spark(a.week)}</td><td>${fmt(a.wakesToday)}</td><td>${a.awakeShare == null ? "-" : pct(a.awakeShare)}</td>
+      <td>${a.errorsToday ? `<span style="color:var(--danger)">${fmt(a.errorsToday)}</span>` : "0"}</td></tr>`).join("");
+  const d = state.an.detail;
+  let detail = "";
+  if (d) {
+    const tt = d.totals;
+    const tiles = [
+      [t("anVisitors"), fmt(tt.visitors)], [t("anPages"), fmt(tt.pages)], [t("anOnline"), fmt(d.online)],
+      [t("anRequests"), fmt(tt.requests)], [t("anErrors"), fmt(tt.errors)],
+      [t("anP95"), tt.p95 == null ? "-" : t("anMs", { n: fmt(tt.p95) })],
+      [t("anWakes"), fmt(tt.wakes)], [t("anColdStart"), tt.coldStartMedian == null ? "-" : t("anMs", { n: fmt(tt.coldStartMedian) })],
+    ].map(([k, v]) => `<div class="tile"><span class="label">${esc(k)}</span><span class="big">${esc(v)}</span></div>`).join("");
+    const people = d.people ? `<div class="label" style="margin:8px 0 6px">${t("anPeople")}</div>
+      <p class="note" style="margin:0 0 8px">${t("anPeopleNote")}</p>
+      ${d.people.length ? `<div class="an-scroll"><table class="an-table">${d.people.map((p) => `<tr><td>${esc(p.name)}</td>
+        <td>${esc(t("anLastSeen", { when: ago(p.last_seen) }))}</td><td>${esc(t("anDays", { n: p.days }))}</td>
+        <td>${esc(t("anRequestsN", { n: fmt(p.requests) }))}</td></tr>`).join("")}</table></div>` : `<p class="note">${t("anNone")}</p>`}` : "";
+    detail = `<div class="an-head"><h2>${esc(d.name)}</h2>
+        <div class="seg" role="group">${[["24h", t("anRange24h")], ["7d", t("anRange7d")], ["30d", t("anRange30d")]].map(([r, label]) => `<button data-anrange="${r}" aria-pressed="${r === d.range}">${label}</button>`).join("")}</div></div>
+      <div class="tiles">${tiles}</div>
+      ${tt.requests || tt.visitors ? visitorsChart(d) : `<p class="note">${t("anNoData")}</p>`}
+      ${d.timeline.awake.length || d.timeline.markers.length ? timelineChart(d) : ""}
+      ${memoryChart(d)}
+      <div class="tops">${topList(t("anTopPages"), d.top.pages)}${topList(t("anReferrers"), d.top.referrers)}
+        ${topList(t("anCountries"), d.top.countries)}${topList(t("anDevices"), d.top.devices)}${topList(t("anBrowsers"), d.top.browsers)}</div>
+      ${people}
+      <p class="note">${t("anVisitorsNote")}</p>`;
+  }
+  view.innerHTML = `<p class="note" style="margin:0 0 16px">${esc(t("anTimezone", { tz: o.timezone }))}</p>
+    <div class="an-scroll"><table class="an-table">
+      <tr><th>${t("anApp")}</th><th>${t("anOnline")}</th><th>${t("anVisitorsToday")}</th><th>${t("anPagesToday")}</th>
+        <th>${t("anWeek")}</th><th>${t("anWakes")}</th><th>${t("anAwake")}</th><th>${t("anErrors")}</th></tr>
+      ${rows}</table></div>
+    ${detail}`;
+  bindAnalytics();
+}
+
+function bindAnalytics() {
+  document.querySelectorAll("[data-an]").forEach((el) => {
+    const pick = async () => {
+      state.an.slug = el.dataset.an;
+      state.an.detail = await api(`/api/apps/${state.an.slug}/analytics?range=${state.an.range}`).catch(() => null);
+      renderAnalytics();
+    };
+    el.onclick = pick;
+    el.onkeydown = (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), pick());
+  });
+  document.querySelectorAll("[data-anrange]").forEach((el) => {
+    el.onclick = async () => {
+      state.an.range = el.dataset.anrange;
+      state.an.detail = await api(`/api/apps/${state.an.slug}/analytics?range=${state.an.range}`).catch(() => null);
+      renderAnalytics();
+    };
+  });
+  const tb = document.querySelector("[data-antable]");
+  if (tb) tb.onclick = () => { state.an.table = !state.an.table; renderAnalytics(); };
+}
+
+// one tooltip for every chart: follows the pointer, reads data-tip
+document.addEventListener("pointermove", (e) => {
+  const tip = $("an-tip");
+  const el = e.target.closest?.("#view-analytics [data-tip]");
+  if (!el) return void (tip.hidden = true);
+  tip.textContent = el.dataset.tip;
+  tip.hidden = false;
+  const x = Math.min(e.clientX + 12, innerWidth - tip.offsetWidth - 8);
+  tip.style.left = x + "px";
+  tip.style.top = Math.max(8, e.clientY - tip.offsetHeight - 12) + "px";
+});
+
 /* ---------- deploy ---------- */
 
 // The global drop zone: a new app goes live at once; a bundle for an existing
@@ -2594,8 +3347,10 @@ document.querySelectorAll("[data-view]").forEach((tab) => {
     document.querySelectorAll("[data-view]").forEach((other) =>
       other.setAttribute("aria-selected", String(other === tab)));
     $("view-apps").hidden = tab.dataset.view !== "apps";
+    $("view-analytics").hidden = tab.dataset.view !== "analytics";
     $("view-people").hidden = tab.dataset.view !== "people";
     if (tab.dataset.view === "people") loadPeople();
+    if (tab.dataset.view === "analytics") loadAnalytics();
   };
 });
 
@@ -2603,6 +3358,7 @@ function renderDenied() {
   document.querySelector("nav").hidden = true;
   $("view-apps").hidden = true;
   $("view-people").hidden = true;
+  $("view-analytics").hidden = true;
   const view = $("view-denied");
   view.hidden = false;
   view.innerHTML = `<div class="warn">
@@ -2638,6 +3394,10 @@ function editingDetail() {
 setInterval(() => {
   if (state.me && state.me.admin !== false && !editingDetail()) loadApps();
 }, 6000);
+// "online now" moves by the minute: refresh the analytics while they are shown
+setInterval(() => {
+  if (!$("view-analytics").hidden) loadAnalytics();
+}, 30000);
 </script>
 </body>
 </html>

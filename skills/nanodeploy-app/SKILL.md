@@ -177,6 +177,13 @@ signed-in one does. Every route that needs a user therefore answers 401 when
 `tryGetUser` returns null; that is what avoids a cascade of 500s. `getUser(c)`,
 which throws, is only justified in an app that will always stay private.
 
+### Page views
+
+The platform counts visits on its own, from the gateway's log: never add an
+analytics script, a tracking pixel or a third-party SDK. In a single-page app,
+call `trackPage()` from `src/analytics.ts` after each client-side route change
+(not on the first render, which the gateway already counted).
+
 ### Public app, managed by a few people
 
 The common case: anyone can read and post, a few trusted people moderate or
