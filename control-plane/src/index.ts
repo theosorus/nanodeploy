@@ -2,16 +2,15 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import type { Context, Next } from "hono";
-import AdmZip from "adm-zip";
 import { timingSafeEqual } from "node:crypto";
-import { readFile, rm, mkdir, mkdtemp, readdir, rename, stat } from "node:fs/promises";
-import { lookup } from "node:dns/promises";
+import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { parseManifest, RESERVED_SLUGS } from "./manifest.js";
 import * as store from "./db.js";
 import * as dk from "./docker.js";
 import { writeSite, applySite, dropSite } from "./caddy.js";
 import * as accounts from "./accounts.js";
+import * as releases from "./releases.js";
 
 const APPS_DIR = process.env.APPS_DIR ?? "/srv/apps";
 const TOKEN = process.env.DEPLOY_TOKEN ?? "";
@@ -31,10 +30,6 @@ if (TOKEN.length < 24) {
 type Env = { Variables: { deployKeySlug?: string } };
 const app = new Hono<Env>();
 
-// upload sanity: disk and ram are constrained on the target machine
-const MAX_BUNDLE_BYTES = 100 * 1024 * 1024;
-const MAX_BUNDLE_UNPACKED = 512 * 1024 * 1024;
-const MAX_BUNDLE_ENTRIES = 5000;
 
 const SLUG_RE = /^[a-z][a-z0-9-]{1,30}$/;
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
@@ -49,14 +44,7 @@ await store.initGate();
 await accounts.importFromPocketId();
 await accounts.bootstrapLinks();
 
-// A deploy is prepared here, next to the live app, and only moved into place
-// once the image is built and the migrations ran. Inside APPS_DIR so the final
-// move is a rename on the same filesystem. The dot keeps it out of slug space
-// (slugs start with a letter), so caddy never serves anything from it.
-const STAGING_DIR = join(APPS_DIR, ".staging");
-// leftovers of a deploy interrupted by a crash or a power cut
-await rm(STAGING_DIR, { recursive: true, force: true });
-await mkdir(STAGING_DIR, { recursive: true });
+await releases.init();
 
 /* ---------- auth ---------- */
 
@@ -85,6 +73,10 @@ const deployKeyRoutes = (c: Context, slug: string) => {
   const { method, path } = c.req;
   if (method === "POST" && path === "/api/deploy") return true; // slug checked there
   if (method === "GET" && path === `/api/apps/${slug}/logs`) return true;
+  // a key can see its app's versions and go back to one: an agent that broke
+  // the app can undo it without anyone's help
+  if (method === "GET" && path === `/api/apps/${slug}/releases`) return true;
+  if (method === "POST" && new RegExp(`^/api/apps/${slug}/releases/\\d+/rollback$`).test(path)) return true;
   if (method === "GET" && path === "/api/me") return true;
   return false;
 };
@@ -180,19 +172,6 @@ async function runLocked<T>(slug: string, fn: () => Promise<T>): Promise<T> {
   }
 }
 
-// A route caddy serves is useless if the name never reaches the machine. When
-// the tunnel or the DNS zone has no wildcard, a freshly deployed app fails as a
-// browser "server not found" with nothing anywhere to explain it, so say it at
-// deploy time instead.
-async function hostResolves(host: string): Promise<boolean> {
-  try {
-    await lookup(host);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 const slugParam = (c: Context): string | null => {
   const slug = c.req.param("slug") as string;
   return SLUG_RE.test(slug) ? slug : null;
@@ -208,255 +187,175 @@ async function jsonBody<T>(c: Context): Promise<T | null> {
   }
 }
 
-/* ---------- deploy ---------- */
+/* ---------- deploy: every bundle becomes a numbered release ---------- */
 
-app.post("/api/deploy", async (c) => {
+// Who did it, for the release history: a person, a deploy key, or the token.
+function actor(c: Context<Env>): string {
+  const key = c.get("deployKeySlug");
+  if (key) return "deploy key";
+  if (tokenOk(c)) return "deploy token";
+  const user = c.req.header("remote-user");
+  return user ? Buffer.from(user, "latin1").toString("utf8") : "console";
+}
+
+// The upload, read once and checked before anything touches the disk. On a 4 GB
+// machine, holding two copies of a 100 MB bundle while apps are running is the
+// difference between a deploy and an OOM.
+async function readUpload(c: Context<Env>) {
   const body = await c.req.parseBody();
   const bundle = body["bundle"];
-  if (!(bundle instanceof File)) return c.json({ error: "missing bundle" }, 400);
-  if (bundle.size > MAX_BUNDLE_BYTES) {
-    return c.json({ error: "bundle too large" }, 413);
-  }
-
-  // read the upload once: on a 4 GB machine, holding two copies of a 100 MB
-  // bundle while apps are running is the difference between a deploy and an OOM
+  if (!(bundle instanceof File)) return { error: "missing bundle", status: 400 as const };
+  if (bundle.size > releases.MAX_BUNDLE_BYTES) return { error: "bundle too large", status: 413 as const };
   const bytes = Buffer.from(await bundle.arrayBuffer());
-
   let manifest;
   try {
-    const zip = new AdmZip(bytes);
-    const entries = zip.getEntries();
-    if (entries.length === 0) return c.json({ error: "empty bundle" }, 400);
-    if (entries.length > MAX_BUNDLE_ENTRIES) {
-      return c.json({ error: "too many files in bundle" }, 400);
-    }
-    const unpacked = entries.reduce((sum, e) => sum + (e.header.size ?? 0), 0);
-    if (unpacked > MAX_BUNDLE_UNPACKED) return c.json({ error: "bundle too large" }, 413);
-    const manifests = entries.filter((e) => !e.isDirectory && e.entryName === "app.yaml");
-    if (manifests.length !== 1) {
-      return c.json({ error: "bundle must contain exactly one top-level app.yaml" }, 400);
-    }
-    manifest = parseManifest(zip.readAsText(manifests[0]));
+    manifest = releases.readBundle(bytes);
   } catch (err: any) {
-    return c.json({ error: err?.message ?? "invalid bundle" }, 400);
+    return { error: err?.message ?? "invalid bundle", status: 400 as const };
   }
-
-  const { slug } = manifest;
   const keySlug = c.get("deployKeySlug");
-  if (keySlug && keySlug !== slug) {
-    return c.json(
-      { error: `this deploy key is for ${keySlug}, the bundle's app.yaml says ${slug}` },
-      403,
-    );
+  if (keySlug && keySlug !== manifest.slug) {
+    return { error: `this deploy key is for ${keySlug}, the bundle's app.yaml says ${manifest.slug}`, status: 403 as const };
   }
-  return runLocked(slug, async () => {
+  const text = (k: string) => (typeof body[k] === "string" ? String(body[k]) : undefined);
+  return {
+    bytes,
+    manifest,
+    meta: {
+      message: text("message"),
+      commitSha: text("commit_sha"),
+      commitMessage: text("commit_message"),
+      createdBy: actor(c),
+    },
+  };
+}
+
+function failure(c: Context, err: any) {
+  return c.json(
+    {
+      error: err?.message ?? "deploy failed",
+      note: err?.untouched ? "the running version was left untouched" : undefined,
+      log: err?.log,
+    },
+    500,
+  );
+}
+
+// One step, for the CLI, CI jobs and agents: stage and go live.
+app.post("/api/deploy", async (c) => {
+  const up = await readUpload(c);
+  if ("error" in up) return c.json({ error: up.error }, up.status);
+  const source = c.get("deployKeySlug") || tokenOk(c) ? "cli" : "upload";
+  return runLocked(up.manifest.slug, async () => {
+    let staged;
     try {
-      return await c.json(await doDeploy(manifest, bytes));
+      staged = await releases.stage(up.manifest, up.bytes, { ...up.meta, source });
     } catch (err: any) {
-      // an image built for a deploy that then failed is referenced by nothing
-      await pruneAll();
-      return c.json(
-        {
-          error: err?.message ?? "deploy failed",
-          // only true when it failed before the swap: after it, the new files
-          // are live and the container may be half replaced
-          note: err?.beforeSwap ? "the running version was left untouched" : undefined,
-        },
-        500,
-      );
+      return c.json({ error: err?.message ?? "invalid bundle" }, 400);
+    }
+    try {
+      return c.json(await releases.promote(staged.id));
+    } catch (err) {
+      return failure(c, err);
     }
   });
 });
 
-async function doDeploy(manifest: ReturnType<typeof parseManifest>, zip: Buffer) {
-  const dir = join(APPS_DIR, manifest.slug);
-  // Everything up to the swap happens in a staging directory: the live app keeps
-  // serving its files the whole time, and a deploy that fails anywhere before the
-  // swap (bad bundle, image build error, failed migration) leaves it untouched.
-  // It used to delete the live directory first, so the site was broken for the
-  // whole build, and a failed build left the new frontend live over the old
-  // backend, with no server.js on disk to rebuild the image from.
-  const staging = await mkdtemp(join(STAGING_DIR, `${manifest.slug}-`));
-  const progress = { swapped: false };
-  try {
-    return await deployFromStaging(manifest, zip, staging, dir, progress);
-  } catch (err: any) {
-    if (!progress.swapped && err && typeof err === "object") err.beforeSwap = true;
-    throw err;
-  } finally {
-    // gone already when the swap succeeded
-    await rm(staging, { recursive: true, force: true });
+// Two steps, for the dashboard: put the files next to the live version and say
+// what would change, then go live once someone has read it. ?expect=<slug>
+// refuses a bundle for another app, so dropping the wrong zip on an app's panel
+// cannot replace a different app.
+app.post("/api/releases", async (c) => {
+  const up = await readUpload(c);
+  if ("error" in up) return c.json({ error: up.error }, up.status);
+  const expect = c.req.query("expect");
+  if (expect && expect !== up.manifest.slug) {
+    return c.json({ error: `this bundle is for "${up.manifest.slug}", not "${expect}"` }, 400);
   }
-}
-
-// Moves the staged bundle into place. Two renames on one filesystem: the window
-// where the directory is missing lasts microseconds, not the length of a build.
-async function swapInto(staging: string, dir: string) {
-  const old = `${staging}.previous`;
-  const hadOld = await rename(dir, old).then(
-    () => true,
-    (err) => {
-      if (err?.code === "ENOENT") return false;
-      throw err;
-    },
-  );
-  try {
-    await rename(staging, dir);
-  } catch (err) {
-    if (hadOld) await rename(old, dir);
-    throw err;
-  }
-  if (hadOld) await rm(old, { recursive: true, force: true });
-}
-
-async function deployFromStaging(
-  manifest: ReturnType<typeof parseManifest>,
-  zip: Buffer,
-  staging: string,
-  dir: string,
-  progress: { swapped: boolean },
-) {
-  new AdmZip(zip).extractAllTo(staging, true);
-  // zip headers can lie about sizes: measure the extracted bundle for real
-  const { bytes, files } = await dirStats(staging);
-  if (files > MAX_BUNDLE_ENTRIES || bytes > MAX_BUNDLE_UNPACKED) {
-    throw new Error("bundle exceeds the unpacked size limits");
-  }
-
-  const log: string[] = [];
-  const env: Record<string, string> = {};
-
-  const previous = await store.getApp(manifest.slug);
-  for (const key of manifest.env) {
-    const value = previous?.env?.[key];
-    if (value) env[key] = value;
-    else log.push(`env ${key} is declared but not set yet, set it in the dashboard`);
-  }
-
-  // The manifest only sets the access mode of a new app. After that the
-  // dashboard owns it: a redeploy used to put back whatever app.yaml said, so an
-  // app made private in the dashboard silently went public again on the next
-  // deploy. Say so when the two disagree instead of overwriting.
-  let access = manifest.access;
-  let groups = manifest.groups;
-  if (previous) {
-    access = previous.access as typeof access;
-    groups = previous.groups;
-    const sameGroups =
-      previous.groups.length === manifest.groups.length &&
-      previous.groups.every((g) => manifest.groups.includes(g));
-    if (previous.access !== manifest.access || (manifest.access === "groups" && !sameGroups)) {
-      log.push(
-        `access kept as "${previous.access}" (set in the dashboard), app.yaml says ` +
-          `"${manifest.access}": change it in the dashboard if you meant it`,
-      );
+  return runLocked(up.manifest.slug, async () => {
+    try {
+      const staged = await releases.stage(up.manifest, up.bytes, { ...up.meta, source: "upload" });
+      return c.json({ release: { id: staged.id, number: staged.number, slug: staged.slug }, diff: await releases.diff(staged) });
+    } catch (err: any) {
+      return c.json({ error: err?.message ?? "invalid bundle" }, 400);
     }
-  }
+  });
+});
 
-  // The image is built before any migration: a build that fails must not leave
-  // the database migrated for code that never shipped.
-  let image: string | null = previous?.image ?? null;
-  if (manifest.backend) {
-    image = await dk.buildImage(staging, manifest.slug, manifest.backend.entry, manifest.backend.port);
-  }
+const releaseParam = async (c: Context) => {
+  const id = c.req.param("id") as string;
+  return /^\d{1,18}$/.test(id) ? releases.getRelease(id) : null;
+};
 
-  let dbUser: string | null = previous?.db_user ?? null;
-  let dbPassword: string | null = previous?.db_password ?? null;
-
-  if (manifest.database.enabled) {
-    const creds = await store.provisionDatabase(manifest.slug);
-    dbUser = creds.user;
-    dbPassword = creds.password;
-    env.DATABASE_URL = store.databaseUrl(creds.user, creds.password);
-    // parseManifest already jailed the migrations path inside the bundle
-    const applied = await store.runMigrations(join(staging, manifest.database.migrations), env.DATABASE_URL);
-    log.push(applied.length ? `applied ${applied.length} migration(s)` : "no new migrations");
-  }
-
-  // point of no return: the new files go live
-  await swapInto(staging, dir);
-  progress.swapped = true;
-
-  if (manifest.backend && image) {
-    await dk.runContainer({
-      slug: manifest.slug,
-      image,
-      port: manifest.backend.port,
-      idleTimeout: manifest.idle.timeout,
-      warm: manifest.idle.warm,
-      env,
-    });
-    // a cold app goes straight back to sleep: a running container sablier did
-    // not start would have no session and never scale back down on its own.
-    if (!manifest.idle.warm) await dk.stopContainer(manifest.slug);
-    log.push(`backend container ${dk.containerName(manifest.slug)} created`);
-  }
-
-  const row = {
-    slug: manifest.slug,
-    name: manifest.name,
-    access,
-    groups,
-    port: manifest.backend?.port ?? null,
-    idle_timeout: manifest.idle.timeout,
-    warm: manifest.idle.warm,
-    db_user: dbUser,
-    db_password: dbPassword,
-    env,
-    image,
-    declared_env: manifest.env,
-    roles: manifest.roles,
-    protect: manifest.protect,
-  };
-  await store.upsertApp(row as any);
-  await store.touchDeploy(manifest.slug);
-  const routed = await applySite((await store.getApp(manifest.slug))!);
-  log.push(
-    routed
-      ? "caddy route is live"
-      : "WARNING: caddy refused the new route and the previous config was restored, the app is not reachable",
-  );
-  await pruneAll();
-
-  const host = `${manifest.slug}.${process.env.APPS_DOMAIN}`;
-  if (!(await hostResolves(host))) {
-    log.push(
-      `WARNING: ${host} does not resolve. The app is running but nothing on the ` +
-        `internet can reach it: add a wildcard *.${process.env.APPS_DOMAIN} ` +
-        `hostname to your tunnel or DNS zone.`,
-    );
-  }
-
-  return {
-    ok: true,
-    url: `https://${host}`,
-    log,
-  };
-}
-
-async function dirStats(dir: string): Promise<{ bytes: number; files: number }> {
-  let bytes = 0;
-  let files = 0;
-  const stack = [dir];
-  while (stack.length) {
-    const current = stack.pop()!;
-    for (const e of await readdir(current, { withFileTypes: true })) {
-      const p = join(current, e.name);
-      if (e.isDirectory()) stack.push(p);
-      else if (e.isFile()) {
-        bytes += (await stat(p)).size;
-        files++;
-      }
+app.post("/api/releases/:id/promote", async (c) => {
+  const r = await releaseParam(c);
+  if (!r) return c.json({ error: "unknown release" }, 404);
+  return runLocked(r.slug, async () => {
+    try {
+      return c.json(await releases.promote(r.id));
+    } catch (err) {
+      return failure(c, err);
     }
-  }
-  return { bytes, files };
-}
+  });
+});
+
+app.post("/api/releases/:id/discard", async (c) => {
+  const r = await releaseParam(c);
+  if (!r) return c.json({ error: "unknown release" }, 404);
+  return runLocked(r.slug, async () => c.json({ ok: await releases.discard(r.id) }));
+});
+
+app.get("/api/apps/:slug/releases", async (c) => {
+  const slug = slugParam(c);
+  if (!slug) return c.json({ error: "unknown app" }, 404);
+  const history = await releases.listReleases(slug, 500);
+  const shown = history.filter((r) => r.status !== "staged").slice(0, 20);
+  const rows = await Promise.all(
+    shown.map(async (r) => ({
+      id: r.id,
+      number: r.number,
+      dir: r.dir,
+      source: r.source,
+      message: r.message,
+      commitSha: r.commit_sha,
+      commitMessage: r.commit_message,
+      status: r.status,
+      createdBy: r.created_by,
+      createdAt: r.created_at,
+      migrations: r.migrations_applied,
+      rollbackOf: r.rollback_of ? history.find((h) => h.id === r.rollback_of)?.number ?? null : null,
+      rollback: r.status === "superseded" ? await releases.rollbackInfo(r, history) : null,
+    })),
+  );
+  // a snapshot path says where app data sits on disk: the dashboard only needs
+  // to know whether one exists
+  return c.json({
+    releases: rows.map((r) => ({ ...r, rollback: r.rollback && { ...r.rollback, snapshot: Boolean(r.rollback.snapshot) } })),
+  });
+});
+
+app.get("/api/apps/:slug/releases/:id", async (c) => {
+  const r = await releaseParam(c);
+  if (!r || r.slug !== c.req.param("slug")) return c.json({ error: "unknown release" }, 404);
+  return c.json({ number: r.number, status: r.status, log: r.log.split("\n").filter(Boolean) });
+});
+
+app.post("/api/apps/:slug/releases/:id/rollback", async (c) => {
+  const slug = slugParam(c);
+  const r = await releaseParam(c);
+  if (!slug || !r || r.slug !== slug) return c.json({ error: "unknown release" }, 404);
+  const body = (await jsonBody<{ database?: boolean }>(c)) ?? {};
+  return runLocked(slug, async () => {
+    try {
+      return c.json(await releases.rollback(slug, r.id, body.database === true, actor(c)));
+    } catch (err: any) {
+      return c.json({ error: err?.message ?? "rollback failed" }, 400);
+    }
+  });
+});
 
 async function pruneAll() {
-  const images = await store.listApps();
-  await dk
-    .pruneImages(new Set(images.map((a) => a.image).filter(Boolean) as string[]))
-    .catch((err) => console.error("image prune failed", err));
+  await dk.pruneImages(await releases.imagesToKeep()).catch((err) => console.error("image prune failed", err));
 }
 
 /* ---------- reconcile ---------- */
@@ -467,15 +366,11 @@ async function pruneAll() {
 // Images are rebuilt from the stored bundle when a wiped data-root took them
 // with it: dist/ and server.js live on disk in APPS_DIR, docker only had copies.
 async function rebuildImage(a: store.AppRow): Promise<string> {
-  const raw = await readFile(join(APPS_DIR, a.slug, "app.yaml"), "utf8");
-  const manifest = parseManifest(raw);
+  const dir = await releases.liveDir(a.slug);
+  const manifest = parseManifest(await readFile(join(dir, "app.yaml"), "utf8"));
   if (!manifest.backend) throw new Error("stored bundle has no backend to rebuild");
-  return dk.buildImage(
-    join(APPS_DIR, a.slug),
-    a.slug,
-    manifest.backend.entry,
-    manifest.backend.port,
-  );
+  // same tag as the one recorded: the release keeps its image name
+  return dk.buildImage(dir, a.image ?? `nanodeploy/${a.slug}:rebuilt`, manifest.backend.entry, manifest.backend.port);
 }
 
 async function reconcile() {
@@ -487,6 +382,8 @@ async function reconcile() {
         // row, and acting on the stale snapshot would roll it back
         const fresh = await store.getApp(a.slug);
         if (!fresh) return;
+        // apps deployed before releases existed move to the new layout once
+        await releases.adoptLegacy(fresh);
         await writeSite(fresh);
         if (!fresh.image || !fresh.port) return;
         const status = await dk.appStatus(fresh.slug);
@@ -527,10 +424,7 @@ async function reconcile() {
     const reloaded = await dk.reloadCaddy().catch(() => false);
     if (!reloaded) console.error("reconcile: caddy reload failed, routes may be stale");
     // re-list: a rebuild above changed an image tag, the keep set must be fresh
-    const current = await store.listApps();
-    await dk
-      .pruneImages(new Set(current.map((a) => a.image).filter(Boolean) as string[]))
-      .catch(() => {});
+    await pruneAll();
   }
   return apps.length;
 }
@@ -541,6 +435,11 @@ app.post("/api/reconcile", async (c) => c.json({ ok: true, apps: await reconcile
 
 app.get("/api/apps", async (c) => {
   const apps = await store.listApps();
+  const live = new Map(
+    (await store.sql<{ slug: string; number: number }[]>`select slug, number from releases where status = 'live'`).map(
+      (r) => [r.slug, r.number],
+    ),
+  );
   const withStatus = await Promise.all(
     apps.map(async (a) => {
       // platform-managed keys (DATABASE_URL) are not user-settable nor listed
@@ -566,6 +465,7 @@ app.get("/api/apps", async (c) => {
         // making: on this platform most apps are asleep most of the time
         memory: status === "awake" ? await dk.appMemory(a.slug) : null,
         deployedAt: a.deployed_at,
+        release: live.get(a.slug) ?? null,
       };
     }),
   );
@@ -662,6 +562,7 @@ app.delete("/api/apps/:slug", async (c) => {
     // a forgotten key must not be able to bring a deleted app back
     await store.deleteDeployKeysOf(slug);
     await accounts.deleteAppGrants(slug);
+    await releases.deleteAll(slug);
     await rm(join(APPS_DIR, slug), { recursive: true, force: true });
     const dropped = await dropSite(slug);
     await pruneAll();

@@ -73,10 +73,40 @@ export async function migrateState() {
     await admin`alter table apps add column if not exists declared_env text[] not null default '{}'`;
     await admin`alter table apps add column if not exists roles text[] not null default '{}'`;
     await admin`alter table apps add column if not exists protect jsonb not null default '[]'`;
+    await admin`alter table apps add column if not exists current_release bigint`;
   } catch (err: any) {
     // postgres.js surfaces the "already exists" notice as an error, harmless
     if (String(err?.code) !== "42701") throw err;
   }
+  // Every deploy is a numbered release: its files stay in releases/<dir>, its
+  // image keeps its own tag, and going back is a matter of pointing "current"
+  // at an older one. A rollback is a release too (source "rollback"), reusing
+  // the directory of the release it restores.
+  await admin`
+    create table if not exists releases (
+      id bigserial primary key,
+      slug text not null,
+      number int not null,
+      dir int not null,
+      source text not null,
+      message text not null default '',
+      commit_sha text,
+      commit_message text,
+      bundle_sha256 text not null default '',
+      manifest jsonb not null,
+      image text,
+      migrations_applied text[] not null default '{}',
+      db_snapshot text,
+      rollback_of bigint,
+      status text not null,
+      log text not null default '',
+      created_by text not null default '',
+      created_at timestamptz not null default now(),
+      finished_at timestamptz,
+      unique (slug, number)
+    )`;
+  await admin`create index if not exists releases_slug on releases (slug, id desc)`;
+
   // Deploy keys: a credential that can deploy one app and nothing else, so a CI
   // job or an AI agent never needs the root DEPLOY_TOKEN. Not tied to the apps
   // row on purpose: a key may be created before the first deploy of its slug.
@@ -211,6 +241,34 @@ export async function provisionDatabase(slug: string) {
 
 export function databaseUrl(user: string, password: string) {
   return `postgres://${user}:${password}@postgres:5432/${user}`;
+}
+
+// The migration files of a bundle that the app's database has not applied yet.
+// No database yet means every file is pending.
+export async function pendingMigrations(dir: string, url: string | null): Promise<string[]> {
+  let files: string[];
+  try {
+    files = (await readdir(dir)).filter((f) => f.endsWith(".sql")).sort();
+  } catch {
+    return [];
+  }
+  if (!url || files.length === 0) return files;
+  const sql = postgres(url, { max: 1 });
+  try {
+    const [{ t }] = await sql<{ t: string | null }[]>`select to_regclass('_migrations')::text as t`;
+    if (!t) return files;
+    const done = new Set((await sql<{ name: string }[]>`select name from _migrations`).map((r) => r.name));
+    return files.filter((f) => !done.has(f));
+  } finally {
+    await sql.end();
+  }
+}
+
+// Before a restore: pg_restore --clean cannot drop tables an app is holding.
+export async function disconnectDatabase(db: string) {
+  await admin`
+    select pg_terminate_backend(pid) from pg_stat_activity
+    where datname = ${db} and pid <> pg_backend_pid()`;
 }
 
 // migrations run here, once per deploy, never at app boot

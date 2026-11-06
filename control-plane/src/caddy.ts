@@ -47,7 +47,8 @@ function appRoutes(app: AppRow, indent: string): string[] {
     out.push(`}`);
   }
   out.push(`handle {`);
-  out.push(`\troot * /srv/apps/${app.slug}/dist`);
+  // current -> releases/<n>: a deploy or a rollback moves that link in one rename
+  out.push(`\troot * /srv/apps/${app.slug}/current/dist`);
   out.push(`\ttry_files {path} /index.html`);
   out.push(`\tfile_server`);
   out.push(`}`);

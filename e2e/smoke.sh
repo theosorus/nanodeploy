@@ -3,7 +3,7 @@
 # stack is reachable). Covers auth, the identity and cross-origin boundaries,
 # deploying a cold app, post-deploy sleep, waking through sablier, the session
 # cookie kept from apps, failed deploys, access kept across deploys, deploy
-# keys, image prune and reconcile.
+# keys, versions and rollback, image prune and reconcile.
 #
 # Variables (defaults suit a local install):
 #   NANODEPLOY_BASE   http://127.0.0.1:8080
@@ -186,12 +186,21 @@ json -X DELETE -H "Host: deploy.$DOM" -H "$AUTH" "$BASE/api/apps/smoke/keys/$ID"
 check "$(code -H "Host: deploy.$DOM" -H "$KEY" -X POST -F bundle=@$WORK/smoke.zip $BASE/api/deploy)" \
   "401" "revoked key -> 401"
 
+echo "== versions and rollback =="
+R=$(json -H "Host: deploy.$DOM" -H "$AUTH" $BASE/api/apps/smoke/releases)
+PREV=$(echo "$R" | grep -o '"id":"[0-9]*","number":[0-9]*,"dir":[0-9]*,"source":"[a-z]*","message":"[^"]*","commitSha":[^,]*,"commitMessage":[^,]*,"status":"superseded"' | head -1 | grep -o '"id":"[0-9]*"' | cut -d'"' -f4)
+[ -n "$PREV" ] && ok "earlier version listed" || bad "no superseded version: $R"
+R=$(json -X POST -H "Host: deploy.$DOM" -H "$AUTH" -H 'content-type: application/json' -d '{}' \
+  "$BASE/api/apps/smoke/releases/$PREV/rollback")
+echo "$R" | grep -q '"ok":true' && ok "rollback to the previous version" || bad "rollback: $R"
+check "$(json -H "Host: smoke.$DOM" $BASE/)" "<h1>smoke</h1>" "frontend served after the rollback"
+
 echo "== prune and delete =="
-for _ in 1 2; do
+for _ in 1 2 3 4; do
   curl -s -o /dev/null -X POST -H "Host: deploy.$DOM" -H "$AUTH" -F bundle=@$WORK/smoke.zip $BASE/api/deploy
 done
 N=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -c '^nanodeploy/smoke:')
-check "$N" "1" "one image left after 3 deploys (prune)"
+[ "$N" -le 3 ] && ok "at most 3 images kept for instant rollbacks ($N)" || bad "$N images left after prune"
 
 docker rm -f app-smoke >/dev/null 2>&1
 docker images --format '{{.Repository}}:{{.Tag}}' | grep '^nanodeploy/smoke:' | xargs -I{} docker rmi {} >/dev/null 2>&1

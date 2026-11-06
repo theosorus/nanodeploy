@@ -62,9 +62,19 @@ key for a new app" before its first deploy), it deploys that one app and reads
 its logs, nothing else. Give one to each CI job or AI agent; the server's own
 `DEPLOY_TOKEN` can do everything and should stay on the server.
 
-A deploy is prepared next to the running version and only swapped in once the
-image is built and the migrations ran: a broken bundle fails without touching
-what is live.
+**Every deploy is a version.** It is prepared next to the running one and
+swapped in once the image is built and the migrations ran, so a broken bundle
+fails without touching what is live. Each app's panel lists its versions, with
+the message and commit `npm run deploy -- -m "..."` sent, and goes back to any
+of the last ten in one click: the last three keep their image, so that is a
+container swap, not a build. Dropping a new zip on an existing app shows what
+would change (files, migrations, variables to set) before anything goes live.
+
+Before applying a migration, the app's database is dumped. If a migration fails,
+it is put back on the spot; when you go back to a version older than a
+migration, you choose between keeping the data (the old code meets a newer
+schema) and restoring the database as it was (everything written since is
+lost).
 
 The whole contract is one file:
 
@@ -215,8 +225,8 @@ same starting point: `cp -r`, edit, `npm run deploy`.
 
 Stated plainly, because finding out later is worse:
 
-- **No rollback.** A deploy replaces the container once it succeeds. Keep your
-  bundles.
+- **History is short.** Ten versions per app keep their files, three their
+  image, three their database snapshot. Older ones are cleaned up.
 - **Apps see each other** on a shared network. Don't put an app open to strangers
   next to something sensitive.
 - **App secrets sit in clear text** in the control database. Encrypt backups.

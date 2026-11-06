@@ -292,7 +292,12 @@ waiting for a value, if any.
 
 ## Changing an existing app
 
-A failed deployment changes nothing: the running version stays live. Changing
+A failed deployment changes nothing: the running version stays live. Every
+deploy is a numbered version; deploy with `npm run deploy -- -m "what changed"`
+so the history says why. If a deploy broke the app, go back to the previous
+version (`GET /api/apps/<slug>/releases`, then
+`POST /api/apps/<slug>/releases/<id>/rollback` with the same deploy key), then fix
+forward. Changing
 `access` in `app.yaml` has no effect on an existing app, say so and point the user
 to the dashboard instead.
 
@@ -301,6 +306,13 @@ schema change therefore goes through a new migration: edit `server/schema.ts`,
 run `npm run db:generate`, read the generated SQL, then deploy. Never edit a
 migration that has already been deployed, and never drop a column without saying
 so explicitly.
+
+Write migrations that **expand, then contract**: add a nullable column or a new
+table, ship the code that uses it, and only remove the old one in a later
+deploy. That way the previous version still runs against the new schema, and
+going back to it never needs to restore the database (which would lose what was
+written since). The platform snapshots the database before each migration and
+restores it if a migration fails, but that is the safety net, not the plan.
 
 When changing an existing app, read its `theme.css` first and work inside its
 direction. Do not quietly restyle an app that already has one.

@@ -1,7 +1,10 @@
 import Docker from "dockerode";
 import tar from "tar-fs";
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdtemp, readFile, rm, writeFile, copyFile } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
+import { PassThrough } from "node:stream";
 
 const docker = new Docker();
 const MEM_MB = Number(process.env.DEFAULT_APP_MEMORY_MB ?? 256);
@@ -28,9 +31,12 @@ EXPOSE ${port}
 CMD ["node", "${entry}"]
 `;
 
-export async function buildImage(dir: string, slug: string, entry: string, port: number) {
+// one tag per release (nanodeploy/<slug>:r<number>): rolling back to a release
+// whose image is still there is a container swap, not a build
+export const imageTag = (slug: string, release: number) => `nanodeploy/${slug}:r${release}`;
+
+export async function buildImage(dir: string, tag: string, entry: string, port: number) {
   await writeFile(join(dir, "Dockerfile"), DOCKERFILE(entry, port));
-  const tag = `nanodeploy/${slug}:${Date.now()}`;
   const context = tar.pack(dir, { entries: [entry, "Dockerfile"] });
   const stream = await docker.buildImage(context as any, { t: tag });
   await new Promise<void>((resolve, reject) => {
@@ -244,10 +250,10 @@ export async function hostMemory() {
   };
 }
 
-// Deploys tag images nanodeploy/<slug>:<timestamp>, one per deploy. Old tags are
-// unreachable once the container has been recreated from the new one, so drop
-// every nanodeploy image except those the database still references. Removing an
-// image a container still uses fails, which just means we keep one extra image.
+// Deploys tag images nanodeploy/<slug>:r<release>. The caller passes the tags
+// worth keeping (the live one and the few most recent releases, for an instant
+// rollback); every other nanodeploy image goes. Removing an image a container
+// still uses fails, which just means we keep one extra image.
 export async function pruneImages(keep: Set<string>) {
   const list = await docker.listImages();
   for (const img of list) {
@@ -288,4 +294,57 @@ export async function reloadCaddy() {
     console.error(`caddy reload failed:\n${chunks.join("").slice(-1000)}`);
   }
   return result.ExitCode === 0;
+}
+
+/* ---------- database snapshots, run inside the postgres container ---------- */
+
+// pg_dump and pg_restore come from the postgres image itself, so their version
+// always matches the server. The control plane reaches them through its socket
+// proxy (exec), the same way it reloads caddy.
+const PG_CONTAINER = process.env.POSTGRES_CONTAINER ?? "nanodeploy-postgres-1";
+
+async function execIn(container: string, cmd: string[], stdout?: NodeJS.WritableStream) {
+  const exec = await docker.getContainer(container).exec({ Cmd: cmd, AttachStdout: true, AttachStderr: true });
+  const stream = await exec.start({ hijack: true, stdin: false });
+  const errors: Buffer[] = [];
+  const err = new PassThrough();
+  err.on("data", (c: Buffer) => errors.push(c));
+  const out = stdout ?? new PassThrough().resume();
+  docker.modem.demuxStream(stream, out, err);
+  await new Promise<void>((resolve) => {
+    (stream as any).once("end", resolve);
+    (stream as any).once("close", resolve);
+  });
+  const { ExitCode } = await exec.inspect();
+  if (ExitCode !== 0) {
+    throw new Error(`${cmd[0]} failed: ${Buffer.concat(errors).toString("utf8").trim().slice(-500)}`);
+  }
+}
+
+// custom format: compressed, and pg_restore can clean and recreate from it
+export async function dumpDatabase(db: string, file: string) {
+  const out = createWriteStream(file, { mode: 0o600 });
+  try {
+    await execIn(PG_CONTAINER, ["pg_dump", "-U", "postgres", "-Fc", "-d", db], out);
+  } finally {
+    await new Promise((r) => out.end(r));
+  }
+}
+
+// The dump is copied into the container as a file rather than streamed to
+// pg_restore's stdin: half-closing a hijacked stream through the socket proxy is
+// not something to rely on when a database is at stake.
+export async function restoreDatabase(db: string, file: string) {
+  const tmp = await mkdtemp(join(tmpdir(), "nd-restore-"));
+  const name = `nd-restore-${basename(file)}`;
+  try {
+    await copyFile(file, join(tmp, name));
+    await docker.getContainer(PG_CONTAINER).putArchive(tar.pack(tmp, { entries: [name] }) as any, { path: "/tmp" });
+    await execIn(PG_CONTAINER, [
+      "pg_restore", "-U", "postgres", "--clean", "--if-exists", "--single-transaction", "-d", db, `/tmp/${name}`,
+    ]);
+  } finally {
+    await execIn(PG_CONTAINER, ["rm", "-f", `/tmp/${name}`]).catch(() => {});
+    await rm(tmp, { recursive: true, force: true });
+  }
 }

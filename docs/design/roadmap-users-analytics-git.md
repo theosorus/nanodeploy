@@ -1024,6 +1024,27 @@ outil générique ne fait.
 
 ### 4.2 La fondation : des releases immuables
 
+> **Livré en phase 2** (`control-plane/src/releases.ts`). Ce qui diffère du plan
+> ci-dessous, après implémentation :
+>
+> * **Un retour arrière crée une nouvelle version** (source `rollback`) qui
+>   réutilise le dossier et l'image de la version restaurée : l'historique reste
+>   linéaire et lisible ("v14, retour à v12").
+> * **Une migration ratée est annulée tout de suite** : la base est restaurée
+>   depuis le snapshot pris juste avant, sans attendre une décision.
+> * **Snapshot seulement quand il sert** : une base qui existait déjà et au moins
+>   une migration en attente. Pris par `pg_dump` dans le conteneur Postgres,
+>   restauré en y copiant le fichier (pas de flux stdin à travers le proxy du
+>   socket Docker).
+> * **Rétention** : fichiers des 10 dernières versions, images des 3 dernières,
+>   3 snapshots par app. Une version plus ancienne dont l'image a été nettoyée
+>   est reconstruite depuis ses fichiers, en quelques secondes.
+> * **Les installations existantes** passent au nouveau format au premier
+>   démarrage (version 1, source `legacy`), sans coupure : un lien `dist` reste à
+>   l'ancien emplacement le temps que Caddy recharge.
+> * **Pas encore** : le journal de build en direct (SSE). Le build côté serveur
+>   se limite pour l'instant à une image triviale, il dure quelques secondes.
+
 Chaque déploiement, quelle que soit sa source (zip, CLI, Git, rollback), devient
 une **release numérotée**, préparée à côté de la version en ligne, puis basculée
 d'un coup.
@@ -1504,7 +1525,7 @@ Chaque phase est livrable seule et laisse la plateforme dans un état cohérent.
 |---|---|---|---|
 | **0. Durcissement** (fait) | cookie de session retiré avant les apps (C1), accès non écrasé au redéploiement (C2), déploiement préparé à côté puis basculé (C3), clés de déploiement par app (C4) | bugs réels, petits correctifs, prérequis à tout le reste | fait |
 | **1. `gate`** (fait) | annuaire, mot de passe, passkey, sessions liées à l'hôte, rôles par app, chemins protégés, identité optionnelle, clés `ndk_`, migration Pocket ID, UI Personnes et Rôles | c'est ton premier axe, et l'axe 2 (nominatif) et l'axe 3 (clés pour la CI et l'agent) s'appuient dessus | fait |
-| **2. Releases** | dossiers de release, bascule atomique, table `releases`, rollback, snapshots avant migration, "Nouvelle version" avec diff, historique | fondation obligatoire de Git ; apporte déjà le remplacement à chaud par zip | 5 à 7 j |
+| **2. Releases** (fait) | dossiers de release, bascule atomique, table `releases`, rollback, snapshots avant migration, "Nouvelle version" avec diff, historique | fondation obligatoire de Git ; apporte déjà le remplacement à chaud par zip | fait |
 | **3. Analytics** | logs Caddy, ingesteur, événements Docker, échantillons, activité nominative depuis `gate`, onglet Analytics, beacon | indépendant, mais plus riche une fois `gate` et les releases en place (déploiements sur la frise) | 5 à 7 j |
 | **4. Git** | GitHub App (manifest), webhooks, archive, builder sandbox, file, statuts, puis GitLab.com | repose sur les releases | 8 à 11 j |
 | **5. Previews** | sous-domaines de branche, bases et volumes dédiés, nettoyage, commentaire de PR | repose sur Git | 4 à 5 j |

@@ -81,6 +81,11 @@ These are real. Decide whether they matter for your setup before you deploy.
   first request gets Sablier's HTML page instead of the app's answer. Clients
   must retry; the template's `src/client.ts` does. This is a correctness trap
   more than a security one, but an API consumer that ignores it will misbehave.
+- **Database snapshots sit on the server, in clear.** Before each migration the
+  app's database is dumped to `APPS_DIR/.snapshots/<slug>/` (directory 0700,
+  files 0600, the last three kept). Caddy mounts `APPS_DIR` read-only but only
+  ever serves `<slug>/current/dist`. Include the directory in your encrypted
+  backups, or exclude it on purpose.
 - **No automatic backups.** A single shared Postgres is a single point of loss
   for every app. See the README.
 

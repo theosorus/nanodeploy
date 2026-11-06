@@ -165,6 +165,16 @@
   .keybox code { display: block; font-family: var(--mono); font-size: 12px; word-break: break-all; user-select: all; margin-top: var(--s2); }
   .keyrow { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); border-top: 1px solid var(--rule); padding: var(--s2) 0; }
   .keyrow .num { font-size: 13px; }
+  .diff { border: 1px solid var(--live); border-radius: var(--radius); padding: var(--s3) var(--s4); margin: var(--s2) 0 var(--s3); }
+  .diff ul { margin: var(--s2) 0; padding-left: 18px; }
+  .diff li { margin: 2px 0; }
+  .rel { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); border-top: 1px solid var(--rule); padding: var(--s2) 0; }
+  .rel-main { min-width: 0; }
+  .rel-main .num { font-size: 13px; }
+  .rel-state { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--soft); }
+  .rel-state.live { color: var(--live); }
+  .rel-state.failed { color: var(--danger); }
+  .rel-actions { display: flex; gap: var(--s2); flex: none; flex-wrap: wrap; justify-content: flex-end; }
   .note { color: var(--soft); font-size: 13px; }
 
   .warn { border: 1px solid var(--danger); border-radius: var(--radius); padding: var(--s4); margin-bottom: var(--s5); }
@@ -1247,6 +1257,423 @@ const I18N_GATE = {
 };
 for (const l of Object.keys(I18N_GATE)) Object.assign(I18N[l], I18N_GATE[l]);
 
+// Versions: every deploy is a numbered release you can read, compare and go
+// back to.
+const I18N_RELEASES = {
+  en: {
+    versionsTitle: "Versions",
+    liveVersion: "v{n} is live",
+    newVersion: "New version (.zip)",
+    noVersions: "No version yet.",
+    diffTitle: "{name}: v{from} → v{to}",
+    diffFiles: "Frontend: {total} files, {added} added, {changed} changed, {removed} removed",
+    diffSame: "Same frontend files as the live version",
+    diffServer: "server.js: {from} → {to} KB",
+    diffMigrations: "Migrations to apply: {list}. A database snapshot is taken first.",
+    diffEnvToSet: "Declared but not set yet: {list}",
+    diffEnvDropped: "No longer declared: {list}",
+    diffAccess: "app.yaml says {manifest}, the app stays {kept} (set here)",
+    diffRolesAdded: "Roles added: {list}",
+    diffRolesRemoved: "Roles removed: {list}",
+    diffProtect: "The protected paths change",
+    diffDatabase: "A database will be created",
+    diffBackendAdded: "A backend is added",
+    diffBackendRemoved: "The backend is removed",
+    diffWarmOn: "It will stay always on",
+    diffWarmOff: "It will sleep when idle",
+    deployVersion: "Deploy v{n}",
+    statusLive: "live",
+    statusSuperseded: "previous",
+    statusFailed: "failed",
+    sourceUpload: "dropped here",
+    sourceCli: "CLI",
+    sourceRollback: "back to v{n}",
+    sourceLegacy: "before versions",
+    byWho: "by {who}",
+    rollbackBtn: "Go back to this version",
+    logBtn: "Log",
+    rollbackConfirm: "Go back to v{n}? The current version stays in the history.",
+    rollbackDbAhead: "Versions after v{n} changed the database ({list}). This code may not expect it.",
+    rollbackCodeOnly: "Code only, keep the data",
+    rollbackWithDb: "Code and database",
+    rollbackWithDbConfirm: "Put the database back as it was before {list}? Everything written since is lost.",
+    rolledBack: "v{n} is live again.",
+    promoted: "v{n} is live.",
+    filesCleaned: "files cleaned up",
+  },
+  fr: {
+    versionsTitle: "Versions",
+    liveVersion: "v{n} en ligne",
+    newVersion: "Nouvelle version (.zip)",
+    noVersions: "Aucune version pour l'instant.",
+    diffTitle: "{name} : v{from} → v{to}",
+    diffFiles: "Frontend : {total} fichiers, {added} ajoutés, {changed} modifiés, {removed} supprimés",
+    diffSame: "Mêmes fichiers frontend que la version en ligne",
+    diffServer: "server.js : {from} → {to} Ko",
+    diffMigrations: "Migrations à appliquer : {list}. Une sauvegarde de la base est prise avant.",
+    diffEnvToSet: "Déclarées mais pas encore définies : {list}",
+    diffEnvDropped: "Plus déclarées : {list}",
+    diffAccess: "app.yaml dit {manifest}, l'app reste {kept} (réglé ici)",
+    diffRolesAdded: "Rôles ajoutés : {list}",
+    diffRolesRemoved: "Rôles retirés : {list}",
+    diffProtect: "Les chemins protégés changent",
+    diffDatabase: "Une base de données sera créée",
+    diffBackendAdded: "Un backend est ajouté",
+    diffBackendRemoved: "Le backend est retiré",
+    diffWarmOn: "Elle restera toujours active",
+    diffWarmOff: "Elle se mettra en veille au repos",
+    deployVersion: "Déployer v{n}",
+    statusLive: "en ligne",
+    statusSuperseded: "précédente",
+    statusFailed: "échec",
+    sourceUpload: "déposée ici",
+    sourceCli: "CLI",
+    sourceRollback: "retour à v{n}",
+    sourceLegacy: "avant les versions",
+    byWho: "par {who}",
+    rollbackBtn: "Revenir à cette version",
+    logBtn: "Journal",
+    rollbackConfirm: "Revenir à v{n} ? La version actuelle reste dans l'historique.",
+    rollbackDbAhead: "Les versions après v{n} ont modifié la base ({list}). Ce code ne s'y attend peut-être pas.",
+    rollbackCodeOnly: "Le code seulement, garder les données",
+    rollbackWithDb: "Le code et la base",
+    rollbackWithDbConfirm: "Remettre la base comme avant {list} ? Tout ce qui a été écrit depuis sera perdu.",
+    rolledBack: "v{n} est de nouveau en ligne.",
+    promoted: "v{n} est en ligne.",
+    filesCleaned: "fichiers nettoyés",
+  },
+  es: {
+    versionsTitle: "Versiones",
+    liveVersion: "v{n} en línea",
+    newVersion: "Nueva versión (.zip)",
+    noVersions: "Aún no hay versiones.",
+    diffTitle: "{name}: v{from} → v{to}",
+    diffFiles: "Frontend: {total} archivos, {added} añadidos, {changed} modificados, {removed} eliminados",
+    diffSame: "Los mismos archivos de frontend que la versión en línea",
+    diffServer: "server.js: {from} → {to} KB",
+    diffMigrations: "Migraciones por aplicar: {list}. Antes se guarda una copia de la base de datos.",
+    diffEnvToSet: "Declaradas pero sin valor: {list}",
+    diffEnvDropped: "Ya no declaradas: {list}",
+    diffAccess: "app.yaml dice {manifest}, la app sigue {kept} (ajustado aquí)",
+    diffRolesAdded: "Roles añadidos: {list}",
+    diffRolesRemoved: "Roles quitados: {list}",
+    diffProtect: "Cambian las rutas protegidas",
+    diffDatabase: "Se creará una base de datos",
+    diffBackendAdded: "Se añade un backend",
+    diffBackendRemoved: "Se quita el backend",
+    diffWarmOn: "Seguirá siempre activa",
+    diffWarmOff: "Se dormirá en reposo",
+    deployVersion: "Desplegar v{n}",
+    statusLive: "en línea",
+    statusSuperseded: "anterior",
+    statusFailed: "fallida",
+    sourceUpload: "subida aquí",
+    sourceCli: "CLI",
+    sourceRollback: "vuelta a v{n}",
+    sourceLegacy: "antes de las versiones",
+    byWho: "por {who}",
+    rollbackBtn: "Volver a esta versión",
+    logBtn: "Registro",
+    rollbackConfirm: "¿Volver a v{n}? La versión actual queda en el historial.",
+    rollbackDbAhead: "Las versiones posteriores a v{n} cambiaron la base de datos ({list}). Este código quizá no lo espere.",
+    rollbackCodeOnly: "Solo el código, conservar los datos",
+    rollbackWithDb: "El código y la base de datos",
+    rollbackWithDbConfirm: "¿Devolver la base de datos a como estaba antes de {list}? Todo lo escrito desde entonces se pierde.",
+    rolledBack: "v{n} vuelve a estar en línea.",
+    promoted: "v{n} está en línea.",
+    filesCleaned: "archivos limpiados",
+  },
+  de: {
+    versionsTitle: "Versionen",
+    liveVersion: "v{n} ist live",
+    newVersion: "Neue Version (.zip)",
+    noVersions: "Noch keine Version.",
+    diffTitle: "{name}: v{from} → v{to}",
+    diffFiles: "Frontend: {total} Dateien, {added} neu, {changed} geändert, {removed} entfernt",
+    diffSame: "Dieselben Frontend-Dateien wie die Live-Version",
+    diffServer: "server.js: {from} → {to} KB",
+    diffMigrations: "Anzuwendende Migrationen: {list}. Vorher wird die Datenbank gesichert.",
+    diffEnvToSet: "Deklariert, aber noch nicht gesetzt: {list}",
+    diffEnvDropped: "Nicht mehr deklariert: {list}",
+    diffAccess: "app.yaml sagt {manifest}, die App bleibt {kept} (hier eingestellt)",
+    diffRolesAdded: "Hinzugefügte Rollen: {list}",
+    diffRolesRemoved: "Entfernte Rollen: {list}",
+    diffProtect: "Die geschützten Pfade ändern sich",
+    diffDatabase: "Eine Datenbank wird angelegt",
+    diffBackendAdded: "Ein Backend kommt hinzu",
+    diffBackendRemoved: "Das Backend wird entfernt",
+    diffWarmOn: "Sie bleibt immer aktiv",
+    diffWarmOff: "Sie schläft im Leerlauf",
+    deployVersion: "v{n} bereitstellen",
+    statusLive: "live",
+    statusSuperseded: "vorherige",
+    statusFailed: "fehlgeschlagen",
+    sourceUpload: "hier abgelegt",
+    sourceCli: "CLI",
+    sourceRollback: "zurück zu v{n}",
+    sourceLegacy: "vor den Versionen",
+    byWho: "von {who}",
+    rollbackBtn: "Zu dieser Version zurück",
+    logBtn: "Protokoll",
+    rollbackConfirm: "Zu v{n} zurückkehren? Die aktuelle Version bleibt im Verlauf.",
+    rollbackDbAhead: "Versionen nach v{n} haben die Datenbank geändert ({list}). Dieser Code rechnet vielleicht nicht damit.",
+    rollbackCodeOnly: "Nur der Code, Daten behalten",
+    rollbackWithDb: "Code und Datenbank",
+    rollbackWithDbConfirm: "Die Datenbank auf den Stand vor {list} zurücksetzen? Alles, was seitdem geschrieben wurde, geht verloren.",
+    rolledBack: "v{n} ist wieder live.",
+    promoted: "v{n} ist live.",
+    filesCleaned: "Dateien bereinigt",
+  },
+  it: {
+    versionsTitle: "Versioni",
+    liveVersion: "v{n} online",
+    newVersion: "Nuova versione (.zip)",
+    noVersions: "Ancora nessuna versione.",
+    diffTitle: "{name}: v{from} → v{to}",
+    diffFiles: "Frontend: {total} file, {added} aggiunti, {changed} modificati, {removed} rimossi",
+    diffSame: "Stessi file frontend della versione online",
+    diffServer: "server.js: {from} → {to} KB",
+    diffMigrations: "Migrazioni da applicare: {list}. Prima viene salvata una copia del database.",
+    diffEnvToSet: "Dichiarate ma non ancora impostate: {list}",
+    diffEnvDropped: "Non più dichiarate: {list}",
+    diffAccess: "app.yaml dice {manifest}, l'app resta {kept} (impostato qui)",
+    diffRolesAdded: "Ruoli aggiunti: {list}",
+    diffRolesRemoved: "Ruoli rimossi: {list}",
+    diffProtect: "I percorsi protetti cambiano",
+    diffDatabase: "Verrà creato un database",
+    diffBackendAdded: "Viene aggiunto un backend",
+    diffBackendRemoved: "Il backend viene rimosso",
+    diffWarmOn: "Resterà sempre attiva",
+    diffWarmOff: "Andrà in sospensione a riposo",
+    deployVersion: "Pubblica v{n}",
+    statusLive: "online",
+    statusSuperseded: "precedente",
+    statusFailed: "fallita",
+    sourceUpload: "caricata qui",
+    sourceCli: "CLI",
+    sourceRollback: "ritorno a v{n}",
+    sourceLegacy: "prima delle versioni",
+    byWho: "da {who}",
+    rollbackBtn: "Torna a questa versione",
+    logBtn: "Registro",
+    rollbackConfirm: "Tornare a v{n}? La versione attuale resta nella cronologia.",
+    rollbackDbAhead: "Le versioni dopo v{n} hanno modificato il database ({list}). Questo codice potrebbe non aspettarselo.",
+    rollbackCodeOnly: "Solo il codice, tenere i dati",
+    rollbackWithDb: "Codice e database",
+    rollbackWithDbConfirm: "Riportare il database a com'era prima di {list}? Tutto ciò che è stato scritto da allora andrà perso.",
+    rolledBack: "v{n} è di nuovo online.",
+    promoted: "v{n} è online.",
+    filesCleaned: "file eliminati",
+  },
+  pt: {
+    versionsTitle: "Versões",
+    liveVersion: "v{n} no ar",
+    newVersion: "Nova versão (.zip)",
+    noVersions: "Ainda não há versões.",
+    diffTitle: "{name}: v{from} → v{to}",
+    diffFiles: "Frontend: {total} ficheiros, {added} adicionados, {changed} alterados, {removed} removidos",
+    diffSame: "Os mesmos ficheiros de frontend da versão no ar",
+    diffServer: "server.js: {from} → {to} KB",
+    diffMigrations: "Migrações a aplicar: {list}. Antes é guardada uma cópia da base de dados.",
+    diffEnvToSet: "Declaradas mas ainda sem valor: {list}",
+    diffEnvDropped: "Já não declaradas: {list}",
+    diffAccess: "app.yaml diz {manifest}, a app fica {kept} (definido aqui)",
+    diffRolesAdded: "Funções adicionadas: {list}",
+    diffRolesRemoved: "Funções removidas: {list}",
+    diffProtect: "Os caminhos protegidos mudam",
+    diffDatabase: "Será criada uma base de dados",
+    diffBackendAdded: "É adicionado um backend",
+    diffBackendRemoved: "O backend é removido",
+    diffWarmOn: "Ficará sempre ativa",
+    diffWarmOff: "Vai adormecer quando parada",
+    deployVersion: "Publicar v{n}",
+    statusLive: "no ar",
+    statusSuperseded: "anterior",
+    statusFailed: "falhou",
+    sourceUpload: "largada aqui",
+    sourceCli: "CLI",
+    sourceRollback: "regresso a v{n}",
+    sourceLegacy: "antes das versões",
+    byWho: "por {who}",
+    rollbackBtn: "Voltar a esta versão",
+    logBtn: "Registo",
+    rollbackConfirm: "Voltar a v{n}? A versão atual fica no histórico.",
+    rollbackDbAhead: "As versões depois de v{n} alteraram a base de dados ({list}). Este código pode não contar com isso.",
+    rollbackCodeOnly: "Só o código, manter os dados",
+    rollbackWithDb: "Código e base de dados",
+    rollbackWithDbConfirm: "Repor a base de dados como estava antes de {list}? Tudo o que foi escrito desde então perde-se.",
+    rolledBack: "v{n} está de novo no ar.",
+    promoted: "v{n} está no ar.",
+    filesCleaned: "ficheiros limpos",
+  },
+  nl: {
+    versionsTitle: "Versies",
+    liveVersion: "v{n} staat online",
+    newVersion: "Nieuwe versie (.zip)",
+    noVersions: "Nog geen versie.",
+    diffTitle: "{name}: v{from} → v{to}",
+    diffFiles: "Frontend: {total} bestanden, {added} toegevoegd, {changed} gewijzigd, {removed} verwijderd",
+    diffSame: "Dezelfde frontend-bestanden als de live versie",
+    diffServer: "server.js: {from} → {to} KB",
+    diffMigrations: "Toe te passen migraties: {list}. Eerst wordt de database veiliggesteld.",
+    diffEnvToSet: "Aangegeven maar nog niet ingesteld: {list}",
+    diffEnvDropped: "Niet meer aangegeven: {list}",
+    diffAccess: "app.yaml zegt {manifest}, de app blijft {kept} (hier ingesteld)",
+    diffRolesAdded: "Rollen toegevoegd: {list}",
+    diffRolesRemoved: "Rollen verwijderd: {list}",
+    diffProtect: "De beschermde paden veranderen",
+    diffDatabase: "Er wordt een database aangemaakt",
+    diffBackendAdded: "Er komt een backend bij",
+    diffBackendRemoved: "De backend verdwijnt",
+    diffWarmOn: "Blijft altijd actief",
+    diffWarmOff: "Slaapt bij inactiviteit",
+    deployVersion: "v{n} uitrollen",
+    statusLive: "online",
+    statusSuperseded: "vorige",
+    statusFailed: "mislukt",
+    sourceUpload: "hier neergezet",
+    sourceCli: "CLI",
+    sourceRollback: "terug naar v{n}",
+    sourceLegacy: "van vóór versies",
+    byWho: "door {who}",
+    rollbackBtn: "Terug naar deze versie",
+    logBtn: "Logboek",
+    rollbackConfirm: "Terug naar v{n}? De huidige versie blijft in de geschiedenis.",
+    rollbackDbAhead: "Versies na v{n} hebben de database gewijzigd ({list}). Deze code verwacht dat misschien niet.",
+    rollbackCodeOnly: "Alleen de code, gegevens houden",
+    rollbackWithDb: "Code en database",
+    rollbackWithDbConfirm: "De database terugzetten zoals vóór {list}? Alles wat sindsdien is geschreven gaat verloren.",
+    rolledBack: "v{n} staat weer online.",
+    promoted: "v{n} staat online.",
+    filesCleaned: "bestanden opgeruimd",
+  },
+  ru: {
+    versionsTitle: "Версии",
+    liveVersion: "v{n} в работе",
+    newVersion: "Новая версия (.zip)",
+    noVersions: "Версий пока нет.",
+    diffTitle: "{name}: v{from} → v{to}",
+    diffFiles: "Фронтенд: {total} файлов, добавлено {added}, изменено {changed}, удалено {removed}",
+    diffSame: "Те же файлы фронтенда, что и в рабочей версии",
+    diffServer: "server.js: {from} → {to} КБ",
+    diffMigrations: "Миграции к применению: {list}. Сначала делается снимок базы.",
+    diffEnvToSet: "Объявлены, но не заданы: {list}",
+    diffEnvDropped: "Больше не объявлены: {list}",
+    diffAccess: "app.yaml говорит {manifest}, приложение остаётся {kept} (задано здесь)",
+    diffRolesAdded: "Добавлены роли: {list}",
+    diffRolesRemoved: "Удалены роли: {list}",
+    diffProtect: "Защищённые пути меняются",
+    diffDatabase: "Будет создана база данных",
+    diffBackendAdded: "Добавляется бэкенд",
+    diffBackendRemoved: "Бэкенд удаляется",
+    diffWarmOn: "Будет работать постоянно",
+    diffWarmOff: "Будет засыпать без нагрузки",
+    deployVersion: "Развернуть v{n}",
+    statusLive: "в работе",
+    statusSuperseded: "предыдущая",
+    statusFailed: "ошибка",
+    sourceUpload: "загружена здесь",
+    sourceCli: "CLI",
+    sourceRollback: "возврат к v{n}",
+    sourceLegacy: "до версий",
+    byWho: "{who}",
+    rollbackBtn: "Вернуться к этой версии",
+    logBtn: "Журнал",
+    rollbackConfirm: "Вернуться к v{n}? Текущая версия останется в истории.",
+    rollbackDbAhead: "Версии после v{n} изменили базу ({list}). Этот код может этого не ожидать.",
+    rollbackCodeOnly: "Только код, данные оставить",
+    rollbackWithDb: "Код и база",
+    rollbackWithDbConfirm: "Вернуть базу к состоянию до {list}? Всё, что записано с тех пор, будет потеряно.",
+    rolledBack: "v{n} снова в работе.",
+    promoted: "v{n} в работе.",
+    filesCleaned: "файлы удалены",
+  },
+  zh: {
+    versionsTitle: "版本",
+    liveVersion: "v{n} 正在运行",
+    newVersion: "新版本 (.zip)",
+    noVersions: "还没有版本。",
+    diffTitle: "{name}：v{from} → v{to}",
+    diffFiles: "前端：{total} 个文件，新增 {added}，修改 {changed}，删除 {removed}",
+    diffSame: "前端文件与线上版本相同",
+    diffServer: "server.js：{from} → {to} KB",
+    diffMigrations: "待执行的迁移：{list}。执行前会先备份数据库。",
+    diffEnvToSet: "已声明但尚未设置：{list}",
+    diffEnvDropped: "不再声明：{list}",
+    diffAccess: "app.yaml 写的是 {manifest}，应用保持 {kept}（在这里设置）",
+    diffRolesAdded: "新增角色：{list}",
+    diffRolesRemoved: "移除角色：{list}",
+    diffProtect: "受保护路径有变化",
+    diffDatabase: "将创建数据库",
+    diffBackendAdded: "新增后端",
+    diffBackendRemoved: "移除后端",
+    diffWarmOn: "将保持常驻",
+    diffWarmOff: "空闲时将休眠",
+    deployVersion: "部署 v{n}",
+    statusLive: "运行中",
+    statusSuperseded: "之前",
+    statusFailed: "失败",
+    sourceUpload: "在此上传",
+    sourceCli: "CLI",
+    sourceRollback: "回到 v{n}",
+    sourceLegacy: "版本功能之前",
+    byWho: "由 {who}",
+    rollbackBtn: "回到这个版本",
+    logBtn: "日志",
+    rollbackConfirm: "回到 v{n}？当前版本会保留在历史中。",
+    rollbackDbAhead: "v{n} 之后的版本修改了数据库（{list}）。这份代码可能不适应。",
+    rollbackCodeOnly: "只回退代码，保留数据",
+    rollbackWithDb: "代码和数据库",
+    rollbackWithDbConfirm: "把数据库恢复到 {list} 之前？此后写入的所有数据都会丢失。",
+    rolledBack: "v{n} 已重新上线。",
+    promoted: "v{n} 已上线。",
+    filesCleaned: "文件已清理",
+  },
+  ja: {
+    versionsTitle: "バージョン",
+    liveVersion: "v{n} が稼働中",
+    newVersion: "新しいバージョン (.zip)",
+    noVersions: "まだバージョンはありません。",
+    diffTitle: "{name}: v{from} → v{to}",
+    diffFiles: "フロントエンド: {total} ファイル、追加 {added}、変更 {changed}、削除 {removed}",
+    diffSame: "稼働中のバージョンと同じフロントエンドファイル",
+    diffServer: "server.js: {from} → {to} KB",
+    diffMigrations: "適用するマイグレーション: {list}。先にデータベースを保存します。",
+    diffEnvToSet: "宣言済みで未設定: {list}",
+    diffEnvDropped: "宣言されなくなった: {list}",
+    diffAccess: "app.yaml は {manifest}、アプリは {kept} のまま（ここで設定）",
+    diffRolesAdded: "追加されたロール: {list}",
+    diffRolesRemoved: "削除されたロール: {list}",
+    diffProtect: "保護パスが変わります",
+    diffDatabase: "データベースが作成されます",
+    diffBackendAdded: "バックエンドが追加されます",
+    diffBackendRemoved: "バックエンドが削除されます",
+    diffWarmOn: "常時稼働のままになります",
+    diffWarmOff: "アイドル時にスリープします",
+    deployVersion: "v{n} をデプロイ",
+    statusLive: "稼働中",
+    statusSuperseded: "以前",
+    statusFailed: "失敗",
+    sourceUpload: "ここでアップロード",
+    sourceCli: "CLI",
+    sourceRollback: "v{n} に戻す",
+    sourceLegacy: "バージョン機能以前",
+    byWho: "{who}",
+    rollbackBtn: "このバージョンに戻す",
+    logBtn: "ログ",
+    rollbackConfirm: "v{n} に戻しますか？現在のバージョンは履歴に残ります。",
+    rollbackDbAhead: "v{n} 以降のバージョンがデータベースを変更しています（{list}）。このコードは想定していないかもしれません。",
+    rollbackCodeOnly: "コードのみ、データは保持",
+    rollbackWithDb: "コードとデータベース",
+    rollbackWithDbConfirm: "データベースを {list} の前の状態に戻しますか？それ以降に書き込まれたデータはすべて失われます。",
+    rolledBack: "v{n} が再び稼働中です。",
+    promoted: "v{n} が稼働中です。",
+    filesCleaned: "ファイル削除済み",
+  },
+};
+
+for (const l of Object.keys(I18N_RELEASES)) Object.assign(I18N[l], I18N_RELEASES[l]);
+
 const SUPPORTED = new Set(LANGS.map(([c]) => c));
 const savedLang = (() => { try { return localStorage.getItem("nanodeploy.lang"); } catch { return null; } })();
 // English is the default; a saved choice wins if it is one we support
@@ -1299,6 +1726,10 @@ const state = {
   keys: {}, freshKey: null,
   // role grants per slug, and where the sign-in pages live
   grants: {}, authOrigin: null,
+  // release history per slug; a staged upload waiting for confirmation, with
+  // what it would change; the release whose log is shown; a rollback that
+  // needs a choice between code only and code plus database
+  releases: {}, pending: null, logOf: null, rollbackChoice: null,
 };
 let toastTimer;
 
@@ -1463,6 +1894,8 @@ function renderDetail(a, host) {
       </div>`).join("")}
       <button class="act" data-saveenv="${a.slug}">${t("envSave")}</button>` : ""}
 
+    ${renderVersions(a)}
+
     ${a.roles && a.roles.length ? renderRoles(a) : ""}
 
     <h3 class="label">${t("keysTitle")}</h3>
@@ -1484,6 +1917,122 @@ function renderDetail(a, host) {
     ${a.deployedAt ? `<p class="note" style="margin:16px 0 0">${esc(t("deployedAt", { when: ago(a.deployedAt) }))}</p>` : ""}
     <p class="note" style="margin:8px 0 0">${t("detailNote")}</p>
   </div>`;
+}
+
+/* ---------- versions ---------- */
+
+const kb = (bytes) => (bytes == null ? "-" : Math.max(1, Math.round(bytes / 1024)).toLocaleString(LANG));
+
+// What a staged upload would change, in plain lines, before anything goes live.
+function renderDiff(d) {
+  const lines = [];
+  const f = d.files;
+  lines.push(f.added || f.changed || f.removed ? t("diffFiles", f) : t("diffSame"));
+  if (d.server.from !== d.server.to) lines.push(t("diffServer", { from: kb(d.server.from), to: kb(d.server.to) }));
+  if (d.migrations.length) lines.push(t("diffMigrations", { list: d.migrations.join(", ") }));
+  if (d.databaseCreated) lines.push(t("diffDatabase"));
+  if (d.backend === "added") lines.push(t("diffBackendAdded"));
+  if (d.backend === "removed") lines.push(t("diffBackendRemoved"));
+  if (d.warm) lines.push(d.warm.to ? t("diffWarmOn") : t("diffWarmOff"));
+  if (d.envToSet.length) lines.push(t("diffEnvToSet", { list: d.envToSet.join(", ") }));
+  if (d.envDropped.length) lines.push(t("diffEnvDropped", { list: d.envDropped.join(", ") }));
+  if (d.access) lines.push(t("diffAccess", d.access));
+  if (d.rolesAdded.length) lines.push(t("diffRolesAdded", { list: d.rolesAdded.join(", ") }));
+  if (d.rolesRemoved.length) lines.push(t("diffRolesRemoved", { list: d.rolesRemoved.join(", ") }));
+  if (d.protectChanged) lines.push(t("diffProtect"));
+  return `<div class="diff">
+    <strong>${esc(t("diffTitle", { name: d.name, from: d.from ?? "-", to: d.to }))}</strong>
+    <ul>${lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>
+    <div class="row" style="gap:8px">
+      <button class="act primary" data-promote="${esc(state.pending.id)}">${esc(t("deployVersion", { n: d.to }))}</button>
+      <button class="act" data-discard="${esc(state.pending.id)}">${esc(t("cancel"))}</button>
+    </div>
+  </div>`;
+}
+
+function releaseRow(slug, r) {
+  const status = { live: t("statusLive"), superseded: t("statusSuperseded"), failed: t("statusFailed") }[r.status] ?? r.status;
+  const source = r.source === "rollback" && r.rollbackOf ? t("sourceRollback", { n: r.rollbackOf })
+    : ({ upload: t("sourceUpload"), cli: t("sourceCli"), legacy: t("sourceLegacy") }[r.source] ?? r.source);
+  const what = [r.message, r.commitMessage, r.commitSha ? r.commitSha.slice(0, 7) : null].filter(Boolean).join(" · ");
+  const meta = [source, r.createdBy ? t("byWho", { who: r.createdBy }) : null, ago(r.createdAt)].filter(Boolean).join(" · ");
+  const canGoBack = r.status === "superseded" && r.rollback && r.rollback.filesKept;
+  const choosing = state.rollbackChoice && state.rollbackChoice.id === r.id;
+  const logOpen = state.logOf && state.logOf.id === r.id;
+  return `<div class="rel">
+      <div class="rel-main">
+        <span class="num">v${r.number}</span> <span class="rel-state ${esc(r.status)}">${esc(status)}</span>
+        ${what ? `<span class="app-host">${esc(what)}</span>` : ""}
+        <span class="app-host">${esc(meta)}${r.status === "superseded" && r.rollback && !r.rollback.filesKept ? " · " + esc(t("filesCleaned")) : ""}</span>
+      </div>
+      <div class="rel-actions">
+        ${canGoBack && !choosing ? `<button class="act" data-rollback="${esc(r.id)}" data-slug="${slug}">${esc(t("rollbackBtn"))}</button>` : ""}
+        <button class="act" data-showlog="${esc(r.id)}" data-slug="${slug}" aria-expanded="${Boolean(logOpen)}">${esc(t("logBtn"))}</button>
+      </div>
+    </div>
+    ${choosing ? `<div class="diff">
+      <p style="margin:0 0 8px">${esc(t("rollbackDbAhead", { n: r.number, list: r.rollback.migrationsAhead.join(", ") }))}</p>
+      <div class="row" style="gap:8px">
+        <button class="act" data-rollbackgo="${esc(r.id)}" data-slug="${slug}" data-db="0">${esc(t("rollbackCodeOnly"))}</button>
+        ${r.rollback.snapshot ? `<button class="act danger" data-rollbackgo="${esc(r.id)}" data-slug="${slug}" data-db="1">${esc(t("rollbackWithDb"))}</button>` : ""}
+        <button class="act" data-rollbackcancel="1">${esc(t("cancel"))}</button>
+      </div></div>` : ""}
+    ${logOpen ? `<pre class="logs">${esc(state.logOf.lines.join("\n"))}</pre>` : ""}`;
+}
+
+function renderVersions(a) {
+  const list = state.releases[a.slug];
+  const pending = state.pending && state.pending.slug === a.slug ? renderDiff(state.pending.diff) : "";
+  return `<h3 class="label">${t("versionsTitle")}</h3>
+    ${a.release ? `<p class="note" style="margin:0 0 8px">${esc(t("liveVersion", { n: a.release }))}</p>` : ""}
+    ${pending}
+    <div class="field">
+      <button class="act" data-newversion="${a.slug}">${t("newVersion")}</button>
+      <input type="file" accept=".zip" hidden data-versionfile="${a.slug}">
+    </div>
+    ${list ? (list.length ? list.slice(0, 10).map((r) => releaseRow(a.slug, r)).join("") : `<p class="note">${t("noVersions")}</p>`) : ""}`;
+}
+
+async function loadReleases(slug) {
+  try {
+    const { releases } = await api(`/api/apps/${slug}/releases`);
+    state.releases[slug] = releases;
+  } catch {
+    return;
+  }
+  if (state.open === slug && !editingDetail()) renderApps();
+}
+
+// Upload without going live. The server answers with what would change; a new
+// app has nothing to compare with and goes straight live, as before.
+async function stageBundle(file, expect) {
+  toast(t("deploying", { name: file.name }), true);
+  const form = new FormData();
+  form.append("bundle", file);
+  const res = await fetch(`/api/releases${expect ? `?expect=${encodeURIComponent(expect)}` : ""}`, { method: "POST", body: form });
+  const data = (res.headers.get("content-type") || "").includes("json") ? await res.json() : {};
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  $("toast").hidden = true;
+  if (data.diff.isNew) return promoteRelease(data.release.id, data.release.slug);
+  state.pending = { slug: data.release.slug, id: data.release.id, diff: data.diff };
+  state.open = data.release.slug;
+  await loadReleases(data.release.slug);
+  renderApps();
+  document.querySelector(".diff")?.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+async function promoteRelease(id, slug) {
+  toast(t("deploying", { name: slug }), true);
+  const res = await fetch(`/api/releases/${id}/promote`, { method: "POST" });
+  const data = await res.json().catch(() => ({}));
+  state.pending = null;
+  if (!res.ok) {
+    toast(t("fail") + (data.error || res.statusText) + (data.note ? "\n" + data.note : ""), true);
+  } else {
+    toast([t("promoted", { n: data.release }), data.url, ...(data.log || [])].join("\n"), true);
+  }
+  await loadApps();
+  await loadReleases(slug);
 }
 
 // One row of chips per role: people first, then groups. Pressed = holds it.
@@ -1570,6 +2119,9 @@ function bindApps() {
       renderApps(); // loads the logs of whatever is now open
       if (state.open) loadKeys(state.open);
       if (state.open) loadGrants(state.open);
+      if (state.open) loadReleases(state.open);
+      state.logOf = null;
+      state.rollbackChoice = null;
     };
   });
 
@@ -1631,6 +2183,85 @@ function bindApps() {
       toast(t("envSaved"));
       loadApps();
     });
+  });
+
+  document.querySelectorAll("[data-newversion]").forEach((el) => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      document.querySelector(`[data-versionfile="${el.dataset.newversion}"]`).click();
+    };
+  });
+  document.querySelectorAll("[data-versionfile]").forEach((el) => {
+    el.onclick = (e) => e.stopPropagation();
+    el.onchange = fail(async () => {
+      if (el.files[0]) await stageBundle(el.files[0], el.dataset.versionfile);
+    });
+  });
+  document.querySelectorAll("[data-promote]").forEach((el) => {
+    el.onclick = fail(async (e) => {
+      e.stopPropagation();
+      el.disabled = true;
+      await promoteRelease(el.dataset.promote, state.pending.slug);
+    });
+  });
+  document.querySelectorAll("[data-discard]").forEach((el) => {
+    el.onclick = fail(async (e) => {
+      e.stopPropagation();
+      await api(`/api/releases/${el.dataset.discard}/discard`, { method: "POST" });
+      state.pending = null;
+      renderApps();
+    });
+  });
+  document.querySelectorAll("[data-showlog]").forEach((el) => {
+    el.onclick = fail(async (e) => {
+      e.stopPropagation();
+      if (state.logOf && state.logOf.id === el.dataset.showlog) {
+        state.logOf = null;
+      } else {
+        const { log } = await api(`/api/apps/${el.dataset.slug}/releases/${el.dataset.showlog}`);
+        state.logOf = { id: el.dataset.showlog, lines: log };
+      }
+      renderApps();
+    });
+  });
+  const goBack = async (slug, id, database) => {
+    toast(t("deploying", { name: slug }), true);
+    const res = await api(`/api/apps/${slug}/releases/${id}/rollback`, { method: "POST", body: JSON.stringify({ database }) });
+    state.rollbackChoice = null;
+    toast([t("rolledBack", { n: state.releases[slug].find((r) => r.id === id).number }), ...(res.log || [])].join("\n"), true);
+    await loadApps();
+    await loadReleases(slug);
+  };
+  document.querySelectorAll("[data-rollback]").forEach((el) => {
+    el.onclick = fail(async (e) => {
+      e.stopPropagation();
+      const slug = el.dataset.slug;
+      const r = state.releases[slug].find((x) => x.id === el.dataset.rollback);
+      // a database ahead of the old code: say so and let the person choose
+      if (r.rollback.migrationsAhead.length) {
+        state.rollbackChoice = { id: r.id };
+        return renderApps();
+      }
+      if (!confirm(t("rollbackConfirm", { n: r.number }))) return;
+      await goBack(slug, r.id, false);
+    });
+  });
+  document.querySelectorAll("[data-rollbackgo]").forEach((el) => {
+    el.onclick = fail(async (e) => {
+      e.stopPropagation();
+      const slug = el.dataset.slug;
+      const r = state.releases[slug].find((x) => x.id === el.dataset.rollbackgo);
+      const db = el.dataset.db === "1";
+      if (db && !confirm(t("rollbackWithDbConfirm", { list: r.rollback.migrationsAhead.join(", ") }))) return;
+      await goBack(slug, r.id, db);
+    });
+  });
+  document.querySelectorAll("[data-rollbackcancel]").forEach((el) => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      state.rollbackChoice = null;
+      renderApps();
+    };
   });
 
   document.querySelectorAll("[data-grant]").forEach((el) => {
@@ -1916,19 +2547,14 @@ function bindPeople() {
 
 /* ---------- deploy ---------- */
 
+// The global drop zone: a new app goes live at once; a bundle for an existing
+// app opens its panel with what would change, and waits for a confirmation.
 async function upload(file) {
-  toast(t("deploying", { name: file.name }), true);
-  const form = new FormData();
-  form.append("bundle", file);
   try {
-    const res = await fetch("/api/deploy", { method: "POST", body: form });
-    const type = res.headers.get("content-type") || "";
-    const data = type.includes("json") ? await res.json() : {};
-    toast(res.ok ? [data.url, ...(data.log || [])].join("\n") : t("fail") + (data.error || res.statusText), true);
+    await stageBundle(file, null);
   } catch (err) {
     toast(t("deployFailed") + err.message, true);
   }
-  loadApps();
 }
 
 const drop = $("drop");
