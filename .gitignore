@@ -8,3 +8,6 @@ var/
 
 # site files the control plane writes at runtime
 caddy/conf.d/*.caddy
+
+# self-update state
+.update-failed

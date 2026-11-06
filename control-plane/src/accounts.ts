@@ -199,17 +199,34 @@ const audit = (actor: string | null, action: string, target: string | null, deta
 // those ids, so no app loses its data. Passkeys cannot move (they are bound to
 // Pocket ID's own domain): each person gets a link to set a password or a new
 // passkey. Runs once, on an empty gate schema, if Pocket ID is still reachable.
+// Whether accounts still have to come over from Pocket ID: a key is configured
+// and no import has succeeded yet. Until then, no "create the administrator"
+// link is offered: an administrator made by hand would end the import, and
+// every app would lose the link between its rows and their owners.
+export async function importPending(): Promise<boolean> {
+  if (!pocketid.configured()) return false;
+  const [row] = await sql<{ value: string }[]>`select value from settings where key = 'gate.imported'`;
+  return !row;
+}
+
 export async function importFromPocketId(): Promise<number> {
-  if (!pocketid.configured()) return 0;
+  if (!(await importPending())) return 0;
   const [{ n }] = await sql<{ n: number }[]>`select count(*)::int as n from gate.users`;
-  if (n > 0) return 0;
+  if (n > 0) {
+    // accounts exist already (an install that never used Pocket ID): nothing to merge
+    await sql`insert into settings (key, value) values ('gate.imported', 'skipped: accounts already existed') on conflict do nothing`;
+    return 0;
+  }
   let people: pocketid.Person[];
   let groups: { id: string; name: string }[];
   try {
     [people, groups] = await Promise.all([pocketid.listPeople(), pocketid.listGroups()]);
   } catch (err: any) {
-    console.error(`pocket id import skipped, it did not answer: ${err?.message ?? err}`);
-    return 0;
+    console.error(
+      `pocket id import waiting: it did not answer (${err?.message ?? err}). ` +
+        `Start it with "docker compose --profile legacy up -d pocket-id"; the import retries every minute.`,
+    );
+    return -1;
   }
   await sql.begin(async (tx) => {
     for (const g of groups) {
@@ -227,6 +244,7 @@ export async function importFromPocketId(): Promise<number> {
       }
     }
   });
+  await sql`insert into settings (key, value) values ('gate.imported', ${new Date().toISOString()}) on conflict (key) do update set value = excluded.value`;
   console.log(`imported ${people.length} account(s) and ${groups.length} group(s) from Pocket ID`);
   return people.length;
 }
@@ -236,6 +254,10 @@ export async function importFromPocketId(): Promise<number> {
 // the link to create the first administrator on a new install, or to give an
 // imported administrator a password.
 export async function bootstrapLinks() {
+  if (await importPending()) {
+    console.log("SETUP: waiting for the Pocket ID import before offering any sign-in link");
+    return;
+  }
   const admins = await sql<{ id: string; username: string; n: number }[]>`
     select u.id, u.username, count(c.id)::int as n from gate.users u
     left join gate.credentials c on c.user_id = u.id

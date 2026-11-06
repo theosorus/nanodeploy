@@ -1,0 +1,12 @@
+# Checks for a new commit every 5 minutes. A push is live within minutes of
+# its CI turning green.
+[Unit]
+Description=Nanodeploy self-update, every 5 minutes
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=5min
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target

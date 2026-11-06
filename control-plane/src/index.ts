@@ -47,8 +47,18 @@ const GROUP_NAME_RE = /^[\p{L}\p{N}._'-]+$/u;
 await store.initState();
 await store.migrateState();
 await store.initGate();
-await accounts.importFromPocketId();
-await accounts.bootstrapLinks();
+// accounts from Pocket ID first, with their ids; retried until it answers
+if ((await accounts.importFromPocketId()) < 0) {
+  const retry = setInterval(async () => {
+    const n = await accounts.importFromPocketId().catch(() => -1);
+    if (n >= 0) {
+      clearInterval(retry);
+      await accounts.bootstrapLinks().catch((err) => console.error("bootstrap links failed", err));
+    }
+  }, 60_000);
+} else {
+  await accounts.bootstrapLinks();
+}
 
 await releases.init();
 await analytics.init();
