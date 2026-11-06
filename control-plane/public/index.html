@@ -158,6 +158,66 @@
     font-family: var(--mono); font-size: 12px; color: var(--soft); line-height: 1.45;
   }
   .empty { color: var(--soft); padding: var(--s6) 0; }
+  .newkey { margin: 0 0 var(--s6); }
+  .newkey .note { margin: 0; }
+  /* a freshly minted key: shown once, selectable in one click */
+  .keybox { border: 1px solid var(--live); border-radius: var(--radius); padding: var(--s3); margin: var(--s2) 0; }
+  .keybox code { display: block; font-family: var(--mono); font-size: 12px; word-break: break-all; user-select: all; margin-top: var(--s2); }
+  .keyrow { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); border-top: 1px solid var(--rule); padding: var(--s2) 0; }
+  .keyrow .num { font-size: 13px; }
+  .diff { border: 1px solid var(--live); border-radius: var(--radius); padding: var(--s3) var(--s4); margin: var(--s2) 0 var(--s3); }
+  .diff ul { margin: var(--s2) 0; padding-left: 18px; }
+  .diff li { margin: 2px 0; }
+  .rel { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); border-top: 1px solid var(--rule); padding: var(--s2) 0; flex-wrap: wrap; }
+  /* the text keeps room to be read; the buttons go under it when they cannot fit */
+  .rel-main { min-width: 0; flex: 1 1 220px; }
+  .rel-main .num { font-size: 13px; }
+  .rel-state { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--soft); }
+  .rel-state.live { color: var(--live); }
+  .rel-state.failed { color: var(--danger); }
+  .rel-actions { display: flex; gap: var(--s2); flex: none; flex-wrap: wrap; justify-content: flex-end; }
+
+  /* analytics: one ink for data, ochre for "awake", red only for crashes and
+     always with a word next to it; grid and axes recede */
+  .an-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .an-table th { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--soft); font-weight: 400; text-align: right; padding: 0 0 var(--s2) var(--s3); vertical-align: bottom; }
+  .an-table th:first-child, .an-table td:first-child { text-align: left; padding-left: 0; }
+  .an-table td { border-top: 1px solid var(--rule); padding: var(--s3) 0 var(--s3) var(--s3); text-align: right;
+    font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 13px; white-space: nowrap; }
+  .an-table td:first-child { font-family: var(--ui); font-size: 14px; }
+  .an-table tr[data-an] { cursor: pointer; }
+  .an-table tr[data-an]:hover td, .an-table tr[aria-selected="true"] td { background: var(--surface); }
+  .an-scroll { overflow-x: auto; margin: 0 0 var(--s6); }
+  .an-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3); flex-wrap: wrap; margin: 0 0 var(--s4); }
+  .an-head h2 { margin: 0; font-size: 18px; font-weight: 600; }
+  .seg { display: inline-flex; border: 1px solid var(--rule); border-radius: var(--radius); }
+  .seg button { font: inherit; font-size: 13px; background: none; border: 0; color: var(--soft); padding: 6px 12px; min-height: 36px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 1px; background: var(--rule);
+    border: 1px solid var(--rule); margin: 0 0 var(--s5); }
+  .tile { background: var(--paper); padding: var(--s3); }
+  .tile .label { display: block; margin-bottom: 4px; }
+  .tile .big { font-family: var(--mono); font-size: 22px; font-variant-numeric: tabular-nums; }
+  .chart { margin: 0 0 var(--s5); }
+  .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .chart .axis { fill: var(--soft); font-family: var(--mono); font-size: 10px; }
+  .chart .grid { stroke: var(--rule); stroke-width: 1; }
+  /* the hover target is the whole column, wider and taller than the bar */
+  .chart .bar { fill: var(--ink); pointer-events: none; }
+  .chart .hit:hover + .bar { fill: var(--live); }
+  .chart .hit { fill: transparent; cursor: default; }
+  .legend { display: flex; gap: var(--s4); flex-wrap: wrap; font-size: 12px; color: var(--soft); margin-top: var(--s2); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  .tops { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--s5); margin: 0 0 var(--s5); }
+  .toprow { display: grid; grid-template-columns: 1fr auto; gap: 2px var(--s3); font-size: 13px; padding: 4px 0; }
+  .toprow span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .toprow .num { color: var(--soft); }
+  .toprow b { grid-column: 1 / -1; height: 3px; background: var(--cell); border-radius: 2px; }
+  .toprow b i { display: block; height: 100%; background: var(--ink); border-radius: 2px; }
+  .an-tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--surface); font-size: 12px;
+    padding: 6px 8px; border-radius: var(--radius); white-space: pre; z-index: 10; }
+  .an-tip[hidden] { display: none; }
   .note { color: var(--soft); font-size: 13px; }
 
   .warn { border: 1px solid var(--danger); border-radius: var(--radius); padding: var(--s4); margin-bottom: var(--s5); }
@@ -178,6 +238,9 @@
        too narrow to read their own placeholder */
     .field { flex-direction: column; align-items: stretch; }
     .field input { max-width: none; }
+    /* a row with several actions puts them under its text */
+    .rel { flex-wrap: wrap; }
+    .rel-actions { flex: 1 1 100%; justify-content: flex-start; }
   }
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; animation: none !important; }
@@ -196,6 +259,8 @@
 
   <nav role="tablist">
     <button role="tab" data-view="apps" aria-selected="true"></button>
+    <button role="tab" data-view="analytics" aria-selected="false"></button>
+    <button role="tab" data-view="git" aria-selected="false"></button>
     <button role="tab" data-view="people" aria-selected="false"></button>
   </nav>
 
@@ -216,13 +281,26 @@
     </button>
     <input type="file" id="file" accept=".zip" hidden>
 
+    <div class="newkey">
+      <div class="label" id="newkey-title"></div>
+      <div class="field">
+        <input id="newkey-slug" class="num" autocomplete="off" spellcheck="false">
+        <button class="act" id="newkey-create"></button>
+      </div>
+      <p class="note" id="newkey-note"></p>
+      <div id="newkey-result"></div>
+    </div>
+
     <div id="apps"></div>
   </section>
 
+  <section id="view-analytics" hidden></section>
+  <section id="view-git" hidden></section>
   <section id="view-people" hidden></section>
   <section id="view-denied" hidden></section>
 </div>
 <div class="toast" id="toast" hidden></div>
+<div class="an-tip" id="an-tip" role="status" hidden></div>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -281,17 +359,6 @@ const I18N = {
     deployedAt: "déployée {when}",
     notAdminTitle: "Ce compte n'administre pas le serveur",
     notAdminBody: "Vous pouvez utiliser les apps auxquelles vous avez accès, mais pas piloter la plateforme. Demandez à l'administrateur de vous ajouter au groupe {group}.",
-    adminTitle: "Administration de la console",
-    adminOpen: "Attention : tout compte capable de se connecter contrôle ce serveur. Il peut déployer du code et piloter Docker. Choisissez un groupe d'administrateurs.",
-    adminSet: "Console réservée au groupe {group}.",
-    adminPinned: "Défini par ADMIN_GROUP dans .env, non modifiable ici.",
-    adminSave: "Appliquer",
-    adminNoGroup: "Créez d'abord un groupe ci-dessous, puis ajoutez-vous dedans.",
-    inviteNeedsAdmin: "Choisissez un groupe d'administrateurs avant d'inviter quelqu'un : sinon le nouveau compte contrôlerait aussi le serveur.",
-    peopleOffHtml: 'La gestion des comptes n\'est pas branchée. Créez une clé API dans Pocket ID, mettez-la dans <span class="num">POCKETID_API_KEY</span>, puis relancez le control plane.',
-    openPocketId: "Ouvrir Pocket ID",
-    idAdmin: "admin Pocket ID",
-    inviteTitle: "Inviter quelqu'un",
     usernamePh: "identifiant",
     emailPh: "email",
     invite: "Inviter",
@@ -356,17 +423,6 @@ const I18N = {
     deployedAt: "deployed {when}",
     notAdminTitle: "This account does not administer the server",
     notAdminBody: "You can use the apps you have access to, but not drive the platform. Ask the administrator to add you to the {group} group.",
-    adminTitle: "Console administration",
-    adminOpen: "Warning: every account that can sign in controls this server. It can deploy code and drive Docker. Pick an admin group.",
-    adminSet: "Console restricted to the {group} group.",
-    adminPinned: "Set by ADMIN_GROUP in .env, not editable here.",
-    adminSave: "Apply",
-    adminNoGroup: "Create a group below first, then add yourself to it.",
-    inviteNeedsAdmin: "Pick an admin group before inviting anyone, otherwise the new account would control this server too.",
-    peopleOffHtml: 'Account management is not wired up. Create an API key in Pocket ID, put it in <span class="num">POCKETID_API_KEY</span> and restart the control plane.',
-    openPocketId: "Open Pocket ID",
-    idAdmin: "Pocket ID admin",
-    inviteTitle: "Invite someone",
     usernamePh: "username",
     emailPh: "email",
     invite: "Invite",
@@ -431,17 +487,6 @@ const I18N = {
     deployedAt: "desplegada {when}",
     notAdminTitle: "Esta cuenta no administra el servidor",
     notAdminBody: "Puedes usar las apps a las que tienes acceso, pero no gestionar la plataforma. Pide al administrador que te añada al grupo {group}.",
-    adminTitle: "Administración de la consola",
-    adminOpen: "Atención: toda cuenta que pueda iniciar sesión controla este servidor. Puede desplegar código y manejar Docker. Elige un grupo de administradores.",
-    adminSet: "Consola restringida al grupo {group}.",
-    adminPinned: "Definido por ADMIN_GROUP en .env, no editable aquí.",
-    adminSave: "Aplicar",
-    adminNoGroup: "Crea primero un grupo abajo y luego añádete a él.",
-    inviteNeedsAdmin: "Elige un grupo de administradores antes de invitar a alguien; de lo contrario la nueva cuenta también controlaría este servidor.",
-    peopleOffHtml: 'La gestión de cuentas no está configurada. Crea una clave API en Pocket ID, ponla en <span class="num">POCKETID_API_KEY</span> y reinicia el control plane.',
-    openPocketId: "Abrir Pocket ID",
-    idAdmin: "admin de Pocket ID",
-    inviteTitle: "Invitar a alguien",
     usernamePh: "usuario",
     emailPh: "email",
     invite: "Invitar",
@@ -506,17 +551,6 @@ const I18N = {
     deployedAt: "bereitgestellt {when}",
     notAdminTitle: "Dieses Konto verwaltet den Server nicht",
     notAdminBody: "Du kannst die Apps nutzen, auf die du Zugriff hast, aber die Plattform nicht steuern. Bitte den Administrator, dich zur Gruppe {group} hinzuzufügen.",
-    adminTitle: "Konsolenverwaltung",
-    adminOpen: "Achtung: Jedes Konto, das sich anmelden kann, steuert diesen Server. Es kann Code bereitstellen und Docker steuern. Wähle eine Administratorgruppe.",
-    adminSet: "Konsole auf die Gruppe {group} beschränkt.",
-    adminPinned: "Durch ADMIN_GROUP in .env festgelegt, hier nicht änderbar.",
-    adminSave: "Anwenden",
-    adminNoGroup: "Erstelle zuerst unten eine Gruppe und füge dich dann hinzu.",
-    inviteNeedsAdmin: "Wähle eine Administratorgruppe, bevor du jemanden einlädst, sonst würde das neue Konto diesen Server ebenfalls steuern.",
-    peopleOffHtml: 'Die Kontoverwaltung ist nicht eingerichtet. Erstelle einen API-Schlüssel in Pocket ID, trage ihn in <span class="num">POCKETID_API_KEY</span> ein und starte die Control Plane neu.',
-    openPocketId: "Pocket ID öffnen",
-    idAdmin: "Pocket-ID-Admin",
-    inviteTitle: "Jemanden einladen",
     usernamePh: "Benutzername",
     emailPh: "E-Mail",
     invite: "Einladen",
@@ -581,17 +615,6 @@ const I18N = {
     deployedAt: "distribuita {when}",
     notAdminTitle: "Questo account non amministra il server",
     notAdminBody: "Puoi usare le app a cui hai accesso, ma non gestire la piattaforma. Chiedi all'amministratore di aggiungerti al gruppo {group}.",
-    adminTitle: "Amministrazione della console",
-    adminOpen: "Attenzione: ogni account in grado di accedere controlla questo server. Può distribuire codice e gestire Docker. Scegli un gruppo di amministratori.",
-    adminSet: "Console riservata al gruppo {group}.",
-    adminPinned: "Impostato da ADMIN_GROUP in .env, non modificabile qui.",
-    adminSave: "Applica",
-    adminNoGroup: "Crea prima un gruppo qui sotto, poi aggiungiti.",
-    inviteNeedsAdmin: "Scegli un gruppo di amministratori prima di invitare qualcuno, altrimenti il nuovo account controllerebbe anche questo server.",
-    peopleOffHtml: 'La gestione degli account non è configurata. Crea una chiave API in Pocket ID, inseriscila in <span class="num">POCKETID_API_KEY</span> e riavvia il control plane.',
-    openPocketId: "Apri Pocket ID",
-    idAdmin: "admin di Pocket ID",
-    inviteTitle: "Invita qualcuno",
     usernamePh: "nome utente",
     emailPh: "email",
     invite: "Invita",
@@ -656,17 +679,6 @@ const I18N = {
     deployedAt: "implantada {when}",
     notAdminTitle: "Esta conta não administra o servidor",
     notAdminBody: "Você pode usar as apps a que tem acesso, mas não gerenciar a plataforma. Peça ao administrador para adicioná-lo ao grupo {group}.",
-    adminTitle: "Administração do console",
-    adminOpen: "Atenção: toda conta que consegue entrar controla este servidor. Ela pode implantar código e operar o Docker. Escolha um grupo de administradores.",
-    adminSet: "Console restrito ao grupo {group}.",
-    adminPinned: "Definido por ADMIN_GROUP no .env, não editável aqui.",
-    adminSave: "Aplicar",
-    adminNoGroup: "Crie primeiro um grupo abaixo e depois adicione-se a ele.",
-    inviteNeedsAdmin: "Escolha um grupo de administradores antes de convidar alguém, senão a nova conta também controlaria este servidor.",
-    peopleOffHtml: 'O gerenciamento de contas não está configurado. Crie uma chave de API no Pocket ID, coloque-a em <span class="num">POCKETID_API_KEY</span> e reinicie o control plane.',
-    openPocketId: "Abrir Pocket ID",
-    idAdmin: "admin do Pocket ID",
-    inviteTitle: "Convidar alguém",
     usernamePh: "usuário",
     emailPh: "email",
     invite: "Convidar",
@@ -731,17 +743,6 @@ const I18N = {
     deployedAt: "uitgerold {when}",
     notAdminTitle: "Dit account beheert de server niet",
     notAdminBody: "Je kunt de apps gebruiken waar je toegang toe hebt, maar het platform niet beheren. Vraag de beheerder om je toe te voegen aan de groep {group}.",
-    adminTitle: "Consolebeheer",
-    adminOpen: "Let op: elk account dat kan inloggen beheert deze server. Het kan code uitrollen en Docker aansturen. Kies een beheerdersgroep.",
-    adminSet: "Console beperkt tot de groep {group}.",
-    adminPinned: "Ingesteld door ADMIN_GROUP in .env, hier niet te wijzigen.",
-    adminSave: "Toepassen",
-    adminNoGroup: "Maak eerst hieronder een groep en voeg jezelf eraan toe.",
-    inviteNeedsAdmin: "Kies een beheerdersgroep voordat je iemand uitnodigt, anders zou het nieuwe account deze server ook beheren.",
-    peopleOffHtml: 'Accountbeheer is niet ingesteld. Maak een API-sleutel aan in Pocket ID, zet die in <span class="num">POCKETID_API_KEY</span> en herstart de control plane.',
-    openPocketId: "Pocket ID openen",
-    idAdmin: "Pocket ID-beheerder",
-    inviteTitle: "Iemand uitnodigen",
     usernamePh: "gebruikersnaam",
     emailPh: "e-mail",
     invite: "Uitnodigen",
@@ -806,17 +807,6 @@ const I18N = {
     deployedAt: "развёрнуто {when}",
     notAdminTitle: "Этот аккаунт не администрирует сервер",
     notAdminBody: "Вы можете пользоваться приложениями, к которым у вас есть доступ, но не управлять платформой. Попросите администратора добавить вас в группу {group}.",
-    adminTitle: "Администрирование консоли",
-    adminOpen: "Внимание: любой аккаунт, способный войти, управляет этим сервером. Он может развёртывать код и управлять Docker. Выберите группу администраторов.",
-    adminSet: "Консоль ограничена группой {group}.",
-    adminPinned: "Задано ADMIN_GROUP в .env, здесь не изменяется.",
-    adminSave: "Применить",
-    adminNoGroup: "Сначала создайте группу ниже, затем добавьте себя в неё.",
-    inviteNeedsAdmin: "Выберите группу администраторов перед приглашением, иначе новый аккаунт тоже будет управлять сервером.",
-    peopleOffHtml: 'Управление аккаунтами не настроено. Создайте ключ API в Pocket ID, укажите его в <span class="num">POCKETID_API_KEY</span> и перезапустите control plane.',
-    openPocketId: "Открыть Pocket ID",
-    idAdmin: "админ Pocket ID",
-    inviteTitle: "Пригласить человека",
     usernamePh: "имя пользователя",
     emailPh: "эл. почта",
     invite: "Пригласить",
@@ -881,17 +871,6 @@ const I18N = {
     deployedAt: "部署于 {when}",
     notAdminTitle: "此账户不管理该服务器",
     notAdminBody: "你可以使用有权限的应用，但无法管理平台。请管理员将你加入 {group} 群组。",
-    adminTitle: "控制台管理",
-    adminOpen: "注意：任何能够登录的账户都可以控制此服务器，可以部署代码并操作 Docker。请选择一个管理员群组。",
-    adminSet: "控制台已限定为 {group} 群组。",
-    adminPinned: "由 .env 中的 ADMIN_GROUP 设定，此处不可修改。",
-    adminSave: "应用",
-    adminNoGroup: "请先在下方创建一个群组，然后将自己加入其中。",
-    inviteNeedsAdmin: "邀请他人前请先选择管理员群组，否则新账户也将能够控制此服务器。",
-    peopleOffHtml: '账户管理尚未配置。在 Pocket ID 中创建一个 API 密钥，填入 <span class="num">POCKETID_API_KEY</span>，然后重启 control plane。',
-    openPocketId: "打开 Pocket ID",
-    idAdmin: "Pocket ID 管理员",
-    inviteTitle: "邀请成员",
     usernamePh: "用户名",
     emailPh: "邮箱",
     invite: "邀请",
@@ -956,17 +935,6 @@ const I18N = {
     deployedAt: "{when} にデプロイ",
     notAdminTitle: "このアカウントはサーバーを管理できません",
     notAdminBody: "アクセス権のあるアプリは利用できますが、プラットフォームの操作はできません。管理者に {group} グループへの追加を依頼してください。",
-    adminTitle: "コンソール管理",
-    adminOpen: "警告: サインインできるすべてのアカウントがこのサーバーを制御でき、コードのデプロイや Docker の操作が可能です。管理者グループを選択してください。",
-    adminSet: "コンソールを {group} グループに限定しました。",
-    adminPinned: ".env の ADMIN_GROUP で設定されており、ここでは変更できません。",
-    adminSave: "適用",
-    adminNoGroup: "先に下でグループを作成し、自分を追加してください。",
-    inviteNeedsAdmin: "誰かを招待する前に管理者グループを選択してください。さもないと新しいアカウントもこのサーバーを制御できてしまいます。",
-    peopleOffHtml: 'アカウント管理が設定されていません。Pocket ID で API キーを作成し、<span class="num">POCKETID_API_KEY</span> に設定して control plane を再起動してください。',
-    openPocketId: "Pocket ID を開く",
-    idAdmin: "Pocket ID 管理者",
-    inviteTitle: "メンバーを招待",
     usernamePh: "ユーザー名",
     emailPh: "メール",
     invite: "招待",
@@ -1128,6 +1096,1527 @@ const I18N_PEOPLE = {
   },
 };
 for (const l of Object.keys(I18N_PEOPLE)) Object.assign(I18N[l], I18N_PEOPLE[l]);
+// Deploy keys: one credential per app, for CI jobs and AI agents, so the server
+// token never has to leave the machine. Same merge as I18N_PEOPLE.
+const I18N_KEYS = {
+  en: {
+    keysTitle: "Deploy keys",
+    keysNote: "A deploy key can deploy this app and read its logs, nothing else. Give it to a CI job or an AI agent instead of the server token.",
+    keysNone: "No key yet.", keyLabelPh: "What it is for (e.g. GitHub Actions)", keyCreate: "Create a key",
+    keyRevoke: "Revoke", keyRevokeConfirm: "Revoke {hint}? Anything using it stops deploying.",
+    keyShownOnce: "Copy it now, it will not be shown again:", keyLastUsed: "used {when}", keyNeverUsed: "never used",
+    newAppKeyTitle: "Deploy key for a new app",
+    newAppKeyNote: "Lets an agent or a CI deploy an app that does not exist yet, under this name only.",
+    newAppSlugPh: "app-name", slugInvalid: "Lowercase letters, digits and dashes, starting with a letter.",
+  },
+  fr: {
+    keysTitle: "Clés de déploiement",
+    keysNote: "Une clé de déploiement peut déployer cette app et lire ses logs, rien d'autre. Donnez-la à une CI ou à un agent IA à la place du jeton du serveur.",
+    keysNone: "Aucune clé pour l'instant.", keyLabelPh: "À quoi elle sert (ex. GitHub Actions)", keyCreate: "Créer une clé",
+    keyRevoke: "Révoquer", keyRevokeConfirm: "Révoquer {hint} ? Ce qui l'utilise ne pourra plus déployer.",
+    keyShownOnce: "Copiez-la maintenant, elle ne sera plus affichée :", keyLastUsed: "utilisée {when}", keyNeverUsed: "jamais utilisée",
+    newAppKeyTitle: "Clé de déploiement pour une nouvelle app",
+    newAppKeyNote: "Permet à un agent ou une CI de déployer une app qui n'existe pas encore, sous ce nom uniquement.",
+    newAppSlugPh: "nom-de-l-app", slugInvalid: "Minuscules, chiffres et tirets, en commençant par une lettre.",
+  },
+  es: {
+    keysTitle: "Claves de despliegue",
+    keysNote: "Una clave de despliegue puede desplegar esta app y leer sus logs, nada más. Dásela a una CI o a un agente de IA en lugar del token del servidor.",
+    keysNone: "Aún no hay claves.", keyLabelPh: "Para qué sirve (p. ej. GitHub Actions)", keyCreate: "Crear una clave",
+    keyRevoke: "Revocar", keyRevokeConfirm: "¿Revocar {hint}? Lo que la use dejará de desplegar.",
+    keyShownOnce: "Cópiala ahora, no se volverá a mostrar:", keyLastUsed: "usada {when}", keyNeverUsed: "nunca usada",
+    newAppKeyTitle: "Clave de despliegue para una app nueva",
+    newAppKeyNote: "Permite a un agente o a una CI desplegar una app que aún no existe, solo con este nombre.",
+    newAppSlugPh: "nombre-de-la-app", slugInvalid: "Minúsculas, cifras y guiones, empezando por una letra.",
+  },
+  de: {
+    keysTitle: "Deploy-Schlüssel",
+    keysNote: "Ein Deploy-Schlüssel kann diese App bereitstellen und ihre Logs lesen, sonst nichts. Gib ihn einer CI oder einem KI-Agenten statt des Server-Tokens.",
+    keysNone: "Noch kein Schlüssel.", keyLabelPh: "Wofür er ist (z. B. GitHub Actions)", keyCreate: "Schlüssel erstellen",
+    keyRevoke: "Widerrufen", keyRevokeConfirm: "{hint} widerrufen? Alles, was ihn nutzt, kann nicht mehr bereitstellen.",
+    keyShownOnce: "Jetzt kopieren, er wird nicht noch einmal angezeigt:", keyLastUsed: "genutzt {when}", keyNeverUsed: "nie genutzt",
+    newAppKeyTitle: "Deploy-Schlüssel für eine neue App",
+    newAppKeyNote: "Erlaubt einem Agenten oder einer CI, eine noch nicht existierende App bereitzustellen, nur unter diesem Namen.",
+    newAppSlugPh: "app-name", slugInvalid: "Kleinbuchstaben, Ziffern und Bindestriche, beginnend mit einem Buchstaben.",
+  },
+  it: {
+    keysTitle: "Chiavi di deploy",
+    keysNote: "Una chiave di deploy può pubblicare questa app e leggerne i log, nient'altro. Dalla a una CI o a un agente IA al posto del token del server.",
+    keysNone: "Ancora nessuna chiave.", keyLabelPh: "A cosa serve (es. GitHub Actions)", keyCreate: "Crea una chiave",
+    keyRevoke: "Revoca", keyRevokeConfirm: "Revocare {hint}? Ciò che la usa non potrà più pubblicare.",
+    keyShownOnce: "Copiala ora, non verrà più mostrata:", keyLastUsed: "usata {when}", keyNeverUsed: "mai usata",
+    newAppKeyTitle: "Chiave di deploy per una nuova app",
+    newAppKeyNote: "Permette a un agente o a una CI di pubblicare un'app che non esiste ancora, solo con questo nome.",
+    newAppSlugPh: "nome-app", slugInvalid: "Minuscole, cifre e trattini, iniziando con una lettera.",
+  },
+  pt: {
+    keysTitle: "Chaves de deploy",
+    keysNote: "Uma chave de deploy pode publicar esta app e ler os seus logs, mais nada. Dê-a a uma CI ou a um agente de IA em vez do token do servidor.",
+    keysNone: "Ainda não há chaves.", keyLabelPh: "Para que serve (ex. GitHub Actions)", keyCreate: "Criar uma chave",
+    keyRevoke: "Revogar", keyRevokeConfirm: "Revogar {hint}? O que a usa deixa de poder publicar.",
+    keyShownOnce: "Copie-a agora, não voltará a ser mostrada:", keyLastUsed: "usada {when}", keyNeverUsed: "nunca usada",
+    newAppKeyTitle: "Chave de deploy para uma nova app",
+    newAppKeyNote: "Permite a um agente ou a uma CI publicar uma app que ainda não existe, só com este nome.",
+    newAppSlugPh: "nome-da-app", slugInvalid: "Minúsculas, algarismos e hífenes, a começar por uma letra.",
+  },
+  nl: {
+    keysTitle: "Deploy-sleutels",
+    keysNote: "Een deploy-sleutel kan deze app uitrollen en de logs lezen, verder niets. Geef hem aan een CI of een AI-agent in plaats van de servertoken.",
+    keysNone: "Nog geen sleutel.", keyLabelPh: "Waarvoor hij dient (bv. GitHub Actions)", keyCreate: "Sleutel maken",
+    keyRevoke: "Intrekken", keyRevokeConfirm: "{hint} intrekken? Wat hem gebruikt kan niet meer uitrollen.",
+    keyShownOnce: "Kopieer hem nu, hij wordt niet opnieuw getoond:", keyLastUsed: "gebruikt {when}", keyNeverUsed: "nooit gebruikt",
+    newAppKeyTitle: "Deploy-sleutel voor een nieuwe app",
+    newAppKeyNote: "Laat een agent of een CI een app uitrollen die nog niet bestaat, alleen onder deze naam.",
+    newAppSlugPh: "app-naam", slugInvalid: "Kleine letters, cijfers en streepjes, beginnend met een letter.",
+  },
+  ru: {
+    keysTitle: "Ключи деплоя",
+    keysNote: "Ключ деплоя может развернуть это приложение и читать его логи, и ничего больше. Отдайте его CI или ИИ-агенту вместо токена сервера.",
+    keysNone: "Ключей пока нет.", keyLabelPh: "Для чего он (например, GitHub Actions)", keyCreate: "Создать ключ",
+    keyRevoke: "Отозвать", keyRevokeConfirm: "Отозвать {hint}? Всё, что его использует, больше не сможет деплоить.",
+    keyShownOnce: "Скопируйте сейчас, он больше не будет показан:", keyLastUsed: "использован {when}", keyNeverUsed: "ни разу не использован",
+    newAppKeyTitle: "Ключ деплоя для нового приложения",
+    newAppKeyNote: "Позволяет агенту или CI развернуть приложение, которого ещё нет, только под этим именем.",
+    newAppSlugPh: "imya-prilozheniya", slugInvalid: "Строчные латинские буквы, цифры и дефисы, начиная с буквы.",
+  },
+  zh: {
+    keysTitle: "部署密钥",
+    keysNote: "部署密钥只能部署此应用并读取其日志，别无其他。请把它交给 CI 或 AI 代理，而不是服务器令牌。",
+    keysNone: "还没有密钥。", keyLabelPh: "用途（例如 GitHub Actions）", keyCreate: "创建密钥",
+    keyRevoke: "撤销", keyRevokeConfirm: "撤销 {hint}？使用它的地方将无法再部署。",
+    keyShownOnce: "请立即复制，之后不会再显示：", keyLastUsed: "{when}使用", keyNeverUsed: "从未使用",
+    newAppKeyTitle: "新应用的部署密钥",
+    newAppKeyNote: "允许代理或 CI 部署一个尚不存在的应用，仅限此名称。",
+    newAppSlugPh: "app-name", slugInvalid: "小写字母、数字和连字符，以字母开头。",
+  },
+  ja: {
+    keysTitle: "デプロイキー",
+    keysNote: "デプロイキーはこのアプリのデプロイとログの閲覧だけができます。サーバーのトークンの代わりに CI や AI エージェントに渡してください。",
+    keysNone: "まだキーはありません。", keyLabelPh: "用途（例: GitHub Actions）", keyCreate: "キーを作成",
+    keyRevoke: "無効化", keyRevokeConfirm: "{hint} を無効化しますか？これを使うものはデプロイできなくなります。",
+    keyShownOnce: "今すぐコピーしてください。二度と表示されません:", keyLastUsed: "{when}に使用", keyNeverUsed: "未使用",
+    newAppKeyTitle: "新しいアプリのデプロイキー",
+    newAppKeyNote: "まだ存在しないアプリを、この名前に限りエージェントや CI がデプロイできるようにします。",
+    newAppSlugPh: "app-name", slugInvalid: "英小文字・数字・ハイフンのみ、先頭は英字。",
+  },
+};
+for (const l of Object.keys(I18N_KEYS)) Object.assign(I18N[l], I18N_KEYS[l]);
+
+// Accounts moved from Pocket ID to gate: passwords or passkeys, sign-in links,
+// and app roles. inviteHint and peopleError change meaning on purpose.
+const I18N_GATE = {
+  en: {
+    inviteRequired: "A username is required.",
+    inviteHint: "The person gets a link to choose a password or a passkey. Email is optional.",
+    peopleError: "Could not load the accounts: ",
+    myAccount: "My password and passkeys",
+    signInLink: "Sign-in link", signInLinkMade: "Send this link to {name}. It works once, for 7 days:\n",
+    notActivated: "not activated yet", credPassword: "password", credPasskeys: "{n} passkey(s)",
+    rolesTitle: "Roles", rolesNote: "Declared in app.yaml, given here. Administrators hold every role.",
+    protectedPaths: "Protected: {paths}", rolePeople: "People", roleGroups: "Groups",
+  },
+  fr: {
+    inviteRequired: "Le nom d'utilisateur est obligatoire.",
+    inviteHint: "La personne reçoit un lien pour choisir un mot de passe ou une passkey. L'email est facultatif.",
+    peopleError: "Impossible de charger les comptes : ",
+    myAccount: "Mon mot de passe et mes passkeys",
+    signInLink: "Lien de connexion", signInLinkMade: "Envoyez ce lien à {name}. Il sert une fois, pendant 7 jours :\n",
+    notActivated: "pas encore activé", credPassword: "mot de passe", credPasskeys: "{n} passkey(s)",
+    rolesTitle: "Rôles", rolesNote: "Déclarés dans app.yaml, attribués ici. Les administrateurs ont tous les rôles.",
+    protectedPaths: "Protégé : {paths}", rolePeople: "Personnes", roleGroups: "Groupes",
+  },
+  es: {
+    inviteRequired: "El nombre de usuario es obligatorio.",
+    inviteHint: "La persona recibe un enlace para elegir una contraseña o una passkey. El email es opcional.",
+    peopleError: "No se pudieron cargar las cuentas: ",
+    myAccount: "Mi contraseña y mis passkeys",
+    signInLink: "Enlace de acceso", signInLinkMade: "Envía este enlace a {name}. Sirve una vez, durante 7 días:\n",
+    notActivated: "aún no activada", credPassword: "contraseña", credPasskeys: "{n} passkey(s)",
+    rolesTitle: "Roles", rolesNote: "Declarados en app.yaml, asignados aquí. Los administradores tienen todos los roles.",
+    protectedPaths: "Protegido: {paths}", rolePeople: "Personas", roleGroups: "Grupos",
+  },
+  de: {
+    inviteRequired: "Ein Benutzername ist erforderlich.",
+    inviteHint: "Die Person erhält einen Link, um ein Passwort oder einen Passkey festzulegen. E-Mail ist optional.",
+    peopleError: "Konten konnten nicht geladen werden: ",
+    myAccount: "Mein Passwort und meine Passkeys",
+    signInLink: "Anmeldelink", signInLinkMade: "Schicke diesen Link an {name}. Er funktioniert einmal, 7 Tage lang:\n",
+    notActivated: "noch nicht aktiviert", credPassword: "Passwort", credPasskeys: "{n} Passkey(s)",
+    rolesTitle: "Rollen", rolesNote: "In app.yaml deklariert, hier vergeben. Administratoren haben jede Rolle.",
+    protectedPaths: "Geschützt: {paths}", rolePeople: "Personen", roleGroups: "Gruppen",
+  },
+  it: {
+    inviteRequired: "Il nome utente è obbligatorio.",
+    inviteHint: "La persona riceve un link per scegliere una password o una passkey. L'email è facoltativa.",
+    peopleError: "Impossibile caricare gli account: ",
+    myAccount: "La mia password e le mie passkey",
+    signInLink: "Link di accesso", signInLinkMade: "Invia questo link a {name}. Funziona una volta, per 7 giorni:\n",
+    notActivated: "non ancora attivato", credPassword: "password", credPasskeys: "{n} passkey",
+    rolesTitle: "Ruoli", rolesNote: "Dichiarati in app.yaml, assegnati qui. Gli amministratori hanno tutti i ruoli.",
+    protectedPaths: "Protetto: {paths}", rolePeople: "Persone", roleGroups: "Gruppi",
+  },
+  pt: {
+    inviteRequired: "O nome de utilizador é obrigatório.",
+    inviteHint: "A pessoa recebe um link para escolher uma palavra-passe ou uma passkey. O email é opcional.",
+    peopleError: "Não foi possível carregar as contas: ",
+    myAccount: "A minha palavra-passe e passkeys",
+    signInLink: "Link de acesso", signInLinkMade: "Envie este link a {name}. Funciona uma vez, durante 7 dias:\n",
+    notActivated: "ainda não ativada", credPassword: "palavra-passe", credPasskeys: "{n} passkey(s)",
+    rolesTitle: "Funções", rolesNote: "Declaradas em app.yaml, atribuídas aqui. Os administradores têm todas as funções.",
+    protectedPaths: "Protegido: {paths}", rolePeople: "Pessoas", roleGroups: "Grupos",
+  },
+  nl: {
+    inviteRequired: "Een gebruikersnaam is verplicht.",
+    inviteHint: "De persoon krijgt een link om een wachtwoord of een passkey te kiezen. E-mail is optioneel.",
+    peopleError: "Kon de accounts niet laden: ",
+    myAccount: "Mijn wachtwoord en passkeys",
+    signInLink: "Aanmeldlink", signInLinkMade: "Stuur deze link naar {name}. Hij werkt één keer, 7 dagen lang:\n",
+    notActivated: "nog niet geactiveerd", credPassword: "wachtwoord", credPasskeys: "{n} passkey(s)",
+    rolesTitle: "Rollen", rolesNote: "Aangegeven in app.yaml, hier toegekend. Beheerders hebben elke rol.",
+    protectedPaths: "Beschermd: {paths}", rolePeople: "Personen", roleGroups: "Groepen",
+  },
+  ru: {
+    inviteRequired: "Нужно имя пользователя.",
+    inviteHint: "Человек получает ссылку, чтобы выбрать пароль или passkey. Email необязателен.",
+    peopleError: "Не удалось загрузить аккаунты: ",
+    myAccount: "Мой пароль и passkeys",
+    signInLink: "Ссылка для входа", signInLinkMade: "Отправьте эту ссылку {name}. Она работает один раз, 7 дней:\n",
+    notActivated: "ещё не активирован", credPassword: "пароль", credPasskeys: "passkeys: {n}",
+    rolesTitle: "Роли", rolesNote: "Объявлены в app.yaml, выдаются здесь. У администраторов есть все роли.",
+    protectedPaths: "Защищено: {paths}", rolePeople: "Люди", roleGroups: "Группы",
+  },
+  zh: {
+    inviteRequired: "必须填写用户名。",
+    inviteHint: "对方会收到一个链接，用来设置密码或通行密钥。邮箱可选。",
+    peopleError: "无法加载账户：",
+    myAccount: "我的密码和通行密钥",
+    signInLink: "登录链接", signInLinkMade: "把这个链接发给 {name}。它只能用一次，有效期 7 天：\n",
+    notActivated: "尚未激活", credPassword: "密码", credPasskeys: "{n} 个通行密钥",
+    rolesTitle: "角色", rolesNote: "在 app.yaml 中声明，在这里分配。管理员拥有所有角色。",
+    protectedPaths: "受保护：{paths}", rolePeople: "人员", roleGroups: "群组",
+  },
+  ja: {
+    inviteRequired: "ユーザー名は必須です。",
+    inviteHint: "相手はパスワードかパスキーを設定するリンクを受け取ります。メールは任意です。",
+    peopleError: "アカウントを読み込めませんでした: ",
+    myAccount: "自分のパスワードとパスキー",
+    signInLink: "ログインリンク", signInLinkMade: "このリンクを {name} に送ってください。1 回だけ、7 日間有効です:\n",
+    notActivated: "未有効化", credPassword: "パスワード", credPasskeys: "パスキー {n} 件",
+    rolesTitle: "ロール", rolesNote: "app.yaml で宣言し、ここで割り当てます。管理者はすべてのロールを持ちます。",
+    protectedPaths: "保護: {paths}", rolePeople: "人", roleGroups: "グループ",
+  },
+};
+for (const l of Object.keys(I18N_GATE)) Object.assign(I18N[l], I18N_GATE[l]);
+
+// Versions: every deploy is a numbered release you can read, compare and go
+// back to.
+const I18N_RELEASES = {
+  en: {
+    versionsTitle: "Versions",
+    liveVersion: "v{n} is live",
+    newVersion: "New version (.zip)",
+    noVersions: "No version yet.",
+    diffTitle: "{name}: v{from} → v{to}",
+    diffFiles: "Frontend: {total} files, {added} added, {changed} changed, {removed} removed",
+    diffSame: "Same frontend files as the live version",
+    diffServer: "server.js: {from} → {to} KB",
+    diffMigrations: "Migrations to apply: {list}. A database snapshot is taken first.",
+    diffEnvToSet: "Declared but not set yet: {list}",
+    diffEnvDropped: "No longer declared: {list}",
+    diffAccess: "app.yaml says {manifest}, the app stays {kept} (set here)",
+    diffRolesAdded: "Roles added: {list}",
+    diffRolesRemoved: "Roles removed: {list}",
+    diffProtect: "The protected paths change",
+    diffDatabase: "A database will be created",
+    diffBackendAdded: "A backend is added",
+    diffBackendRemoved: "The backend is removed",
+    diffWarmOn: "It will stay always on",
+    diffWarmOff: "It will sleep when idle",
+    deployVersion: "Deploy v{n}",
+    statusLive: "live",
+    statusSuperseded: "previous",
+    statusFailed: "failed",
+    sourceUpload: "dropped here",
+    sourceCli: "CLI",
+    sourceRollback: "back to v{n}",
+    sourceLegacy: "before versions",
+    byWho: "by {who}",
+    rollbackBtn: "Go back to this version",
+    logBtn: "Log",
+    rollbackConfirm: "Go back to v{n}? The current version stays in the history.",
+    rollbackDbAhead: "Versions after v{n} changed the database ({list}). This code may not expect it.",
+    rollbackCodeOnly: "Code only, keep the data",
+    rollbackWithDb: "Code and database",
+    rollbackWithDbConfirm: "Put the database back as it was before {list}? Everything written since is lost.",
+    rolledBack: "v{n} is live again.",
+    promoted: "v{n} is live.",
+    filesCleaned: "files cleaned up",
+  },
+  fr: {
+    versionsTitle: "Versions",
+    liveVersion: "v{n} en ligne",
+    newVersion: "Nouvelle version (.zip)",
+    noVersions: "Aucune version pour l'instant.",
+    diffTitle: "{name} : v{from} → v{to}",
+    diffFiles: "Frontend : {total} fichiers, {added} ajoutés, {changed} modifiés, {removed} supprimés",
+    diffSame: "Mêmes fichiers frontend que la version en ligne",
+    diffServer: "server.js : {from} → {to} Ko",
+    diffMigrations: "Migrations à appliquer : {list}. Une sauvegarde de la base est prise avant.",
+    diffEnvToSet: "Déclarées mais pas encore définies : {list}",
+    diffEnvDropped: "Plus déclarées : {list}",
+    diffAccess: "app.yaml dit {manifest}, l'app reste {kept} (réglé ici)",
+    diffRolesAdded: "Rôles ajoutés : {list}",
+    diffRolesRemoved: "Rôles retirés : {list}",
+    diffProtect: "Les chemins protégés changent",
+    diffDatabase: "Une base de données sera créée",
+    diffBackendAdded: "Un backend est ajouté",
+    diffBackendRemoved: "Le backend est retiré",
+    diffWarmOn: "Elle restera toujours active",
+    diffWarmOff: "Elle se mettra en veille au repos",
+    deployVersion: "Déployer v{n}",
+    statusLive: "en ligne",
+    statusSuperseded: "précédente",
+    statusFailed: "échec",
+    sourceUpload: "déposée ici",
+    sourceCli: "CLI",
+    sourceRollback: "retour à v{n}",
+    sourceLegacy: "avant les versions",
+    byWho: "par {who}",
+    rollbackBtn: "Revenir à cette version",
+    logBtn: "Journal",
+    rollbackConfirm: "Revenir à v{n} ? La version actuelle reste dans l'historique.",
+    rollbackDbAhead: "Les versions après v{n} ont modifié la base ({list}). Ce code ne s'y attend peut-être pas.",
+    rollbackCodeOnly: "Le code seulement, garder les données",
+    rollbackWithDb: "Le code et la base",
+    rollbackWithDbConfirm: "Remettre la base comme avant {list} ? Tout ce qui a été écrit depuis sera perdu.",
+    rolledBack: "v{n} est de nouveau en ligne.",
+    promoted: "v{n} est en ligne.",
+    filesCleaned: "fichiers nettoyés",
+  },
+  es: {
+    versionsTitle: "Versiones",
+    liveVersion: "v{n} en línea",
+    newVersion: "Nueva versión (.zip)",
+    noVersions: "Aún no hay versiones.",
+    diffTitle: "{name}: v{from} → v{to}",
+    diffFiles: "Frontend: {total} archivos, {added} añadidos, {changed} modificados, {removed} eliminados",
+    diffSame: "Los mismos archivos de frontend que la versión en línea",
+    diffServer: "server.js: {from} → {to} KB",
+    diffMigrations: "Migraciones por aplicar: {list}. Antes se guarda una copia de la base de datos.",
+    diffEnvToSet: "Declaradas pero sin valor: {list}",
+    diffEnvDropped: "Ya no declaradas: {list}",
+    diffAccess: "app.yaml dice {manifest}, la app sigue {kept} (ajustado aquí)",
+    diffRolesAdded: "Roles añadidos: {list}",
+    diffRolesRemoved: "Roles quitados: {list}",
+    diffProtect: "Cambian las rutas protegidas",
+    diffDatabase: "Se creará una base de datos",
+    diffBackendAdded: "Se añade un backend",
+    diffBackendRemoved: "Se quita el backend",
+    diffWarmOn: "Seguirá siempre activa",
+    diffWarmOff: "Se dormirá en reposo",
+    deployVersion: "Desplegar v{n}",
+    statusLive: "en línea",
+    statusSuperseded: "anterior",
+    statusFailed: "fallida",
+    sourceUpload: "subida aquí",
+    sourceCli: "CLI",
+    sourceRollback: "vuelta a v{n}",
+    sourceLegacy: "antes de las versiones",
+    byWho: "por {who}",
+    rollbackBtn: "Volver a esta versión",
+    logBtn: "Registro",
+    rollbackConfirm: "¿Volver a v{n}? La versión actual queda en el historial.",
+    rollbackDbAhead: "Las versiones posteriores a v{n} cambiaron la base de datos ({list}). Este código quizá no lo espere.",
+    rollbackCodeOnly: "Solo el código, conservar los datos",
+    rollbackWithDb: "El código y la base de datos",
+    rollbackWithDbConfirm: "¿Devolver la base de datos a como estaba antes de {list}? Todo lo escrito desde entonces se pierde.",
+    rolledBack: "v{n} vuelve a estar en línea.",
+    promoted: "v{n} está en línea.",
+    filesCleaned: "archivos limpiados",
+  },
+  de: {
+    versionsTitle: "Versionen",
+    liveVersion: "v{n} ist live",
+    newVersion: "Neue Version (.zip)",
+    noVersions: "Noch keine Version.",
+    diffTitle: "{name}: v{from} → v{to}",
+    diffFiles: "Frontend: {total} Dateien, {added} neu, {changed} geändert, {removed} entfernt",
+    diffSame: "Dieselben Frontend-Dateien wie die Live-Version",
+    diffServer: "server.js: {from} → {to} KB",
+    diffMigrations: "Anzuwendende Migrationen: {list}. Vorher wird die Datenbank gesichert.",
+    diffEnvToSet: "Deklariert, aber noch nicht gesetzt: {list}",
+    diffEnvDropped: "Nicht mehr deklariert: {list}",
+    diffAccess: "app.yaml sagt {manifest}, die App bleibt {kept} (hier eingestellt)",
+    diffRolesAdded: "Hinzugefügte Rollen: {list}",
+    diffRolesRemoved: "Entfernte Rollen: {list}",
+    diffProtect: "Die geschützten Pfade ändern sich",
+    diffDatabase: "Eine Datenbank wird angelegt",
+    diffBackendAdded: "Ein Backend kommt hinzu",
+    diffBackendRemoved: "Das Backend wird entfernt",
+    diffWarmOn: "Sie bleibt immer aktiv",
+    diffWarmOff: "Sie schläft im Leerlauf",
+    deployVersion: "v{n} bereitstellen",
+    statusLive: "live",
+    statusSuperseded: "vorherige",
+    statusFailed: "fehlgeschlagen",
+    sourceUpload: "hier abgelegt",
+    sourceCli: "CLI",
+    sourceRollback: "zurück zu v{n}",
+    sourceLegacy: "vor den Versionen",
+    byWho: "von {who}",
+    rollbackBtn: "Zu dieser Version zurück",
+    logBtn: "Protokoll",
+    rollbackConfirm: "Zu v{n} zurückkehren? Die aktuelle Version bleibt im Verlauf.",
+    rollbackDbAhead: "Versionen nach v{n} haben die Datenbank geändert ({list}). Dieser Code rechnet vielleicht nicht damit.",
+    rollbackCodeOnly: "Nur der Code, Daten behalten",
+    rollbackWithDb: "Code und Datenbank",
+    rollbackWithDbConfirm: "Die Datenbank auf den Stand vor {list} zurücksetzen? Alles, was seitdem geschrieben wurde, geht verloren.",
+    rolledBack: "v{n} ist wieder live.",
+    promoted: "v{n} ist live.",
+    filesCleaned: "Dateien bereinigt",
+  },
+  it: {
+    versionsTitle: "Versioni",
+    liveVersion: "v{n} online",
+    newVersion: "Nuova versione (.zip)",
+    noVersions: "Ancora nessuna versione.",
+    diffTitle: "{name}: v{from} → v{to}",
+    diffFiles: "Frontend: {total} file, {added} aggiunti, {changed} modificati, {removed} rimossi",
+    diffSame: "Stessi file frontend della versione online",
+    diffServer: "server.js: {from} → {to} KB",
+    diffMigrations: "Migrazioni da applicare: {list}. Prima viene salvata una copia del database.",
+    diffEnvToSet: "Dichiarate ma non ancora impostate: {list}",
+    diffEnvDropped: "Non più dichiarate: {list}",
+    diffAccess: "app.yaml dice {manifest}, l'app resta {kept} (impostato qui)",
+    diffRolesAdded: "Ruoli aggiunti: {list}",
+    diffRolesRemoved: "Ruoli rimossi: {list}",
+    diffProtect: "I percorsi protetti cambiano",
+    diffDatabase: "Verrà creato un database",
+    diffBackendAdded: "Viene aggiunto un backend",
+    diffBackendRemoved: "Il backend viene rimosso",
+    diffWarmOn: "Resterà sempre attiva",
+    diffWarmOff: "Andrà in sospensione a riposo",
+    deployVersion: "Pubblica v{n}",
+    statusLive: "online",
+    statusSuperseded: "precedente",
+    statusFailed: "fallita",
+    sourceUpload: "caricata qui",
+    sourceCli: "CLI",
+    sourceRollback: "ritorno a v{n}",
+    sourceLegacy: "prima delle versioni",
+    byWho: "da {who}",
+    rollbackBtn: "Torna a questa versione",
+    logBtn: "Registro",
+    rollbackConfirm: "Tornare a v{n}? La versione attuale resta nella cronologia.",
+    rollbackDbAhead: "Le versioni dopo v{n} hanno modificato il database ({list}). Questo codice potrebbe non aspettarselo.",
+    rollbackCodeOnly: "Solo il codice, tenere i dati",
+    rollbackWithDb: "Codice e database",
+    rollbackWithDbConfirm: "Riportare il database a com'era prima di {list}? Tutto ciò che è stato scritto da allora andrà perso.",
+    rolledBack: "v{n} è di nuovo online.",
+    promoted: "v{n} è online.",
+    filesCleaned: "file eliminati",
+  },
+  pt: {
+    versionsTitle: "Versões",
+    liveVersion: "v{n} no ar",
+    newVersion: "Nova versão (.zip)",
+    noVersions: "Ainda não há versões.",
+    diffTitle: "{name}: v{from} → v{to}",
+    diffFiles: "Frontend: {total} ficheiros, {added} adicionados, {changed} alterados, {removed} removidos",
+    diffSame: "Os mesmos ficheiros de frontend da versão no ar",
+    diffServer: "server.js: {from} → {to} KB",
+    diffMigrations: "Migrações a aplicar: {list}. Antes é guardada uma cópia da base de dados.",
+    diffEnvToSet: "Declaradas mas ainda sem valor: {list}",
+    diffEnvDropped: "Já não declaradas: {list}",
+    diffAccess: "app.yaml diz {manifest}, a app fica {kept} (definido aqui)",
+    diffRolesAdded: "Funções adicionadas: {list}",
+    diffRolesRemoved: "Funções removidas: {list}",
+    diffProtect: "Os caminhos protegidos mudam",
+    diffDatabase: "Será criada uma base de dados",
+    diffBackendAdded: "É adicionado um backend",
+    diffBackendRemoved: "O backend é removido",
+    diffWarmOn: "Ficará sempre ativa",
+    diffWarmOff: "Vai adormecer quando parada",
+    deployVersion: "Publicar v{n}",
+    statusLive: "no ar",
+    statusSuperseded: "anterior",
+    statusFailed: "falhou",
+    sourceUpload: "largada aqui",
+    sourceCli: "CLI",
+    sourceRollback: "regresso a v{n}",
+    sourceLegacy: "antes das versões",
+    byWho: "por {who}",
+    rollbackBtn: "Voltar a esta versão",
+    logBtn: "Registo",
+    rollbackConfirm: "Voltar a v{n}? A versão atual fica no histórico.",
+    rollbackDbAhead: "As versões depois de v{n} alteraram a base de dados ({list}). Este código pode não contar com isso.",
+    rollbackCodeOnly: "Só o código, manter os dados",
+    rollbackWithDb: "Código e base de dados",
+    rollbackWithDbConfirm: "Repor a base de dados como estava antes de {list}? Tudo o que foi escrito desde então perde-se.",
+    rolledBack: "v{n} está de novo no ar.",
+    promoted: "v{n} está no ar.",
+    filesCleaned: "ficheiros limpos",
+  },
+  nl: {
+    versionsTitle: "Versies",
+    liveVersion: "v{n} staat online",
+    newVersion: "Nieuwe versie (.zip)",
+    noVersions: "Nog geen versie.",
+    diffTitle: "{name}: v{from} → v{to}",
+    diffFiles: "Frontend: {total} bestanden, {added} toegevoegd, {changed} gewijzigd, {removed} verwijderd",
+    diffSame: "Dezelfde frontend-bestanden als de live versie",
+    diffServer: "server.js: {from} → {to} KB",
+    diffMigrations: "Toe te passen migraties: {list}. Eerst wordt de database veiliggesteld.",
+    diffEnvToSet: "Aangegeven maar nog niet ingesteld: {list}",
+    diffEnvDropped: "Niet meer aangegeven: {list}",
+    diffAccess: "app.yaml zegt {manifest}, de app blijft {kept} (hier ingesteld)",
+    diffRolesAdded: "Rollen toegevoegd: {list}",
+    diffRolesRemoved: "Rollen verwijderd: {list}",
+    diffProtect: "De beschermde paden veranderen",
+    diffDatabase: "Er wordt een database aangemaakt",
+    diffBackendAdded: "Er komt een backend bij",
+    diffBackendRemoved: "De backend verdwijnt",
+    diffWarmOn: "Blijft altijd actief",
+    diffWarmOff: "Slaapt bij inactiviteit",
+    deployVersion: "v{n} uitrollen",
+    statusLive: "online",
+    statusSuperseded: "vorige",
+    statusFailed: "mislukt",
+    sourceUpload: "hier neergezet",
+    sourceCli: "CLI",
+    sourceRollback: "terug naar v{n}",
+    sourceLegacy: "van vóór versies",
+    byWho: "door {who}",
+    rollbackBtn: "Terug naar deze versie",
+    logBtn: "Logboek",
+    rollbackConfirm: "Terug naar v{n}? De huidige versie blijft in de geschiedenis.",
+    rollbackDbAhead: "Versies na v{n} hebben de database gewijzigd ({list}). Deze code verwacht dat misschien niet.",
+    rollbackCodeOnly: "Alleen de code, gegevens houden",
+    rollbackWithDb: "Code en database",
+    rollbackWithDbConfirm: "De database terugzetten zoals vóór {list}? Alles wat sindsdien is geschreven gaat verloren.",
+    rolledBack: "v{n} staat weer online.",
+    promoted: "v{n} staat online.",
+    filesCleaned: "bestanden opgeruimd",
+  },
+  ru: {
+    versionsTitle: "Версии",
+    liveVersion: "v{n} в работе",
+    newVersion: "Новая версия (.zip)",
+    noVersions: "Версий пока нет.",
+    diffTitle: "{name}: v{from} → v{to}",
+    diffFiles: "Фронтенд: {total} файлов, добавлено {added}, изменено {changed}, удалено {removed}",
+    diffSame: "Те же файлы фронтенда, что и в рабочей версии",
+    diffServer: "server.js: {from} → {to} КБ",
+    diffMigrations: "Миграции к применению: {list}. Сначала делается снимок базы.",
+    diffEnvToSet: "Объявлены, но не заданы: {list}",
+    diffEnvDropped: "Больше не объявлены: {list}",
+    diffAccess: "app.yaml говорит {manifest}, приложение остаётся {kept} (задано здесь)",
+    diffRolesAdded: "Добавлены роли: {list}",
+    diffRolesRemoved: "Удалены роли: {list}",
+    diffProtect: "Защищённые пути меняются",
+    diffDatabase: "Будет создана база данных",
+    diffBackendAdded: "Добавляется бэкенд",
+    diffBackendRemoved: "Бэкенд удаляется",
+    diffWarmOn: "Будет работать постоянно",
+    diffWarmOff: "Будет засыпать без нагрузки",
+    deployVersion: "Развернуть v{n}",
+    statusLive: "в работе",
+    statusSuperseded: "предыдущая",
+    statusFailed: "ошибка",
+    sourceUpload: "загружена здесь",
+    sourceCli: "CLI",
+    sourceRollback: "возврат к v{n}",
+    sourceLegacy: "до версий",
+    byWho: "{who}",
+    rollbackBtn: "Вернуться к этой версии",
+    logBtn: "Журнал",
+    rollbackConfirm: "Вернуться к v{n}? Текущая версия останется в истории.",
+    rollbackDbAhead: "Версии после v{n} изменили базу ({list}). Этот код может этого не ожидать.",
+    rollbackCodeOnly: "Только код, данные оставить",
+    rollbackWithDb: "Код и база",
+    rollbackWithDbConfirm: "Вернуть базу к состоянию до {list}? Всё, что записано с тех пор, будет потеряно.",
+    rolledBack: "v{n} снова в работе.",
+    promoted: "v{n} в работе.",
+    filesCleaned: "файлы удалены",
+  },
+  zh: {
+    versionsTitle: "版本",
+    liveVersion: "v{n} 正在运行",
+    newVersion: "新版本 (.zip)",
+    noVersions: "还没有版本。",
+    diffTitle: "{name}：v{from} → v{to}",
+    diffFiles: "前端：{total} 个文件，新增 {added}，修改 {changed}，删除 {removed}",
+    diffSame: "前端文件与线上版本相同",
+    diffServer: "server.js：{from} → {to} KB",
+    diffMigrations: "待执行的迁移：{list}。执行前会先备份数据库。",
+    diffEnvToSet: "已声明但尚未设置：{list}",
+    diffEnvDropped: "不再声明：{list}",
+    diffAccess: "app.yaml 写的是 {manifest}，应用保持 {kept}（在这里设置）",
+    diffRolesAdded: "新增角色：{list}",
+    diffRolesRemoved: "移除角色：{list}",
+    diffProtect: "受保护路径有变化",
+    diffDatabase: "将创建数据库",
+    diffBackendAdded: "新增后端",
+    diffBackendRemoved: "移除后端",
+    diffWarmOn: "将保持常驻",
+    diffWarmOff: "空闲时将休眠",
+    deployVersion: "部署 v{n}",
+    statusLive: "运行中",
+    statusSuperseded: "之前",
+    statusFailed: "失败",
+    sourceUpload: "在此上传",
+    sourceCli: "CLI",
+    sourceRollback: "回到 v{n}",
+    sourceLegacy: "版本功能之前",
+    byWho: "由 {who}",
+    rollbackBtn: "回到这个版本",
+    logBtn: "日志",
+    rollbackConfirm: "回到 v{n}？当前版本会保留在历史中。",
+    rollbackDbAhead: "v{n} 之后的版本修改了数据库（{list}）。这份代码可能不适应。",
+    rollbackCodeOnly: "只回退代码，保留数据",
+    rollbackWithDb: "代码和数据库",
+    rollbackWithDbConfirm: "把数据库恢复到 {list} 之前？此后写入的所有数据都会丢失。",
+    rolledBack: "v{n} 已重新上线。",
+    promoted: "v{n} 已上线。",
+    filesCleaned: "文件已清理",
+  },
+  ja: {
+    versionsTitle: "バージョン",
+    liveVersion: "v{n} が稼働中",
+    newVersion: "新しいバージョン (.zip)",
+    noVersions: "まだバージョンはありません。",
+    diffTitle: "{name}: v{from} → v{to}",
+    diffFiles: "フロントエンド: {total} ファイル、追加 {added}、変更 {changed}、削除 {removed}",
+    diffSame: "稼働中のバージョンと同じフロントエンドファイル",
+    diffServer: "server.js: {from} → {to} KB",
+    diffMigrations: "適用するマイグレーション: {list}。先にデータベースを保存します。",
+    diffEnvToSet: "宣言済みで未設定: {list}",
+    diffEnvDropped: "宣言されなくなった: {list}",
+    diffAccess: "app.yaml は {manifest}、アプリは {kept} のまま（ここで設定）",
+    diffRolesAdded: "追加されたロール: {list}",
+    diffRolesRemoved: "削除されたロール: {list}",
+    diffProtect: "保護パスが変わります",
+    diffDatabase: "データベースが作成されます",
+    diffBackendAdded: "バックエンドが追加されます",
+    diffBackendRemoved: "バックエンドが削除されます",
+    diffWarmOn: "常時稼働のままになります",
+    diffWarmOff: "アイドル時にスリープします",
+    deployVersion: "v{n} をデプロイ",
+    statusLive: "稼働中",
+    statusSuperseded: "以前",
+    statusFailed: "失敗",
+    sourceUpload: "ここでアップロード",
+    sourceCli: "CLI",
+    sourceRollback: "v{n} に戻す",
+    sourceLegacy: "バージョン機能以前",
+    byWho: "{who}",
+    rollbackBtn: "このバージョンに戻す",
+    logBtn: "ログ",
+    rollbackConfirm: "v{n} に戻しますか？現在のバージョンは履歴に残ります。",
+    rollbackDbAhead: "v{n} 以降のバージョンがデータベースを変更しています（{list}）。このコードは想定していないかもしれません。",
+    rollbackCodeOnly: "コードのみ、データは保持",
+    rollbackWithDb: "コードとデータベース",
+    rollbackWithDbConfirm: "データベースを {list} の前の状態に戻しますか？それ以降に書き込まれたデータはすべて失われます。",
+    rolledBack: "v{n} が再び稼働中です。",
+    promoted: "v{n} が稼働中です。",
+    filesCleaned: "ファイル削除済み",
+  },
+};
+
+for (const l of Object.keys(I18N_RELEASES)) Object.assign(I18N[l], I18N_RELEASES[l]);
+
+// Analytics: traffic from caddy's log, wake and sleep from docker, accounts
+// from gate.
+const I18N_ANALYTICS = {
+  en: {
+    navAnalytics: "Analytics",
+    anTimezone: "Days start at midnight, {tz}.",
+    anApp: "App",
+    anOnline: "Online now",
+    anVisitorsToday: "Visitors today",
+    anPagesToday: "Pages today",
+    anWeek: "Last 7 days",
+    anWakes: "Wakes",
+    anAwake: "Awake",
+    anErrors: "Server errors",
+    anNoApps: "No app yet.",
+    anRange24h: "24 h",
+    anRange7d: "7 days",
+    anRange30d: "30 days",
+    anVisitors: "Visitors",
+    anPages: "Page views",
+    anRequests: "Requests",
+    anP95: "95% of answers under",
+    anColdStart: "Cold start (median)",
+    anVisitorsPer: "Visitors per {unit}",
+    anHour: "hour",
+    anDay: "day",
+    anTimeline: "Awake or asleep",
+    anAwakeLegend: "awake",
+    anDeploy: "deploy",
+    anCrash: "crash",
+    anOom: "out of memory",
+    anMemory: "Memory",
+    anLimit: "limit {mb} MB",
+    anTopPages: "Pages",
+    anReferrers: "Referrers",
+    anCountries: "Countries",
+    anDevices: "Devices",
+    anBrowsers: "Browsers",
+    anPeople: "People",
+    anPeopleNote: "Who used this app: accounts only, never the visitors of a public app.",
+    anLastSeen: "last seen {when}",
+    anDays: "{n} day(s)",
+    anNoData: "No traffic in this period yet.",
+    anVisitorsNote: "A visitor is counted once a day per app, without cookies: the same person on two days counts twice.",
+    anTable: "Show as a table",
+    anMs: "{n} ms",
+    anNone: "none",
+    anRequestsN: "{n} requests",
+  },
+  fr: {
+    navAnalytics: "Analytics",
+    anTimezone: "Les journées commencent à minuit, {tz}.",
+    anApp: "App",
+    anOnline: "En ligne",
+    anVisitorsToday: "Visiteurs aujourd'hui",
+    anPagesToday: "Pages aujourd'hui",
+    anWeek: "7 derniers jours",
+    anWakes: "Réveils",
+    anAwake: "Éveillée",
+    anErrors: "Erreurs serveur",
+    anNoApps: "Aucune app pour l'instant.",
+    anRange24h: "24 h",
+    anRange7d: "7 jours",
+    anRange30d: "30 jours",
+    anVisitors: "Visiteurs",
+    anPages: "Pages vues",
+    anRequests: "Requêtes",
+    anP95: "95 % des réponses en moins de",
+    anColdStart: "Démarrage à froid (médiane)",
+    anVisitorsPer: "Visiteurs par {unit}",
+    anHour: "heure",
+    anDay: "jour",
+    anTimeline: "Éveillée ou en veille",
+    anAwakeLegend: "éveillée",
+    anDeploy: "déploiement",
+    anCrash: "crash",
+    anOom: "mémoire épuisée",
+    anMemory: "Mémoire",
+    anLimit: "limite {mb} Mo",
+    anTopPages: "Pages",
+    anReferrers: "Référents",
+    anCountries: "Pays",
+    anDevices: "Appareils",
+    anBrowsers: "Navigateurs",
+    anPeople: "Personnes",
+    anPeopleNote: "Qui a utilisé cette app : les comptes seulement, jamais les visiteurs d'une app publique.",
+    anLastSeen: "vue {when}",
+    anDays: "{n} jour(s)",
+    anNoData: "Pas encore de trafic sur cette période.",
+    anVisitorsNote: "Un visiteur est compté une fois par jour et par app, sans cookie : la même personne deux jours de suite compte deux fois.",
+    anTable: "Voir en tableau",
+    anMs: "{n} ms",
+    anNone: "aucun",
+    anRequestsN: "{n} requêtes",
+  },
+  es: {
+    navAnalytics: "Analítica",
+    anTimezone: "Los días empiezan a medianoche, {tz}.",
+    anApp: "App",
+    anOnline: "En línea",
+    anVisitorsToday: "Visitantes hoy",
+    anPagesToday: "Páginas hoy",
+    anWeek: "Últimos 7 días",
+    anWakes: "Despertares",
+    anAwake: "Despierta",
+    anErrors: "Errores del servidor",
+    anNoApps: "Aún no hay apps.",
+    anRange24h: "24 h",
+    anRange7d: "7 días",
+    anRange30d: "30 días",
+    anVisitors: "Visitantes",
+    anPages: "Páginas vistas",
+    anRequests: "Peticiones",
+    anP95: "El 95 % de las respuestas en menos de",
+    anColdStart: "Arranque en frío (mediana)",
+    anVisitorsPer: "Visitantes por {unit}",
+    anHour: "hora",
+    anDay: "día",
+    anTimeline: "Despierta o dormida",
+    anAwakeLegend: "despierta",
+    anDeploy: "despliegue",
+    anCrash: "fallo",
+    anOom: "sin memoria",
+    anMemory: "Memoria",
+    anLimit: "límite {mb} MB",
+    anTopPages: "Páginas",
+    anReferrers: "Referentes",
+    anCountries: "Países",
+    anDevices: "Dispositivos",
+    anBrowsers: "Navegadores",
+    anPeople: "Personas",
+    anPeopleNote: "Quién usó esta app: solo cuentas, nunca los visitantes de una app pública.",
+    anLastSeen: "visto {when}",
+    anDays: "{n} día(s)",
+    anNoData: "Aún no hay tráfico en este periodo.",
+    anVisitorsNote: "Un visitante se cuenta una vez al día por app, sin cookies: la misma persona dos días cuenta dos veces.",
+    anTable: "Ver como tabla",
+    anMs: "{n} ms",
+    anNone: "ninguno",
+    anRequestsN: "{n} peticiones",
+  },
+  de: {
+    navAnalytics: "Statistik",
+    anTimezone: "Tage beginnen um Mitternacht, {tz}.",
+    anApp: "App",
+    anOnline: "Gerade online",
+    anVisitorsToday: "Besucher heute",
+    anPagesToday: "Seiten heute",
+    anWeek: "Letzte 7 Tage",
+    anWakes: "Aufwachvorgänge",
+    anAwake: "Wach",
+    anErrors: "Serverfehler",
+    anNoApps: "Noch keine App.",
+    anRange24h: "24 Std.",
+    anRange7d: "7 Tage",
+    anRange30d: "30 Tage",
+    anVisitors: "Besucher",
+    anPages: "Seitenaufrufe",
+    anRequests: "Anfragen",
+    anP95: "95 % der Antworten unter",
+    anColdStart: "Kaltstart (Median)",
+    anVisitorsPer: "Besucher pro {unit}",
+    anHour: "Stunde",
+    anDay: "Tag",
+    anTimeline: "Wach oder schlafend",
+    anAwakeLegend: "wach",
+    anDeploy: "Bereitstellung",
+    anCrash: "Absturz",
+    anOom: "Speicher voll",
+    anMemory: "Speicher",
+    anLimit: "Limit {mb} MB",
+    anTopPages: "Seiten",
+    anReferrers: "Verweise",
+    anCountries: "Länder",
+    anDevices: "Geräte",
+    anBrowsers: "Browser",
+    anPeople: "Personen",
+    anPeopleNote: "Wer diese App genutzt hat: nur Konten, nie die Besucher einer öffentlichen App.",
+    anLastSeen: "zuletzt {when}",
+    anDays: "{n} Tag(e)",
+    anNoData: "In diesem Zeitraum noch kein Verkehr.",
+    anVisitorsNote: "Ein Besucher wird einmal pro Tag und App gezählt, ohne Cookies: dieselbe Person an zwei Tagen zählt doppelt.",
+    anTable: "Als Tabelle zeigen",
+    anMs: "{n} ms",
+    anNone: "keine",
+    anRequestsN: "{n} Anfragen",
+  },
+  it: {
+    navAnalytics: "Statistiche",
+    anTimezone: "I giorni iniziano a mezzanotte, {tz}.",
+    anApp: "App",
+    anOnline: "Online ora",
+    anVisitorsToday: "Visitatori oggi",
+    anPagesToday: "Pagine oggi",
+    anWeek: "Ultimi 7 giorni",
+    anWakes: "Risvegli",
+    anAwake: "Attiva",
+    anErrors: "Errori del server",
+    anNoApps: "Ancora nessuna app.",
+    anRange24h: "24 h",
+    anRange7d: "7 giorni",
+    anRange30d: "30 giorni",
+    anVisitors: "Visitatori",
+    anPages: "Pagine viste",
+    anRequests: "Richieste",
+    anP95: "Il 95% delle risposte sotto",
+    anColdStart: "Avvio a freddo (mediana)",
+    anVisitorsPer: "Visitatori per {unit}",
+    anHour: "ora",
+    anDay: "giorno",
+    anTimeline: "Attiva o in sospensione",
+    anAwakeLegend: "attiva",
+    anDeploy: "deploy",
+    anCrash: "crash",
+    anOom: "memoria esaurita",
+    anMemory: "Memoria",
+    anLimit: "limite {mb} MB",
+    anTopPages: "Pagine",
+    anReferrers: "Referenti",
+    anCountries: "Paesi",
+    anDevices: "Dispositivi",
+    anBrowsers: "Browser",
+    anPeople: "Persone",
+    anPeopleNote: "Chi ha usato questa app: solo account, mai i visitatori di un'app pubblica.",
+    anLastSeen: "visto {when}",
+    anDays: "{n} giorno/i",
+    anNoData: "Ancora nessun traffico in questo periodo.",
+    anVisitorsNote: "Un visitatore è contato una volta al giorno per app, senza cookie: la stessa persona in due giorni conta due volte.",
+    anTable: "Mostra come tabella",
+    anMs: "{n} ms",
+    anNone: "nessuno",
+    anRequestsN: "{n} richieste",
+  },
+  pt: {
+    navAnalytics: "Estatísticas",
+    anTimezone: "Os dias começam à meia-noite, {tz}.",
+    anApp: "App",
+    anOnline: "Online agora",
+    anVisitorsToday: "Visitantes hoje",
+    anPagesToday: "Páginas hoje",
+    anWeek: "Últimos 7 dias",
+    anWakes: "Despertares",
+    anAwake: "Acordada",
+    anErrors: "Erros do servidor",
+    anNoApps: "Ainda não há apps.",
+    anRange24h: "24 h",
+    anRange7d: "7 dias",
+    anRange30d: "30 dias",
+    anVisitors: "Visitantes",
+    anPages: "Páginas vistas",
+    anRequests: "Pedidos",
+    anP95: "95% das respostas em menos de",
+    anColdStart: "Arranque a frio (mediana)",
+    anVisitorsPer: "Visitantes por {unit}",
+    anHour: "hora",
+    anDay: "dia",
+    anTimeline: "Acordada ou a dormir",
+    anAwakeLegend: "acordada",
+    anDeploy: "publicação",
+    anCrash: "falha",
+    anOom: "sem memória",
+    anMemory: "Memória",
+    anLimit: "limite {mb} MB",
+    anTopPages: "Páginas",
+    anReferrers: "Referências",
+    anCountries: "Países",
+    anDevices: "Dispositivos",
+    anBrowsers: "Navegadores",
+    anPeople: "Pessoas",
+    anPeopleNote: "Quem usou esta app: só contas, nunca os visitantes de uma app pública.",
+    anLastSeen: "visto {when}",
+    anDays: "{n} dia(s)",
+    anNoData: "Ainda sem tráfego neste período.",
+    anVisitorsNote: "Um visitante é contado uma vez por dia e por app, sem cookies: a mesma pessoa em dois dias conta duas vezes.",
+    anTable: "Ver como tabela",
+    anMs: "{n} ms",
+    anNone: "nenhum",
+    anRequestsN: "{n} pedidos",
+  },
+  nl: {
+    navAnalytics: "Statistieken",
+    anTimezone: "Dagen beginnen om middernacht, {tz}.",
+    anApp: "App",
+    anOnline: "Nu online",
+    anVisitorsToday: "Bezoekers vandaag",
+    anPagesToday: "Pagina's vandaag",
+    anWeek: "Laatste 7 dagen",
+    anWakes: "Keren gewekt",
+    anAwake: "Wakker",
+    anErrors: "Serverfouten",
+    anNoApps: "Nog geen app.",
+    anRange24h: "24 u",
+    anRange7d: "7 dagen",
+    anRange30d: "30 dagen",
+    anVisitors: "Bezoekers",
+    anPages: "Paginaweergaven",
+    anRequests: "Verzoeken",
+    anP95: "95% van de antwoorden binnen",
+    anColdStart: "Koude start (mediaan)",
+    anVisitorsPer: "Bezoekers per {unit}",
+    anHour: "uur",
+    anDay: "dag",
+    anTimeline: "Wakker of slapend",
+    anAwakeLegend: "wakker",
+    anDeploy: "uitrol",
+    anCrash: "crash",
+    anOom: "geheugen vol",
+    anMemory: "Geheugen",
+    anLimit: "limiet {mb} MB",
+    anTopPages: "Pagina's",
+    anReferrers: "Verwijzers",
+    anCountries: "Landen",
+    anDevices: "Apparaten",
+    anBrowsers: "Browsers",
+    anPeople: "Personen",
+    anPeopleNote: "Wie deze app gebruikte: alleen accounts, nooit de bezoekers van een openbare app.",
+    anLastSeen: "gezien {when}",
+    anDays: "{n} dag(en)",
+    anNoData: "Nog geen verkeer in deze periode.",
+    anVisitorsNote: "Een bezoeker telt één keer per dag per app, zonder cookies: dezelfde persoon op twee dagen telt twee keer.",
+    anTable: "Als tabel tonen",
+    anMs: "{n} ms",
+    anNone: "geen",
+    anRequestsN: "{n} verzoeken",
+  },
+  ru: {
+    navAnalytics: "Аналитика",
+    anTimezone: "Сутки начинаются в полночь, {tz}.",
+    anApp: "Приложение",
+    anOnline: "Сейчас онлайн",
+    anVisitorsToday: "Посетители сегодня",
+    anPagesToday: "Страницы сегодня",
+    anWeek: "Последние 7 дней",
+    anWakes: "Пробуждения",
+    anAwake: "Активно",
+    anErrors: "Ошибки сервера",
+    anNoApps: "Приложений пока нет.",
+    anRange24h: "24 ч",
+    anRange7d: "7 дней",
+    anRange30d: "30 дней",
+    anVisitors: "Посетители",
+    anPages: "Просмотры",
+    anRequests: "Запросы",
+    anP95: "95% ответов быстрее",
+    anColdStart: "Холодный старт (медиана)",
+    anVisitorsPer: "Посетители за {unit}",
+    anHour: "час",
+    anDay: "день",
+    anTimeline: "Активно или спит",
+    anAwakeLegend: "активно",
+    anDeploy: "развёртывание",
+    anCrash: "сбой",
+    anOom: "нехватка памяти",
+    anMemory: "Память",
+    anLimit: "лимит {mb} МБ",
+    anTopPages: "Страницы",
+    anReferrers: "Источники",
+    anCountries: "Страны",
+    anDevices: "Устройства",
+    anBrowsers: "Браузеры",
+    anPeople: "Люди",
+    anPeopleNote: "Кто пользовался приложением: только аккаунты, никогда посетители публичного приложения.",
+    anLastSeen: "был(а) {when}",
+    anDays: "дней: {n}",
+    anNoData: "За этот период трафика ещё нет.",
+    anVisitorsNote: "Посетитель считается раз в день для каждого приложения, без cookie: один человек в два дня считается дважды.",
+    anTable: "Показать таблицей",
+    anMs: "{n} мс",
+    anNone: "нет",
+    anRequestsN: "запросов: {n}",
+  },
+  zh: {
+    navAnalytics: "统计",
+    anTimezone: "每天从午夜开始计算，时区 {tz}。",
+    anApp: "应用",
+    anOnline: "当前在线",
+    anVisitorsToday: "今日访客",
+    anPagesToday: "今日页面",
+    anWeek: "最近 7 天",
+    anWakes: "唤醒次数",
+    anAwake: "运行中",
+    anErrors: "服务器错误",
+    anNoApps: "还没有应用。",
+    anRange24h: "24 小时",
+    anRange7d: "7 天",
+    anRange30d: "30 天",
+    anVisitors: "访客",
+    anPages: "页面浏览",
+    anRequests: "请求",
+    anP95: "95% 的响应低于",
+    anColdStart: "冷启动（中位数）",
+    anVisitorsPer: "每{unit}访客",
+    anHour: "小时",
+    anDay: "天",
+    anTimeline: "运行或休眠",
+    anAwakeLegend: "运行",
+    anDeploy: "部署",
+    anCrash: "崩溃",
+    anOom: "内存耗尽",
+    anMemory: "内存",
+    anLimit: "上限 {mb} MB",
+    anTopPages: "页面",
+    anReferrers: "来源",
+    anCountries: "国家",
+    anDevices: "设备",
+    anBrowsers: "浏览器",
+    anPeople: "人员",
+    anPeopleNote: "谁使用了这个应用：仅限账户，从不包括公开应用的访客。",
+    anLastSeen: "最近 {when}",
+    anDays: "{n} 天",
+    anNoData: "这段时间还没有流量。",
+    anVisitorsNote: "每个访客在每个应用每天只计一次，不使用 cookie：同一个人两天会被计两次。",
+    anTable: "以表格显示",
+    anMs: "{n} 毫秒",
+    anNone: "无",
+    anRequestsN: "{n} 个请求",
+  },
+  ja: {
+    navAnalytics: "アナリティクス",
+    anTimezone: "1 日は {tz} の午前 0 時に始まります。",
+    anApp: "アプリ",
+    anOnline: "オンライン",
+    anVisitorsToday: "今日の訪問者",
+    anPagesToday: "今日のページ",
+    anWeek: "過去 7 日",
+    anWakes: "起動回数",
+    anAwake: "稼働",
+    anErrors: "サーバーエラー",
+    anNoApps: "まだアプリはありません。",
+    anRange24h: "24 時間",
+    anRange7d: "7 日",
+    anRange30d: "30 日",
+    anVisitors: "訪問者",
+    anPages: "ページビュー",
+    anRequests: "リクエスト",
+    anP95: "応答の 95% が",
+    anColdStart: "コールドスタート（中央値）",
+    anVisitorsPer: "{unit}あたりの訪問者",
+    anHour: "時間",
+    anDay: "日",
+    anTimeline: "稼働かスリープか",
+    anAwakeLegend: "稼働",
+    anDeploy: "デプロイ",
+    anCrash: "クラッシュ",
+    anOom: "メモリ不足",
+    anMemory: "メモリ",
+    anLimit: "上限 {mb} MB",
+    anTopPages: "ページ",
+    anReferrers: "参照元",
+    anCountries: "国",
+    anDevices: "デバイス",
+    anBrowsers: "ブラウザ",
+    anPeople: "人",
+    anPeopleNote: "このアプリを使った人: アカウントのみ。公開アプリの訪問者は含みません。",
+    anLastSeen: "最終 {when}",
+    anDays: "{n} 日",
+    anNoData: "この期間はまだトラフィックがありません。",
+    anVisitorsNote: "訪問者はアプリごとに 1 日 1 回、Cookie なしで数えます。同じ人が 2 日来れば 2 回です。",
+    anTable: "表で見る",
+    anMs: "{n} ms",
+    anNone: "なし",
+    anRequestsN: "{n} リクエスト",
+  },
+};
+
+for (const l of Object.keys(I18N_ANALYTICS)) Object.assign(I18N[l], I18N_ANALYTICS[l]);
+
+// Git: forges, connected repositories, builds.
+const I18N_GIT = {
+  en: {
+    navGit: "Git",
+    gitNotReady: "Set NANODEPLOY_SECRET_KEY first (run ./install.sh, then restart the control plane): forge credentials are stored encrypted with it.",
+    gitForges: "Connected forges",
+    gitConnectGithub: "Connect GitHub",
+    gitOrgPh: "organization (optional)",
+    gitGithubNote: "Creates a private GitHub App for this server, in your account or an organization. GitHub asks you to confirm, then which repositories it may read.",
+    gitInstall: "Choose repositories",
+    gitRemove: "Remove",
+    gitGitlabProjectPh: "group/project",
+    gitGitlabTokenPh: "project access token",
+    gitConnectGitlab: "Connect a GitLab project",
+    gitGitlabNote: "On GitLab: the project, Settings, Access tokens, role Maintainer, scopes api and read_repository.",
+    gitNoForge: "No forge connected yet.",
+    gitDeployTitle: "Deploy a repository",
+    gitProvider: "Forge",
+    gitRepo: "Repository",
+    gitBranch: "Branch",
+    gitRoot: "Folder of app.yaml",
+    gitPreviews: "Preview each pull request",
+    gitDeploy: "Deploy from this repository",
+    gitConnections: "Connected repositories",
+    gitNoConnections: "No repository connected yet.",
+    gitBuildNow: "Build now",
+    gitDisconnect: "Disconnect",
+    gitDisconnectConfirm: "Disconnect {repo}? The app stays as it is, its previews are removed, and pushes no longer deploy.",
+    gitBuilds: "Builds",
+    gitNoBuilds: "No build yet.",
+    gitStatusQueued: "queued",
+    gitStatusRunning: "building",
+    gitStatusSucceeded: "deployed",
+    gitStatusFailed: "failed",
+    gitStatusSkipped: "skipped",
+    gitPr: "pull request #{n}",
+    gitLog: "Log",
+    sourceGit: "Git",
+    gitHookNote: "Webhooks arrive at {url}: if the console is behind an access layer, let /hooks/ through.",
+    gitBuildQueued: "Build queued.",
+    gitPanelFrom: "Deployed from {repo} ({branch}) on every push.",
+    gitPickRepo: "choose a repository",
+    gitRemoveConfirm: "Remove this forge? Its credentials are deleted.",
+  },
+  fr: {
+    navGit: "Git",
+    gitNotReady: "Définissez d'abord NANODEPLOY_SECRET_KEY (lancez ./install.sh, puis redémarrez le control plane) : les accès aux forges sont chiffrés avec.",
+    gitForges: "Forges connectées",
+    gitConnectGithub: "Connecter GitHub",
+    gitOrgPh: "organisation (facultatif)",
+    gitGithubNote: "Crée une GitHub App privée pour ce serveur, sur votre compte ou une organisation. GitHub vous demande de confirmer, puis quels dépôts elle peut lire.",
+    gitInstall: "Choisir les dépôts",
+    gitRemove: "Retirer",
+    gitGitlabProjectPh: "groupe/projet",
+    gitGitlabTokenPh: "jeton d'accès du projet",
+    gitConnectGitlab: "Connecter un projet GitLab",
+    gitGitlabNote: "Sur GitLab : le projet, Settings, Access tokens, rôle Maintainer, portées api et read_repository.",
+    gitNoForge: "Aucune forge connectée.",
+    gitDeployTitle: "Déployer un dépôt",
+    gitProvider: "Forge",
+    gitRepo: "Dépôt",
+    gitBranch: "Branche",
+    gitRoot: "Dossier de app.yaml",
+    gitPreviews: "Une preview pour chaque pull request",
+    gitDeploy: "Déployer depuis ce dépôt",
+    gitConnections: "Dépôts connectés",
+    gitNoConnections: "Aucun dépôt connecté.",
+    gitBuildNow: "Construire maintenant",
+    gitDisconnect: "Déconnecter",
+    gitDisconnectConfirm: "Déconnecter {repo} ? L'app reste telle quelle, ses previews sont supprimées, et les pushs ne déploient plus.",
+    gitBuilds: "Builds",
+    gitNoBuilds: "Aucun build pour l'instant.",
+    gitStatusQueued: "en attente",
+    gitStatusRunning: "en cours",
+    gitStatusSucceeded: "déployé",
+    gitStatusFailed: "échec",
+    gitStatusSkipped: "ignoré",
+    gitPr: "pull request #{n}",
+    gitLog: "Journal",
+    sourceGit: "Git",
+    gitHookNote: "Les webhooks arrivent sur {url} : si la console est derrière une couche d'accès, laissez passer /hooks/.",
+    gitBuildQueued: "Build mis en file.",
+    gitPanelFrom: "Déployée depuis {repo} ({branch}) à chaque push.",
+    gitPickRepo: "choisir un dépôt",
+    gitRemoveConfirm: "Retirer cette forge ? Ses accès sont effacés.",
+  },
+  es: {
+    navGit: "Git",
+    gitNotReady: "Define primero NANODEPLOY_SECRET_KEY (ejecuta ./install.sh y reinicia el control plane): los accesos a las forjas se guardan cifrados con ella.",
+    gitForges: "Forjas conectadas",
+    gitConnectGithub: "Conectar GitHub",
+    gitOrgPh: "organización (opcional)",
+    gitGithubNote: "Crea una GitHub App privada para este servidor, en tu cuenta o en una organización. GitHub te pide confirmar y luego qué repositorios puede leer.",
+    gitInstall: "Elegir repositorios",
+    gitRemove: "Quitar",
+    gitGitlabProjectPh: "grupo/proyecto",
+    gitGitlabTokenPh: "token de acceso del proyecto",
+    gitConnectGitlab: "Conectar un proyecto de GitLab",
+    gitGitlabNote: "En GitLab: el proyecto, Settings, Access tokens, rol Maintainer, alcances api y read_repository.",
+    gitNoForge: "Ninguna forja conectada.",
+    gitDeployTitle: "Desplegar un repositorio",
+    gitProvider: "Forja",
+    gitRepo: "Repositorio",
+    gitBranch: "Rama",
+    gitRoot: "Carpeta de app.yaml",
+    gitPreviews: "Una preview por cada pull request",
+    gitDeploy: "Desplegar desde este repositorio",
+    gitConnections: "Repositorios conectados",
+    gitNoConnections: "Ningún repositorio conectado.",
+    gitBuildNow: "Construir ahora",
+    gitDisconnect: "Desconectar",
+    gitDisconnectConfirm: "¿Desconectar {repo}? La app queda como está, sus previews se eliminan y los push dejan de desplegar.",
+    gitBuilds: "Builds",
+    gitNoBuilds: "Aún no hay builds.",
+    gitStatusQueued: "en cola",
+    gitStatusRunning: "construyendo",
+    gitStatusSucceeded: "desplegado",
+    gitStatusFailed: "falló",
+    gitStatusSkipped: "omitido",
+    gitPr: "pull request #{n}",
+    gitLog: "Registro",
+    sourceGit: "Git",
+    gitHookNote: "Los webhooks llegan a {url}: si la consola está detrás de una capa de acceso, deja pasar /hooks/.",
+    gitBuildQueued: "Build en cola.",
+    gitPanelFrom: "Desplegada desde {repo} ({branch}) en cada push.",
+    gitPickRepo: "elige un repositorio",
+    gitRemoveConfirm: "¿Quitar esta forja? Sus accesos se borran.",
+  },
+  de: {
+    navGit: "Git",
+    gitNotReady: "Setze zuerst NANODEPLOY_SECRET_KEY (./install.sh ausführen, dann die Control Plane neu starten): Forge-Zugänge werden damit verschlüsselt gespeichert.",
+    gitForges: "Verbundene Forges",
+    gitConnectGithub: "GitHub verbinden",
+    gitOrgPh: "Organisation (optional)",
+    gitGithubNote: "Erstellt eine private GitHub App für diesen Server, in deinem Konto oder einer Organisation. GitHub fragt nach einer Bestätigung und danach, welche Repositories sie lesen darf.",
+    gitInstall: "Repositories wählen",
+    gitRemove: "Entfernen",
+    gitGitlabProjectPh: "gruppe/projekt",
+    gitGitlabTokenPh: "Projekt-Zugriffstoken",
+    gitConnectGitlab: "GitLab-Projekt verbinden",
+    gitGitlabNote: "In GitLab: das Projekt, Settings, Access tokens, Rolle Maintainer, Scopes api und read_repository.",
+    gitNoForge: "Noch keine Forge verbunden.",
+    gitDeployTitle: "Ein Repository bereitstellen",
+    gitProvider: "Forge",
+    gitRepo: "Repository",
+    gitBranch: "Branch",
+    gitRoot: "Ordner der app.yaml",
+    gitPreviews: "Für jeden Pull Request eine Preview",
+    gitDeploy: "Aus diesem Repository bereitstellen",
+    gitConnections: "Verbundene Repositories",
+    gitNoConnections: "Noch kein Repository verbunden.",
+    gitBuildNow: "Jetzt bauen",
+    gitDisconnect: "Trennen",
+    gitDisconnectConfirm: "{repo} trennen? Die App bleibt, ihre Previews werden entfernt, Pushes stellen nicht mehr bereit.",
+    gitBuilds: "Builds",
+    gitNoBuilds: "Noch kein Build.",
+    gitStatusQueued: "wartet",
+    gitStatusRunning: "baut",
+    gitStatusSucceeded: "bereitgestellt",
+    gitStatusFailed: "fehlgeschlagen",
+    gitStatusSkipped: "übersprungen",
+    gitPr: "Pull Request #{n}",
+    gitLog: "Protokoll",
+    sourceGit: "Git",
+    gitHookNote: "Webhooks kommen an {url}: liegt die Konsole hinter einer Zugriffsschicht, lass /hooks/ durch.",
+    gitBuildQueued: "Build eingereiht.",
+    gitPanelFrom: "Bei jedem Push aus {repo} ({branch}) bereitgestellt.",
+    gitPickRepo: "Repository wählen",
+    gitRemoveConfirm: "Diese Forge entfernen? Ihre Zugänge werden gelöscht.",
+  },
+  it: {
+    navGit: "Git",
+    gitNotReady: "Imposta prima NANODEPLOY_SECRET_KEY (esegui ./install.sh, poi riavvia il control plane): gli accessi alle forge sono salvati cifrati con essa.",
+    gitForges: "Forge collegate",
+    gitConnectGithub: "Collega GitHub",
+    gitOrgPh: "organizzazione (facoltativa)",
+    gitGithubNote: "Crea una GitHub App privata per questo server, sul tuo account o su un'organizzazione. GitHub chiede di confermare, poi quali repository può leggere.",
+    gitInstall: "Scegli i repository",
+    gitRemove: "Rimuovi",
+    gitGitlabProjectPh: "gruppo/progetto",
+    gitGitlabTokenPh: "token di accesso del progetto",
+    gitConnectGitlab: "Collega un progetto GitLab",
+    gitGitlabNote: "Su GitLab: il progetto, Settings, Access tokens, ruolo Maintainer, scope api e read_repository.",
+    gitNoForge: "Nessuna forge collegata.",
+    gitDeployTitle: "Pubblica un repository",
+    gitProvider: "Forge",
+    gitRepo: "Repository",
+    gitBranch: "Branch",
+    gitRoot: "Cartella di app.yaml",
+    gitPreviews: "Una preview per ogni pull request",
+    gitDeploy: "Pubblica da questo repository",
+    gitConnections: "Repository collegati",
+    gitNoConnections: "Nessun repository collegato.",
+    gitBuildNow: "Compila ora",
+    gitDisconnect: "Scollega",
+    gitDisconnectConfirm: "Scollegare {repo}? L'app resta com'è, le sue preview vengono rimosse e i push non pubblicano più.",
+    gitBuilds: "Build",
+    gitNoBuilds: "Ancora nessuna build.",
+    gitStatusQueued: "in coda",
+    gitStatusRunning: "in corso",
+    gitStatusSucceeded: "pubblicato",
+    gitStatusFailed: "fallita",
+    gitStatusSkipped: "saltata",
+    gitPr: "pull request #{n}",
+    gitLog: "Registro",
+    sourceGit: "Git",
+    gitHookNote: "I webhook arrivano su {url}: se la console è dietro un livello di accesso, lascia passare /hooks/.",
+    gitBuildQueued: "Build in coda.",
+    gitPanelFrom: "Pubblicata da {repo} ({branch}) a ogni push.",
+    gitPickRepo: "scegli un repository",
+    gitRemoveConfirm: "Rimuovere questa forge? I suoi accessi vengono cancellati.",
+  },
+  pt: {
+    navGit: "Git",
+    gitNotReady: "Defina primeiro NANODEPLOY_SECRET_KEY (execute ./install.sh e reinicie o control plane): os acessos às forjas são guardados cifrados com ela.",
+    gitForges: "Forjas ligadas",
+    gitConnectGithub: "Ligar o GitHub",
+    gitOrgPh: "organização (opcional)",
+    gitGithubNote: "Cria uma GitHub App privada para este servidor, na sua conta ou numa organização. O GitHub pede confirmação e depois que repositórios pode ler.",
+    gitInstall: "Escolher repositórios",
+    gitRemove: "Remover",
+    gitGitlabProjectPh: "grupo/projeto",
+    gitGitlabTokenPh: "token de acesso do projeto",
+    gitConnectGitlab: "Ligar um projeto GitLab",
+    gitGitlabNote: "No GitLab: o projeto, Settings, Access tokens, função Maintainer, âmbitos api e read_repository.",
+    gitNoForge: "Nenhuma forja ligada.",
+    gitDeployTitle: "Publicar um repositório",
+    gitProvider: "Forja",
+    gitRepo: "Repositório",
+    gitBranch: "Ramo",
+    gitRoot: "Pasta do app.yaml",
+    gitPreviews: "Uma preview por cada pull request",
+    gitDeploy: "Publicar a partir deste repositório",
+    gitConnections: "Repositórios ligados",
+    gitNoConnections: "Nenhum repositório ligado.",
+    gitBuildNow: "Construir agora",
+    gitDisconnect: "Desligar",
+    gitDisconnectConfirm: "Desligar {repo}? A app fica como está, as previews são removidas e os pushes deixam de publicar.",
+    gitBuilds: "Builds",
+    gitNoBuilds: "Ainda não há builds.",
+    gitStatusQueued: "em espera",
+    gitStatusRunning: "a construir",
+    gitStatusSucceeded: "publicado",
+    gitStatusFailed: "falhou",
+    gitStatusSkipped: "ignorado",
+    gitPr: "pull request #{n}",
+    gitLog: "Registo",
+    sourceGit: "Git",
+    gitHookNote: "Os webhooks chegam a {url}: se a consola estiver atrás de uma camada de acesso, deixe passar /hooks/.",
+    gitBuildQueued: "Build em fila.",
+    gitPanelFrom: "Publicada a partir de {repo} ({branch}) a cada push.",
+    gitPickRepo: "escolha um repositório",
+    gitRemoveConfirm: "Remover esta forja? Os acessos são apagados.",
+  },
+  nl: {
+    navGit: "Git",
+    gitNotReady: "Stel eerst NANODEPLOY_SECRET_KEY in (voer ./install.sh uit en herstart de control plane): toegang tot forges wordt daarmee versleuteld opgeslagen.",
+    gitForges: "Verbonden forges",
+    gitConnectGithub: "GitHub verbinden",
+    gitOrgPh: "organisatie (optioneel)",
+    gitGithubNote: "Maakt een privé GitHub App voor deze server, in je account of een organisatie. GitHub vraagt om bevestiging en daarna welke repositories ze mag lezen.",
+    gitInstall: "Repositories kiezen",
+    gitRemove: "Verwijderen",
+    gitGitlabProjectPh: "groep/project",
+    gitGitlabTokenPh: "project-toegangstoken",
+    gitConnectGitlab: "GitLab-project verbinden",
+    gitGitlabNote: "In GitLab: het project, Settings, Access tokens, rol Maintainer, scopes api en read_repository.",
+    gitNoForge: "Nog geen forge verbonden.",
+    gitDeployTitle: "Een repository uitrollen",
+    gitProvider: "Forge",
+    gitRepo: "Repository",
+    gitBranch: "Branch",
+    gitRoot: "Map van app.yaml",
+    gitPreviews: "Een preview voor elke pull request",
+    gitDeploy: "Uitrollen vanuit deze repository",
+    gitConnections: "Verbonden repositories",
+    gitNoConnections: "Nog geen repository verbonden.",
+    gitBuildNow: "Nu bouwen",
+    gitDisconnect: "Loskoppelen",
+    gitDisconnectConfirm: "{repo} loskoppelen? De app blijft zoals hij is, de previews verdwijnen en pushes rollen niet meer uit.",
+    gitBuilds: "Builds",
+    gitNoBuilds: "Nog geen build.",
+    gitStatusQueued: "wacht",
+    gitStatusRunning: "bezig",
+    gitStatusSucceeded: "uitgerold",
+    gitStatusFailed: "mislukt",
+    gitStatusSkipped: "overgeslagen",
+    gitPr: "pull request #{n}",
+    gitLog: "Logboek",
+    sourceGit: "Git",
+    gitHookNote: "Webhooks komen binnen op {url}: staat de console achter een toegangslaag, laat /hooks/ door.",
+    gitBuildQueued: "Build in de wachtrij.",
+    gitPanelFrom: "Uitgerold vanuit {repo} ({branch}) bij elke push.",
+    gitPickRepo: "kies een repository",
+    gitRemoveConfirm: "Deze forge verwijderen? De toegang wordt gewist.",
+  },
+  ru: {
+    navGit: "Git",
+    gitNotReady: "Сначала задайте NANODEPLOY_SECRET_KEY (запустите ./install.sh и перезапустите control plane): доступы к форжам хранятся зашифрованными этим ключом.",
+    gitForges: "Подключённые форжи",
+    gitConnectGithub: "Подключить GitHub",
+    gitOrgPh: "организация (необязательно)",
+    gitGithubNote: "Создаёт приватное GitHub App для этого сервера, в вашем аккаунте или организации. GitHub попросит подтвердить, а затем выбрать доступные репозитории.",
+    gitInstall: "Выбрать репозитории",
+    gitRemove: "Удалить",
+    gitGitlabProjectPh: "группа/проект",
+    gitGitlabTokenPh: "токен доступа проекта",
+    gitConnectGitlab: "Подключить проект GitLab",
+    gitGitlabNote: "В GitLab: проект, Settings, Access tokens, роль Maintainer, области api и read_repository.",
+    gitNoForge: "Форжи не подключены.",
+    gitDeployTitle: "Развернуть репозиторий",
+    gitProvider: "Форж",
+    gitRepo: "Репозиторий",
+    gitBranch: "Ветка",
+    gitRoot: "Папка с app.yaml",
+    gitPreviews: "Превью для каждого pull request",
+    gitDeploy: "Разворачивать из этого репозитория",
+    gitConnections: "Подключённые репозитории",
+    gitNoConnections: "Репозитории не подключены.",
+    gitBuildNow: "Собрать сейчас",
+    gitDisconnect: "Отключить",
+    gitDisconnectConfirm: "Отключить {repo}? Приложение останется как есть, превью удалятся, а push больше не будет разворачивать.",
+    gitBuilds: "Сборки",
+    gitNoBuilds: "Сборок пока нет.",
+    gitStatusQueued: "в очереди",
+    gitStatusRunning: "собирается",
+    gitStatusSucceeded: "развёрнуто",
+    gitStatusFailed: "ошибка",
+    gitStatusSkipped: "пропущена",
+    gitPr: "pull request #{n}",
+    gitLog: "Журнал",
+    sourceGit: "Git",
+    gitHookNote: "Вебхуки приходят на {url}: если консоль за слоем доступа, пропускайте /hooks/.",
+    gitBuildQueued: "Сборка в очереди.",
+    gitPanelFrom: "Разворачивается из {repo} ({branch}) при каждом push.",
+    gitPickRepo: "выберите репозиторий",
+    gitRemoveConfirm: "Удалить этот форж? Его доступы будут стёрты.",
+  },
+  zh: {
+    navGit: "Git",
+    gitNotReady: "请先设置 NANODEPLOY_SECRET_KEY（运行 ./install.sh，然后重启 control plane）：代码托管平台的凭据会用它加密保存。",
+    gitForges: "已连接的平台",
+    gitConnectGithub: "连接 GitHub",
+    gitOrgPh: "组织（可选）",
+    gitGithubNote: "为这台服务器在你的账户或组织下创建一个私有 GitHub App。GitHub 会请你确认，然后选择它可以读取的仓库。",
+    gitInstall: "选择仓库",
+    gitRemove: "移除",
+    gitGitlabProjectPh: "group/project",
+    gitGitlabTokenPh: "项目访问令牌",
+    gitConnectGitlab: "连接 GitLab 项目",
+    gitGitlabNote: "在 GitLab：项目，Settings，Access tokens，角色 Maintainer，范围 api 和 read_repository。",
+    gitNoForge: "还没有连接任何平台。",
+    gitDeployTitle: "部署一个仓库",
+    gitProvider: "平台",
+    gitRepo: "仓库",
+    gitBranch: "分支",
+    gitRoot: "app.yaml 所在目录",
+    gitPreviews: "为每个 pull request 生成预览",
+    gitDeploy: "从这个仓库部署",
+    gitConnections: "已连接的仓库",
+    gitNoConnections: "还没有连接仓库。",
+    gitBuildNow: "立即构建",
+    gitDisconnect: "断开",
+    gitDisconnectConfirm: "断开 {repo}？应用保持不变，预览会被删除，推送不再触发部署。",
+    gitBuilds: "构建",
+    gitNoBuilds: "还没有构建。",
+    gitStatusQueued: "排队中",
+    gitStatusRunning: "构建中",
+    gitStatusSucceeded: "已部署",
+    gitStatusFailed: "失败",
+    gitStatusSkipped: "已跳过",
+    gitPr: "pull request #{n}",
+    gitLog: "日志",
+    sourceGit: "Git",
+    gitHookNote: "Webhook 发送到 {url}：如果控制台前面有访问控制层，请放行 /hooks/。",
+    gitBuildQueued: "构建已排队。",
+    gitPanelFrom: "每次推送都从 {repo}（{branch}）部署。",
+    gitPickRepo: "选择仓库",
+    gitRemoveConfirm: "移除这个平台？它的凭据会被删除。",
+  },
+  ja: {
+    navGit: "Git",
+    gitNotReady: "まず NANODEPLOY_SECRET_KEY を設定してください（./install.sh を実行し、control plane を再起動）。フォージの認証情報はこの鍵で暗号化して保存されます。",
+    gitForges: "接続済みのフォージ",
+    gitConnectGithub: "GitHub を接続",
+    gitOrgPh: "組織（任意）",
+    gitGithubNote: "このサーバー用の非公開 GitHub App を、あなたのアカウントか組織に作成します。GitHub で確認したあと、読み取れるリポジトリを選びます。",
+    gitInstall: "リポジトリを選ぶ",
+    gitRemove: "削除",
+    gitGitlabProjectPh: "group/project",
+    gitGitlabTokenPh: "プロジェクトアクセストークン",
+    gitConnectGitlab: "GitLab プロジェクトを接続",
+    gitGitlabNote: "GitLab で: プロジェクト、Settings、Access tokens、ロール Maintainer、スコープ api と read_repository。",
+    gitNoForge: "接続済みのフォージはありません。",
+    gitDeployTitle: "リポジトリをデプロイ",
+    gitProvider: "フォージ",
+    gitRepo: "リポジトリ",
+    gitBranch: "ブランチ",
+    gitRoot: "app.yaml のフォルダ",
+    gitPreviews: "プルリクエストごとにプレビュー",
+    gitDeploy: "このリポジトリからデプロイ",
+    gitConnections: "接続済みのリポジトリ",
+    gitNoConnections: "接続済みのリポジトリはありません。",
+    gitBuildNow: "今すぐビルド",
+    gitDisconnect: "切断",
+    gitDisconnectConfirm: "{repo} を切断しますか？アプリはそのまま残り、プレビューは削除され、push でデプロイされなくなります。",
+    gitBuilds: "ビルド",
+    gitNoBuilds: "まだビルドはありません。",
+    gitStatusQueued: "待機中",
+    gitStatusRunning: "ビルド中",
+    gitStatusSucceeded: "デプロイ済み",
+    gitStatusFailed: "失敗",
+    gitStatusSkipped: "スキップ",
+    gitPr: "プルリクエスト #{n}",
+    gitLog: "ログ",
+    sourceGit: "Git",
+    gitHookNote: "Webhook は {url} に届きます。コンソールの前にアクセス制御がある場合は /hooks/ を通してください。",
+    gitBuildQueued: "ビルドを登録しました。",
+    gitPanelFrom: "push のたびに {repo}（{branch}）からデプロイ。",
+    gitPickRepo: "リポジトリを選択",
+    gitRemoveConfirm: "このフォージを削除しますか？認証情報は消去されます。",
+  },
+};
+
+for (const l of Object.keys(I18N_GIT)) Object.assign(I18N[l], I18N_GIT[l]);
 
 const SUPPORTED = new Set(LANGS.map(([c]) => c));
 const savedLang = (() => { try { return localStorage.getItem("nanodeploy.lang"); } catch { return null; } })();
@@ -1145,11 +2634,15 @@ function renderStatic() {
   document.title = t("title");
   $("lang").value = LANG;
   document.querySelectorAll("[data-view]").forEach((b) => {
-    b.textContent = t(b.dataset.view === "apps" ? "navApps" : "navPeople");
+    b.textContent = { apps: t("navApps"), analytics: t("navAnalytics"), git: t("navGit"), people: t("navPeople") }[b.dataset.view];
   });
   $("memory-label").textContent = t("memoryLabel");
   $("gauge-note").textContent = t("gaugeNote");
   $("drop-text").innerHTML = t("dropHtml");
+  $("newkey-title").textContent = t("newAppKeyTitle");
+  $("newkey-slug").placeholder = t("newAppSlugPh");
+  $("newkey-create").textContent = t("keyCreate");
+  $("newkey-note").textContent = t("newAppKeyNote");
 }
 
 function setLang(lang) {
@@ -1159,6 +2652,8 @@ function setLang(lang) {
   renderStatic();
   renderApps();
   if (!$("view-people").hidden) renderPeople(state.peopleError);
+  if (!$("view-analytics").hidden) renderAnalytics();
+  if (!$("view-git").hidden) renderGit();
 }
 
 /* ---------- state ---------- */
@@ -1173,6 +2668,14 @@ const state = {
   // slug whose access select was just moved to "groups" but which has no group
   // yet: show the chips and only call the API once one is picked
   pendingGroups: null,
+  // deploy keys per slug, and the one key just created (its only display)
+  keys: {}, freshKey: null,
+  // role grants per slug, and where the sign-in pages live
+  grants: {}, authOrigin: null,
+  // release history per slug; a staged upload waiting for confirmation, with
+  // what it would change; the release whose log is shown; a rollback that
+  // needs a choice between code only and code plus database
+  releases: {}, pending: null, logOf: null, rollbackChoice: null,
 };
 let toastTimer;
 
@@ -1337,6 +2840,18 @@ function renderDetail(a, host) {
       </div>`).join("")}
       <button class="act" data-saveenv="${a.slug}">${t("envSave")}</button>` : ""}
 
+    ${renderVersions(a)}
+
+    ${a.roles && a.roles.length ? renderRoles(a) : ""}
+
+    <h3 class="label">${t("keysTitle")}</h3>
+    <p class="note" style="margin:0 0 8px">${t("keysNote")}</p>
+    ${renderKeys(a.slug)}
+    <div class="field" style="margin-top:8px">
+      <input data-keylabel="${a.slug}" placeholder="${t("keyLabelPh")}" maxlength="60">
+      <button class="act" data-newkey="${a.slug}">${t("keyCreate")}</button>
+    </div>
+
     <h3 class="label">${t("logsTitle")}</h3>
     <pre class="logs" data-logs="${a.slug}">${esc(state.logs[a.slug] ?? t("logsLoading"))}</pre>
 
@@ -1348,6 +2863,194 @@ function renderDetail(a, host) {
     ${a.deployedAt ? `<p class="note" style="margin:16px 0 0">${esc(t("deployedAt", { when: ago(a.deployedAt) }))}</p>` : ""}
     <p class="note" style="margin:8px 0 0">${t("detailNote")}</p>
   </div>`;
+}
+
+/* ---------- versions ---------- */
+
+const kb = (bytes) => (bytes == null ? "-" : Math.max(1, Math.round(bytes / 1024)).toLocaleString(LANG));
+
+// What a staged upload would change, in plain lines, before anything goes live.
+function renderDiff(d) {
+  const lines = [];
+  const f = d.files;
+  lines.push(f.added || f.changed || f.removed ? t("diffFiles", f) : t("diffSame"));
+  if (d.server.from !== d.server.to) lines.push(t("diffServer", { from: kb(d.server.from), to: kb(d.server.to) }));
+  if (d.migrations.length) lines.push(t("diffMigrations", { list: d.migrations.join(", ") }));
+  if (d.databaseCreated) lines.push(t("diffDatabase"));
+  if (d.backend === "added") lines.push(t("diffBackendAdded"));
+  if (d.backend === "removed") lines.push(t("diffBackendRemoved"));
+  if (d.warm) lines.push(d.warm.to ? t("diffWarmOn") : t("diffWarmOff"));
+  if (d.envToSet.length) lines.push(t("diffEnvToSet", { list: d.envToSet.join(", ") }));
+  if (d.envDropped.length) lines.push(t("diffEnvDropped", { list: d.envDropped.join(", ") }));
+  if (d.access) lines.push(t("diffAccess", d.access));
+  if (d.rolesAdded.length) lines.push(t("diffRolesAdded", { list: d.rolesAdded.join(", ") }));
+  if (d.rolesRemoved.length) lines.push(t("diffRolesRemoved", { list: d.rolesRemoved.join(", ") }));
+  if (d.protectChanged) lines.push(t("diffProtect"));
+  return `<div class="diff">
+    <strong>${esc(t("diffTitle", { name: d.name, from: d.from ?? "-", to: d.to }))}</strong>
+    <ul>${lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>
+    <div class="row" style="gap:8px">
+      <button class="act primary" data-promote="${esc(state.pending.id)}">${esc(t("deployVersion", { n: d.to }))}</button>
+      <button class="act" data-discard="${esc(state.pending.id)}">${esc(t("cancel"))}</button>
+    </div>
+  </div>`;
+}
+
+function releaseRow(slug, r) {
+  const status = { live: t("statusLive"), superseded: t("statusSuperseded"), failed: t("statusFailed") }[r.status] ?? r.status;
+  const source = r.source === "rollback" && r.rollbackOf ? t("sourceRollback", { n: r.rollbackOf })
+    : ({ upload: t("sourceUpload"), cli: t("sourceCli"), legacy: t("sourceLegacy"), git: t("sourceGit") }[r.source] ?? r.source);
+  const what = [r.message, r.commitMessage, r.commitSha ? r.commitSha.slice(0, 7) : null].filter(Boolean).join(" · ");
+  const meta = [source, r.createdBy ? t("byWho", { who: r.createdBy }) : null, ago(r.createdAt)].filter(Boolean).join(" · ");
+  const canGoBack = r.status === "superseded" && r.rollback && r.rollback.filesKept;
+  const choosing = state.rollbackChoice && state.rollbackChoice.id === r.id;
+  const logOpen = state.logOf && state.logOf.id === r.id;
+  return `<div class="rel">
+      <div class="rel-main">
+        <span class="num">v${r.number}</span> <span class="rel-state ${esc(r.status)}">${esc(status)}</span>
+        ${what ? `<span class="app-host">${esc(what)}</span>` : ""}
+        <span class="app-host">${esc(meta)}${r.status === "superseded" && r.rollback && !r.rollback.filesKept ? " · " + esc(t("filesCleaned")) : ""}</span>
+      </div>
+      <div class="rel-actions">
+        ${canGoBack && !choosing ? `<button class="act" data-rollback="${esc(r.id)}" data-slug="${slug}">${esc(t("rollbackBtn"))}</button>` : ""}
+        <button class="act" data-showlog="${esc(r.id)}" data-slug="${slug}" aria-expanded="${Boolean(logOpen)}">${esc(t("logBtn"))}</button>
+      </div>
+    </div>
+    ${choosing ? `<div class="diff">
+      <p style="margin:0 0 8px">${esc(t("rollbackDbAhead", { n: r.number, list: r.rollback.migrationsAhead.join(", ") }))}</p>
+      <div class="row" style="gap:8px">
+        <button class="act" data-rollbackgo="${esc(r.id)}" data-slug="${slug}" data-db="0">${esc(t("rollbackCodeOnly"))}</button>
+        ${r.rollback.snapshot ? `<button class="act danger" data-rollbackgo="${esc(r.id)}" data-slug="${slug}" data-db="1">${esc(t("rollbackWithDb"))}</button>` : ""}
+        <button class="act" data-rollbackcancel="1">${esc(t("cancel"))}</button>
+      </div></div>` : ""}
+    ${logOpen ? `<pre class="logs">${esc(state.logOf.lines.join("\n"))}</pre>` : ""}`;
+}
+
+function renderVersions(a) {
+  const list = state.releases[a.slug];
+  const pending = state.pending && state.pending.slug === a.slug ? renderDiff(state.pending.diff) : "";
+  return `<h3 class="label">${t("versionsTitle")}</h3>
+    ${a.release ? `<p class="note" style="margin:0 0 8px">${esc(t("liveVersion", { n: a.release }))}</p>` : ""}
+    ${(() => {
+      const conn = state.git?.connections?.find((c) => c.slug === a.slug);
+      return conn ? `<p class="note" style="margin:0 0 8px">${esc(t("gitPanelFrom", { repo: conn.repo, branch: conn.branch }))}</p>` : "";
+    })()}
+    ${pending}
+    <div class="field">
+      <button class="act" data-newversion="${a.slug}">${t("newVersion")}</button>
+      <input type="file" accept=".zip" hidden data-versionfile="${a.slug}">
+    </div>
+    ${list ? (list.length ? list.slice(0, 10).map((r) => releaseRow(a.slug, r)).join("") : `<p class="note">${t("noVersions")}</p>`) : ""}`;
+}
+
+async function loadReleases(slug) {
+  try {
+    const { releases } = await api(`/api/apps/${slug}/releases`);
+    state.releases[slug] = releases;
+  } catch {
+    return;
+  }
+  if (state.open === slug && !editingDetail()) renderApps();
+}
+
+// Upload without going live. The server answers with what would change; a new
+// app has nothing to compare with and goes straight live, as before.
+async function stageBundle(file, expect) {
+  toast(t("deploying", { name: file.name }), true);
+  const form = new FormData();
+  form.append("bundle", file);
+  const res = await fetch(`/api/releases${expect ? `?expect=${encodeURIComponent(expect)}` : ""}`, { method: "POST", body: form });
+  const data = (res.headers.get("content-type") || "").includes("json") ? await res.json() : {};
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  $("toast").hidden = true;
+  if (data.diff.isNew) return promoteRelease(data.release.id, data.release.slug);
+  state.pending = { slug: data.release.slug, id: data.release.id, diff: data.diff };
+  state.open = data.release.slug;
+  await loadReleases(data.release.slug);
+  renderApps();
+  document.querySelector(".diff")?.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+async function promoteRelease(id, slug) {
+  toast(t("deploying", { name: slug }), true);
+  const res = await fetch(`/api/releases/${id}/promote`, { method: "POST" });
+  const data = await res.json().catch(() => ({}));
+  state.pending = null;
+  if (!res.ok) {
+    toast(t("fail") + (data.error || res.statusText) + (data.note ? "\n" + data.note : ""), true);
+  } else {
+    toast([t("promoted", { n: data.release }), data.url, ...(data.log || [])].join("\n"), true);
+  }
+  await loadApps();
+  await loadReleases(slug);
+}
+
+// One row of chips per role: people first, then groups. Pressed = holds it.
+function renderRoles(a) {
+  const grants = state.grants[a.slug] ?? [];
+  const holds = (role, kind, id) => grants.some((g) => g.role === role && g.kind === kind && g.id === id);
+  const chip = (role, kind, id, label) => `<button class="chip" data-grant="${a.slug}" data-role="${esc(role)}"
+      data-kind="${kind}" data-sid="${esc(id)}" aria-pressed="${holds(role, kind, id)}">${esc(label)}</button>`;
+  const paths = (a.protect || []).map((r) => `${r.path} → ${r.role}`).join(", ");
+  return `<h3 class="label">${t("rolesTitle")}</h3>
+    <p class="note" style="margin:0 0 8px">${t("rolesNote")}${paths ? " " + esc(t("protectedPaths", { paths })) : ""}</p>
+    ${a.roles.map((role) => `
+      <div style="margin:12px 0">
+        <span class="num">${esc(role)}</span>
+        <div class="label" style="margin:8px 0 4px">${t("rolePeople")}</div>
+        <div class="chips">${state.people.filter((p) => !p.isAdmin).map((p) => chip(role, "user", p.id, p.displayName)).join("")}</div>
+        ${state.groups.length ? `<div class="label" style="margin:8px 0 4px">${t("roleGroups")}</div>
+        <div class="chips">${state.groups.map((g) => chip(role, "group", g.id, g.name)).join("")}</div>` : ""}
+      </div>`).join("")}`;
+}
+
+async function loadGrants(slug) {
+  try {
+    const { grants } = await api(`/api/apps/${slug}/roles`);
+    state.grants[slug] = grants;
+  } catch {
+    return;
+  }
+  if (state.open === slug && !editingDetail()) renderApps();
+}
+
+// The plain key exists once, in the creation response: show it with the two
+// lines a CI job or an agent needs, then forget it on the next panel change.
+function keyBox(slug, key) {
+  const url = location.origin;
+  return `<div class="keybox">
+    <span class="note">${t("keyShownOnce")}</span>
+    <code>${esc(key)}</code>
+    <code>export NANODEPLOY_URL=${esc(url)} NANODEPLOY_TOKEN=${esc(key)}</code>
+  </div>`;
+}
+
+function renderKeys(slug) {
+  const fresh = state.freshKey?.slug === slug ? keyBox(slug, state.freshKey.key) : "";
+  const list = state.keys[slug];
+  if (!list) return fresh;
+  const rows = list.map((k) => `<div class="keyrow">
+      <span style="min-width:0"><span class="num">${esc(k.hint)}</span> · ${esc(k.label)}
+        <span class="note">· ${esc(k.last_used_at ? t("keyLastUsed", { when: ago(k.last_used_at) }) : t("keyNeverUsed"))}</span></span>
+      <button class="act danger" data-revokekey="${slug}" data-keyid="${esc(k.id)}" data-keyhint="${esc(k.hint)}">${t("keyRevoke")}</button>
+    </div>`).join("");
+  return fresh + (rows || `<p class="note" style="margin:0">${t("keysNone")}</p>`);
+}
+
+async function loadKeys(slug) {
+  try {
+    const { keys } = await api(`/api/apps/${slug}/keys`);
+    state.keys[slug] = keys;
+  } catch {
+    return;
+  }
+  if (state.open === slug && !editingDetail()) renderApps();
+}
+
+async function createKey(slug, label) {
+  const created = await api(`/api/apps/${slug}/keys`, { method: "POST", body: JSON.stringify({ label }) });
+  state.freshKey = { slug, key: created.key };
+  return created;
 }
 
 function bindApps() {
@@ -1362,7 +3065,13 @@ function bindApps() {
   document.querySelectorAll("[data-open]").forEach((el) => {
     el.onclick = () => {
       state.open = state.open === el.dataset.open ? null : el.dataset.open;
+      state.freshKey = null;
       renderApps(); // loads the logs of whatever is now open
+      if (state.open) loadKeys(state.open);
+      if (state.open) loadGrants(state.open);
+      if (state.open) loadReleases(state.open);
+      state.logOf = null;
+      state.rollbackChoice = null;
     };
   });
 
@@ -1426,6 +3135,127 @@ function bindApps() {
     });
   });
 
+  document.querySelectorAll("[data-newversion]").forEach((el) => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      document.querySelector(`[data-versionfile="${el.dataset.newversion}"]`).click();
+    };
+  });
+  document.querySelectorAll("[data-versionfile]").forEach((el) => {
+    el.onclick = (e) => e.stopPropagation();
+    el.onchange = fail(async () => {
+      if (el.files[0]) await stageBundle(el.files[0], el.dataset.versionfile);
+    });
+  });
+  document.querySelectorAll("[data-promote]").forEach((el) => {
+    el.onclick = fail(async (e) => {
+      e.stopPropagation();
+      el.disabled = true;
+      await promoteRelease(el.dataset.promote, state.pending.slug);
+    });
+  });
+  document.querySelectorAll("[data-discard]").forEach((el) => {
+    el.onclick = fail(async (e) => {
+      e.stopPropagation();
+      await api(`/api/releases/${el.dataset.discard}/discard`, { method: "POST" });
+      state.pending = null;
+      renderApps();
+    });
+  });
+  document.querySelectorAll("[data-showlog]").forEach((el) => {
+    el.onclick = fail(async (e) => {
+      e.stopPropagation();
+      if (state.logOf && state.logOf.id === el.dataset.showlog) {
+        state.logOf = null;
+      } else {
+        const { log } = await api(`/api/apps/${el.dataset.slug}/releases/${el.dataset.showlog}`);
+        state.logOf = { id: el.dataset.showlog, lines: log };
+      }
+      renderApps();
+    });
+  });
+  const goBack = async (slug, id, database) => {
+    toast(t("deploying", { name: slug }), true);
+    const res = await api(`/api/apps/${slug}/releases/${id}/rollback`, { method: "POST", body: JSON.stringify({ database }) });
+    state.rollbackChoice = null;
+    toast([t("rolledBack", { n: state.releases[slug].find((r) => r.id === id).number }), ...(res.log || [])].join("\n"), true);
+    await loadApps();
+    await loadReleases(slug);
+  };
+  document.querySelectorAll("[data-rollback]").forEach((el) => {
+    el.onclick = fail(async (e) => {
+      e.stopPropagation();
+      const slug = el.dataset.slug;
+      const r = state.releases[slug].find((x) => x.id === el.dataset.rollback);
+      // a database ahead of the old code: say so and let the person choose
+      if (r.rollback.migrationsAhead.length) {
+        state.rollbackChoice = { id: r.id };
+        return renderApps();
+      }
+      if (!confirm(t("rollbackConfirm", { n: r.number }))) return;
+      await goBack(slug, r.id, false);
+    });
+  });
+  document.querySelectorAll("[data-rollbackgo]").forEach((el) => {
+    el.onclick = fail(async (e) => {
+      e.stopPropagation();
+      const slug = el.dataset.slug;
+      const r = state.releases[slug].find((x) => x.id === el.dataset.rollbackgo);
+      const db = el.dataset.db === "1";
+      if (db && !confirm(t("rollbackWithDbConfirm", { list: r.rollback.migrationsAhead.join(", ") }))) return;
+      await goBack(slug, r.id, db);
+    });
+  });
+  document.querySelectorAll("[data-rollbackcancel]").forEach((el) => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      state.rollbackChoice = null;
+      renderApps();
+    };
+  });
+
+  document.querySelectorAll("[data-grant]").forEach((el) => {
+    el.onclick = fail(async (e) => {
+      e.stopPropagation();
+      const slug = el.dataset.grant;
+      await api(`/api/apps/${slug}/roles`, {
+        method: "POST",
+        body: JSON.stringify({
+          role: el.dataset.role, kind: el.dataset.kind, id: el.dataset.sid,
+          granted: el.getAttribute("aria-pressed") !== "true",
+        }),
+      });
+      await loadGrants(slug);
+      renderApps();
+    });
+  });
+
+  document.querySelectorAll("[data-keylabel]").forEach((el) => (el.onclick = (e) => e.stopPropagation()));
+
+  document.querySelectorAll("[data-newkey]").forEach((el) => {
+    el.onclick = fail(async (e) => {
+      e.stopPropagation();
+      const slug = el.dataset.newkey;
+      const label = document.querySelector(`[data-keylabel="${slug}"]`)?.value.trim() ?? "";
+      await createKey(slug, label);
+      document.activeElement?.blur();
+      await loadKeys(slug);
+      renderApps();
+    });
+  });
+
+  document.querySelectorAll("[data-revokekey]").forEach((el) => {
+    el.onclick = fail(async (e) => {
+      e.stopPropagation();
+      const slug = el.dataset.revokekey;
+      if (!confirm(t("keyRevokeConfirm", { hint: el.dataset.keyhint }))) return;
+      await api(`/api/apps/${slug}/keys/${el.dataset.keyid}`, { method: "DELETE" });
+      if (state.freshKey?.slug === slug) state.freshKey = null;
+      await loadKeys(slug);
+      renderApps();
+    });
+  });
+
   document.querySelectorAll("[data-wake]").forEach((el) => {
     el.onclick = fail(async (e) => {
       e.stopPropagation();
@@ -1467,6 +3297,7 @@ async function loadPeople() {
   state.people = data.people ?? [];
   state.groups = data.groups ?? [];
   state.peopleReady = data.configured !== false;
+  state.authOrigin = data.authOrigin ?? null;
   state.peopleError = data.error ?? null;
   renderPeople(state.peopleError);
 }
@@ -1502,11 +3333,15 @@ function personCard(p) {
         .join("")
     : `<span class="note">${t("noGroupsYet")}</span>`;
 
+  const creds = [p.hasPassword ? t("credPassword") : null, p.passkeys ? t("credPasskeys", { n: p.passkeys }) : null]
+    .filter(Boolean)
+    .join(" · ") || t("notActivated");
   return `<div class="detail" style="margin-bottom:12px">
     <div class="spread">
       <div style="min-width:0">
         <span class="app-name">${esc(p.displayName)}${badges}</span>
-        <span class="app-host num">${esc(p.email || p.username)}</span>
+        <span class="app-host num">${esc(p.username)}${p.email ? " · " + esc(p.email) : ""}</span>
+        <span class="app-host">${esc(creds)}${p.lastLogin ? " · " + esc(ago(p.lastLogin)) : ""}</span>
       </div>
       <div class="row">${adminControl}</div>
     </div>
@@ -1514,7 +3349,10 @@ function personCard(p) {
       <span class="label">${t("groupsLabel")}</span>
       <div class="chips" style="margin-top:8px">${groupChips}</div>
     </div>
-    ${me ? "" : `<div class="actions"><button class="act danger" data-removeperson="${p.id}">${t("removePerson")}</button></div>`}
+    <div class="actions">
+      <button class="act" data-signinlink="${p.id}">${t("signInLink")}</button>
+      ${me ? "" : `<button class="act danger" data-removeperson="${p.id}">${t("removePerson")}</button>`}
+    </div>
   </div>`;
 }
 
@@ -1539,15 +3377,10 @@ function groupRow(g) {
 function renderPeople(error) {
   const view = $("view-people");
 
-  if (!state.peopleReady) {
-    view.innerHTML = `<p class="empty">${t("peopleOffHtml")}</p>
-      <a class="act" href="https://id.${esc(state.domain)}" target="_blank" rel="noopener"
-         style="text-decoration:none">${t("openPocketId")}</a>`;
-    return;
-  }
-
   view.innerHTML = `
-    <p class="note" style="margin:0 0 24px">${t("consoleHelp")}</p>
+    <p class="note" style="margin:0 0 12px">${t("consoleHelp")}</p>
+    ${state.authOrigin ? `<p style="margin:0 0 24px"><a class="act" href="${esc(state.authOrigin)}/account"
+      target="_blank" rel="noopener" style="text-decoration:none">${t("myAccount")}</a></p>` : ""}
 
     <div class="label" style="margin-bottom:8px">${t("accountsTitle")}</div>
     <div class="field">
@@ -1582,7 +3415,7 @@ function bindPeople() {
   $("invite").onclick = fail(async () => {
     const username = $("new-username").value.trim();
     const email = $("new-email").value.trim();
-    if (!username || !email) return toast(t("inviteRequired"));
+    if (!username) return toast(t("inviteRequired"));
     const res = await api("/api/people", { method: "POST", body: JSON.stringify({ username, email }) });
     toast(res.link ? t("inviteLink") + res.link : t("created"), true);
     loadPeople();
@@ -1620,6 +3453,14 @@ function bindPeople() {
     });
   });
 
+  document.querySelectorAll("[data-signinlink]").forEach((el) => {
+    el.onclick = fail(async () => {
+      const p = state.people.find((x) => x.id === el.dataset.signinlink);
+      const { link } = await api(`/api/people/${p.id}/link`, { method: "POST" });
+      toast(t("signInLinkMade", { name: p.displayName }) + link, true);
+    });
+  });
+
   document.querySelectorAll("[data-removeperson]").forEach((el) => {
     el.onclick = fail(async () => {
       const p = state.people.find((x) => x.id === el.dataset.removeperson);
@@ -1654,21 +3495,440 @@ function bindPeople() {
   });
 }
 
+/* ---------- analytics ---------- */
+
+state.an = { overview: null, slug: null, range: "24h", detail: null, table: false };
+
+async function loadAnalytics() {
+  try {
+    state.an.overview = await api("/api/analytics");
+    if (!state.an.slug && state.an.overview.apps.length) state.an.slug = state.an.overview.apps[0].slug;
+    if (state.an.slug) state.an.detail = await api(`/api/apps/${state.an.slug}/analytics?range=${state.an.range}`);
+  } catch (err) {
+    toast(t("fail") + err.message);
+  }
+  renderAnalytics();
+}
+
+const fmt = (n) => (n == null ? "-" : Number(n).toLocaleString(LANG));
+const pct = (x) => (x == null ? "-" : Math.round(x * 100).toLocaleString(LANG) + " %");
+
+// Buckets with no traffic are not in the answer: lay out every bucket of the
+// range so a quiet hour shows as a gap, not as a missing column.
+function buckets(d) {
+  const tz = d.timezone;
+  const day = (ms) => new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date(ms));
+  const now = Date.now();
+  const out = [];
+  if (d.unit === "day") {
+    for (let i = 29; i >= 0; i--) out.push({ key: day(now - i * 864e5), at: now - i * 864e5 });
+  } else {
+    const hours = d.range === "24h" ? 24 : 168;
+    const top = Math.floor(now / 36e5) * 36e5;
+    for (let i = hours - 1; i >= 0; i--) out.push({ key: new Date(top - i * 36e5).toISOString().slice(0, 13), at: top - i * 36e5 });
+  }
+  const keyOf = (t) => (d.unit === "day" ? day(new Date(t).getTime()) : new Date(t).toISOString().slice(0, 13));
+  const by = new Map(d.series.map((s) => [keyOf(s.t), s]));
+  return out.map((b) => ({ ...b, ...(by.get(b.key) ?? { visitors: 0, pages: 0, requests: 0, errors: 0 }) }));
+}
+
+function bucketLabel(d, at, long) {
+  const opts = d.unit === "day"
+    ? { timeZone: d.timezone, day: "numeric", month: "short" }
+    : long ? { timeZone: d.timezone, weekday: "short", hour: "2-digit", minute: "2-digit" } : { timeZone: d.timezone, hour: "2-digit" };
+  return new Intl.DateTimeFormat(LANG, opts).format(new Date(at));
+}
+
+const niceMax = (v) => {
+  if (v <= 4) return 4;
+  const p = 10 ** Math.floor(Math.log10(v));
+  return [1, 2, 2.5, 5, 10].map((m) => m * p).find((m) => m >= v);
+};
+
+// One series, so no legend: the title names it. Bars are thin, rounded at the
+// data end, 2 px apart; the grid recedes; each bar has a hover target taller
+// than itself and a <title> for screen readers.
+function visitorsChart(d) {
+  const data = buckets(d);
+  const W = 640, H = 150, L = 30, B = 20, T = 8;
+  const max = niceMax(Math.max(...data.map((x) => x.visitors), 1));
+  const step = (W - L) / data.length;
+  const bw = Math.max(1, step - 2);
+  const y = (v) => T + (H - T - B) * (1 - v / max);
+  const grid = [0, max / 2, max].map((v) => `<line class="grid" x1="${L}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/>
+    <text class="axis" x="${L - 6}" y="${y(v) + 3}" text-anchor="end">${fmt(v)}</text>`).join("");
+  const every = d.unit === "day" ? 5 : d.range === "24h" ? 6 : 24;
+  const bars = data.map((b, i) => {
+    const x = L + i * step + 1;
+    const h = (H - T - B) - (y(b.visitors) - T);
+    const r = Math.min(4, bw / 2, h);
+    const top = y(b.visitors);
+    const base = H - B;
+    const shape = h <= 0 ? "" : `<path class="bar" d="M${x},${base} V${top + r} Q${x},${top} ${x + r},${top} H${x + bw - r} Q${x + bw},${top} ${x + bw},${top + r} V${base} Z"/>`;
+    const tip = `${bucketLabel(d, b.at, true)}\n${t("anVisitors")}: ${fmt(b.visitors)}\n${t("anPages")}: ${fmt(b.pages)}\n${t("anRequestsN", { n: fmt(b.requests) })}`;
+    const label = i % every === 0 ? `<text class="axis" x="${x}" y="${H - 5}">${esc(bucketLabel(d, b.at, false))}</text>` : "";
+    return `<g><rect class="hit" x="${L + i * step}" y="${T}" width="${step}" height="${H - T - B}" data-tip="${esc(tip)}"><title>${esc(tip)}</title></rect>${shape}${label}</g>`;
+  }).join("");
+  const table = state.an.table ? `<div class="an-scroll"><table class="an-table">
+      <tr><th></th><th>${t("anVisitors")}</th><th>${t("anPages")}</th><th>${t("anRequests")}</th><th>${t("anErrors")}</th></tr>
+      ${data.filter((b) => b.requests || b.visitors).map((b) => `<tr><td>${esc(bucketLabel(d, b.at, true))}</td><td>${fmt(b.visitors)}</td>
+        <td>${fmt(b.pages)}</td><td>${fmt(b.requests)}</td><td>${fmt(b.errors)}</td></tr>`).join("")}</table></div>` : "";
+  return `<div class="chart">
+    <div class="label" style="margin-bottom:6px">${esc(t("anVisitorsPer", { unit: d.unit === "day" ? t("anDay") : t("anHour") }))}</div>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t("anVisitorsPer", { unit: d.unit === "day" ? t("anDay") : t("anHour") }))}">${grid}${bars}</svg>
+    <button class="chip" data-antable aria-pressed="${state.an.table}" style="margin-top:8px">${t("anTable")}</button>
+    ${table}
+  </div>`;
+}
+
+// When the app was awake: ochre bands over a quiet track. Deploys are ink
+// ticks, crashes red ticks; each kind is named in the legend and the tooltip,
+// never by colour alone.
+function timelineChart(d) {
+  const tl = d.timeline;
+  const W = 640, H = 44, L = 0;
+  const x = (ms) => L + (W - L) * (ms - tl.from) / (tl.to - tl.from);
+  const span = (a) => `${bucketLabel(d, a.from, true)} → ${bucketLabel(d, a.to, true)}`;
+  const bands = tl.awake.map((a) => {
+    const w = Math.max(1.5, x(a.to) - x(a.from));
+    return `<rect x="${x(a.from)}" y="10" width="${w}" height="16" rx="2" fill="var(--live-fill)" data-tip="${esc(t("anAwakeLegend") + "\n" + span(a))}"><title>${esc(span(a))}</title></rect>`;
+  }).join("");
+  const markName = (k) => ({ deploy: t("anDeploy"), crash: t("anCrash"), oom: t("anOom") }[k]);
+  const marks = tl.markers.map((m) => {
+    const at = new Date(m.at).getTime();
+    const color = m.kind === "deploy" ? "var(--ink)" : "var(--danger)";
+    const tip = `${markName(m.kind)}${m.detail?.release ? " v" + m.detail.release : ""}\n${bucketLabel(d, at, true)}`;
+    return `<g data-tip="${esc(tip)}"><rect x="${x(at) - 5}" y="2" width="10" height="32" fill="transparent"/><line x1="${x(at)}" x2="${x(at)}" y1="4" y2="32" stroke="${color}" stroke-width="2"/>
+      ${m.kind === "deploy" ? "" : `<text x="${x(at)}" y="${H - 1}" text-anchor="middle" font-size="10" fill="var(--danger)">!</text>`}<title>${esc(tip)}</title></g>`;
+  }).join("");
+  const ticks = [0, 0.5, 1].map((f) => {
+    const at = tl.from + f * (tl.to - tl.from);
+    return `<text class="axis" x="${x(at)}" y="${H - 1}" text-anchor="${f === 0 ? "start" : f === 1 ? "end" : "middle"}">${esc(bucketLabel(d, at, true))}</text>`;
+  }).join("");
+  return `<div class="chart">
+    <div class="label" style="margin-bottom:6px">${t("anTimeline")}</div>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t("anTimeline"))}">
+      <rect x="0" y="16" width="${W}" height="4" rx="2" fill="var(--cell)"/>${bands}${marks}${ticks}</svg>
+    <div class="legend"><span><i style="background:var(--live-fill)"></i>${t("anAwakeLegend")}</span>
+      <span><i style="background:var(--ink);width:2px"></i>${t("anDeploy")}</span>
+      <span><i style="background:var(--danger);width:2px"></i>${t("anCrash")}, ${t("anOom")} (!)</span></div>
+  </div>`;
+}
+
+// Memory against the container's hard limit: the gap is the headroom.
+function memoryChart(d) {
+  // a line needs two points: right after a deploy there is only one sample
+  if (d.memory.length < 2) return "";
+  const W = 640, H = 90, L = 30, T = 14, B = 6;
+  const max = Math.max(d.limit, ...d.memory.map((m) => m.mem));
+  const xs = d.memory.map((m) => new Date(m.t).getTime());
+  const x0 = Math.min(...xs), x1 = Math.max(...xs, x0 + 1);
+  const x = (ms) => L + (W - L) * (ms - x0) / (x1 - x0);
+  const y = (v) => T + (H - T - B) * (1 - v / max);
+  const path = d.memory.map((m, i) => `${i ? "L" : "M"}${x(new Date(m.t).getTime()).toFixed(1)},${y(m.mem).toFixed(1)}`).join(" ");
+  const last = d.memory[d.memory.length - 1];
+  return `<div class="chart">
+    <div class="label" style="margin-bottom:6px">${t("anMemory")} · ${mb(last.mem)} ${t("mbUnit")}</div>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t("anMemory"))}">
+      <line class="grid" x1="${L}" x2="${W}" y1="${y(d.limit)}" y2="${y(d.limit)}" stroke-dasharray="4 4"/>
+      <text class="axis" x="${W}" y="${y(d.limit) - 4}" text-anchor="end">${esc(t("anLimit", { mb: Math.round(d.limit / 1048576) }))}</text>
+      <path d="${path}" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linejoin="round"/>
+      ${d.memory.map((m) => `<circle cx="${x(new Date(m.t).getTime())}" cy="${y(m.mem)}" r="6" fill="transparent"
+        data-tip="${esc(bucketLabel(d, new Date(m.t).getTime(), true) + "\n" + mb(m.mem) + " " + t("mbUnit"))}"/>`).join("")}
+    </svg>
+  </div>`;
+}
+
+function topList(title, rows) {
+  const max = Math.max(...rows.map((r) => r.n), 1);
+  return `<div><div class="label" style="margin-bottom:6px">${title}</div>
+    ${rows.length ? rows.map((r) => `<div class="toprow"><span>${esc(r.key)}</span><span class="num">${fmt(r.n)}</span>
+      <b><i style="width:${(100 * r.n / max).toFixed(1)}%"></i></b></div>`).join("") : `<p class="note" style="margin:0">${t("anNone")}</p>`}</div>`;
+}
+
+// tiny 7-day bars in the overview: shape only, the number is in the next column
+function spark(values) {
+  const max = Math.max(...values, 1);
+  return `<svg width="56" height="16" viewBox="0 0 56 16" aria-hidden="true">${values.map((v, i) => {
+    const h = v ? Math.max(2, 14 * v / max) : 0;
+    return h ? `<rect x="${i * 8}" y="${16 - h}" width="6" height="${h}" rx="1" fill="var(--ink)"/>` : `<rect x="${i * 8}" y="15" width="6" height="1" fill="var(--rule)"/>`;
+  }).join("")}</svg>`;
+}
+
+function renderAnalytics() {
+  const view = $("view-analytics");
+  const o = state.an.overview;
+  if (!o) return;
+  if (!o.apps.length) {
+    view.innerHTML = `<p class="empty">${t("anNoApps")}</p>`;
+    return;
+  }
+  const rows = o.apps.map((a) => `<tr data-an="${a.slug}" aria-selected="${a.slug === state.an.slug}" tabindex="0">
+      <td>${esc(a.name)}</td><td>${fmt(a.online)}</td><td>${fmt(a.visitorsToday)}</td><td>${fmt(a.pagesToday)}</td>
+      <td>${spark(a.week)}</td><td>${fmt(a.wakesToday)}</td><td>${a.awakeShare == null ? "-" : pct(a.awakeShare)}</td>
+      <td>${a.errorsToday ? `<span style="color:var(--danger)">${fmt(a.errorsToday)}</span>` : "0"}</td></tr>`).join("");
+  const d = state.an.detail;
+  let detail = "";
+  if (d) {
+    const tt = d.totals;
+    const tiles = [
+      [t("anVisitors"), fmt(tt.visitors)], [t("anPages"), fmt(tt.pages)], [t("anOnline"), fmt(d.online)],
+      [t("anRequests"), fmt(tt.requests)], [t("anErrors"), fmt(tt.errors)],
+      [t("anP95"), tt.p95 == null ? "-" : t("anMs", { n: fmt(tt.p95) })],
+      [t("anWakes"), fmt(tt.wakes)], [t("anColdStart"), tt.coldStartMedian == null ? "-" : t("anMs", { n: fmt(tt.coldStartMedian) })],
+    ].map(([k, v]) => `<div class="tile"><span class="label">${esc(k)}</span><span class="big">${esc(v)}</span></div>`).join("");
+    const people = d.people ? `<div class="label" style="margin:8px 0 6px">${t("anPeople")}</div>
+      <p class="note" style="margin:0 0 8px">${t("anPeopleNote")}</p>
+      ${d.people.length ? `<div class="an-scroll"><table class="an-table">${d.people.map((p) => `<tr><td>${esc(p.name)}</td>
+        <td>${esc(t("anLastSeen", { when: ago(p.last_seen) }))}</td><td>${esc(t("anDays", { n: p.days }))}</td>
+        <td>${esc(t("anRequestsN", { n: fmt(p.requests) }))}</td></tr>`).join("")}</table></div>` : `<p class="note">${t("anNone")}</p>`}` : "";
+    detail = `<div class="an-head"><h2>${esc(d.name)}</h2>
+        <div class="seg" role="group">${[["24h", t("anRange24h")], ["7d", t("anRange7d")], ["30d", t("anRange30d")]].map(([r, label]) => `<button data-anrange="${r}" aria-pressed="${r === d.range}">${label}</button>`).join("")}</div></div>
+      <div class="tiles">${tiles}</div>
+      ${tt.requests || tt.visitors ? visitorsChart(d) : `<p class="note">${t("anNoData")}</p>`}
+      ${d.timeline.awake.length || d.timeline.markers.length ? timelineChart(d) : ""}
+      ${memoryChart(d)}
+      <div class="tops">${topList(t("anTopPages"), d.top.pages)}${topList(t("anReferrers"), d.top.referrers)}
+        ${topList(t("anCountries"), d.top.countries)}${topList(t("anDevices"), d.top.devices)}${topList(t("anBrowsers"), d.top.browsers)}</div>
+      ${people}
+      <p class="note">${t("anVisitorsNote")}</p>`;
+  }
+  view.innerHTML = `<p class="note" style="margin:0 0 16px">${esc(t("anTimezone", { tz: o.timezone }))}</p>
+    <div class="an-scroll"><table class="an-table">
+      <tr><th>${t("anApp")}</th><th>${t("anOnline")}</th><th>${t("anVisitorsToday")}</th><th>${t("anPagesToday")}</th>
+        <th>${t("anWeek")}</th><th>${t("anWakes")}</th><th>${t("anAwake")}</th><th>${t("anErrors")}</th></tr>
+      ${rows}</table></div>
+    ${detail}`;
+  bindAnalytics();
+}
+
+function bindAnalytics() {
+  document.querySelectorAll("[data-an]").forEach((el) => {
+    const pick = async () => {
+      state.an.slug = el.dataset.an;
+      state.an.detail = await api(`/api/apps/${state.an.slug}/analytics?range=${state.an.range}`).catch(() => null);
+      renderAnalytics();
+    };
+    el.onclick = pick;
+    el.onkeydown = (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), pick());
+  });
+  document.querySelectorAll("[data-anrange]").forEach((el) => {
+    el.onclick = async () => {
+      state.an.range = el.dataset.anrange;
+      state.an.detail = await api(`/api/apps/${state.an.slug}/analytics?range=${state.an.range}`).catch(() => null);
+      renderAnalytics();
+    };
+  });
+  const tb = document.querySelector("[data-antable]");
+  if (tb) tb.onclick = () => { state.an.table = !state.an.table; renderAnalytics(); };
+}
+
+// one tooltip for every chart: follows the pointer, reads data-tip
+document.addEventListener("pointermove", (e) => {
+  const tip = $("an-tip");
+  const el = e.target.closest?.("#view-analytics [data-tip]");
+  if (!el) return void (tip.hidden = true);
+  tip.textContent = el.dataset.tip;
+  tip.hidden = false;
+  const x = Math.min(e.clientX + 12, innerWidth - tip.offsetWidth - 8);
+  tip.style.left = x + "px";
+  tip.style.top = Math.max(8, e.clientY - tip.offsetHeight - 12) + "px";
+});
+
+/* ---------- git ---------- */
+
+state.git = null;
+state.gitRepos = {};
+state.gitLog = null;
+
+async function loadGit() {
+  try {
+    state.git = await api("/api/git");
+  } catch (err) {
+    return toast(t("fail") + err.message);
+  }
+  renderGit();
+}
+
+const buildStatus = (s) => ({ queued: t("gitStatusQueued"), running: t("gitStatusRunning"), succeeded: t("gitStatusSucceeded"),
+  failed: t("gitStatusFailed"), skipped: t("gitStatusSkipped") }[s] ?? s);
+
+function renderGit() {
+  const view = $("view-git");
+  const g = state.git;
+  if (!g) return;
+  const providers = g.providers.length ? g.providers.map((p) => `<div class="rel">
+      <div class="rel-main"><span class="rel-state">${esc(p.kind)}</span> ${esc(p.name)}</div>
+      <div class="rel-actions">
+        ${p.installUrl ? `<a class="act" href="${esc(p.installUrl)}" target="_blank" rel="noopener" style="text-decoration:none">${t("gitInstall")}</a>` : ""}
+        <button class="act danger" data-gitremove="${esc(p.id)}">${t("gitRemove")}</button>
+      </div></div>`).join("") : `<p class="note">${t("gitNoForge")}</p>`;
+  const sel = state.gitSel ?? {};
+  const repos = sel.provider ? state.gitRepos[sel.provider] : null;
+  const deploy = g.providers.length ? `<h3 class="label" style="margin-top:32px">${t("gitDeployTitle")}</h3>
+    <div class="field">
+      <select id="git-provider" aria-label="${t("gitProvider")}">
+        <option value="">${t("gitProvider")}</option>
+        ${g.providers.map((p) => `<option value="${esc(p.id)}" ${sel.provider === p.id ? "selected" : ""}>${esc(p.kind)} · ${esc(p.name)}</option>`).join("")}
+      </select>
+      <select id="git-repo" aria-label="${t("gitRepo")}" ${repos ? "" : "disabled"}>
+        <option value="">${t("gitPickRepo")}</option>
+        ${(repos ?? []).map((r) => `<option value="${esc(r.id)}" data-branch="${esc(r.defaultBranch)}" ${sel.repo === r.id ? "selected" : ""}>${esc(r.fullName)}</option>`).join("")}
+      </select>
+    </div>
+    <div class="field">
+      <input id="git-branch" placeholder="${t("gitBranch")}" value="${esc(sel.branch ?? "")}" class="num" spellcheck="false">
+      <input id="git-root" placeholder="${t("gitRoot")}" value="${esc(sel.root ?? ".")}" class="num" spellcheck="false">
+    </div>
+    <label class="note" style="display:flex;gap:8px;align-items:center;margin:0 0 12px">
+      <input type="checkbox" id="git-previews" ${sel.previews === false ? "" : "checked"} style="flex:none;min-height:auto"> ${t("gitPreviews")}</label>
+    <button class="act primary" id="git-deploy">${t("gitDeploy")}</button>` : "";
+  const conns = g.connections.length ? g.connections.map((c) => `<div class="rel">
+      <div class="rel-main"><span class="app-name">${esc(c.slug)}</span>
+        <span class="app-host num">${esc(c.repo)} · ${esc(c.branch)}${c.root_dir !== "." ? " · " + esc(c.root_dir) : ""}</span></div>
+      <div class="rel-actions">
+        <button class="chip" data-gitpreviews="${esc(c.id)}" aria-pressed="${c.previews}">${t("gitPreviews")}</button>
+        <button class="act" data-gitbuild="${esc(c.id)}">${t("gitBuildNow")}</button>
+        <button class="act danger" data-gitdisconnect="${esc(c.id)}" data-repo="${esc(c.repo)}">${t("gitDisconnect")}</button>
+      </div></div>`).join("") : `<p class="note">${t("gitNoConnections")}</p>`;
+  const builds = g.builds.length ? g.builds.map((b) => `<div class="rel">
+      <div class="rel-main">
+        <span class="num">#${esc(b.id)}</span> <span class="rel-state ${b.status === "succeeded" ? "live" : b.status === "failed" ? "failed" : ""}">${esc(buildStatus(b.status))}</span>
+        <span class="app-host">${esc(b.target_slug)} · ${esc(b.kind === "preview" ? t("gitPr", { n: b.pr }) : b.ref)} · <span class="num">${esc(b.sha.slice(0, 7))}</span>${b.release ? " · v" + b.release : ""}</span>
+        <span class="app-host">${esc([b.message.split("\n")[0], b.author, ago(b.created_at)].filter(Boolean).join(" · "))}</span>
+      </div>
+      <div class="rel-actions"><button class="act" data-gitlog="${esc(b.id)}" aria-expanded="${state.gitLog?.id === b.id}">${t("gitLog")}</button></div>
+    </div>${state.gitLog?.id === b.id ? `<pre class="logs" style="max-height:360px">${esc(state.gitLog.lines.join("\n"))}</pre>` : ""}`).join("")
+    : `<p class="note">${t("gitNoBuilds")}</p>`;
+  view.innerHTML = `
+    ${g.ready ? "" : `<div class="warn"><p style="margin:0">${esc(t("gitNotReady"))}</p></div>`}
+    <h3 class="label">${t("gitForges")}</h3>
+    ${providers}
+    <div class="field" style="margin-top:12px">
+      <input id="git-org" placeholder="${t("gitOrgPh")}" spellcheck="false" class="num">
+      <button class="act" id="git-github" ${g.ready ? "" : "disabled"}>${t("gitConnectGithub")}</button>
+    </div>
+    <p class="note" style="margin:0 0 12px">${t("gitGithubNote")}</p>
+    <div class="field">
+      <input id="git-gl-project" placeholder="${t("gitGitlabProjectPh")}" spellcheck="false" class="num">
+      <input id="git-gl-token" type="password" placeholder="${t("gitGitlabTokenPh")}" autocomplete="off">
+      <button class="act" id="git-gitlab" ${g.ready ? "" : "disabled"}>${t("gitConnectGitlab")}</button>
+    </div>
+    <p class="note" style="margin:0">${t("gitGitlabNote")}</p>
+    ${deploy}
+    <h3 class="label" style="margin-top:32px">${t("gitConnections")}</h3>
+    ${conns}
+    <h3 class="label" style="margin-top:32px">${t("gitBuilds")}</h3>
+    ${builds}
+    <p class="note" style="margin-top:24px">${esc(t("gitHookNote", { url: g.consoleOrigin + "/hooks/" }))}</p>`;
+  bindGit();
+}
+
+function bindGit() {
+  const fail = (fn) => async (...a) => {
+    try { await fn(...a); } catch (err) { toast(t("fail") + err.message, true); }
+  };
+  // GitHub's manifest flow is a form post to github.com: build it, submit it
+  const gh = $("git-github");
+  if (gh) gh.onclick = fail(async () => {
+    const org = $("git-org").value.trim();
+    const { action, manifest } = await api("/api/git/github/manifest", { method: "POST", body: JSON.stringify(org ? { org } : {}) });
+    const form = document.createElement("form");
+    form.method = "post";
+    form.action = action;
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = "manifest";
+    input.value = manifest;
+    form.append(input);
+    document.body.append(form);
+    form.submit();
+  });
+  const gl = $("git-gitlab");
+  if (gl) gl.onclick = fail(async () => {
+    await api("/api/git/gitlab", { method: "POST", body: JSON.stringify({ project: $("git-gl-project").value.trim(), token: $("git-gl-token").value }) });
+    loadGit();
+  });
+  document.querySelectorAll("[data-gitremove]").forEach((el) => {
+    el.onclick = fail(async () => {
+      if (!confirm(t("gitRemoveConfirm"))) return;
+      await api(`/api/git/providers/${el.dataset.gitremove}`, { method: "DELETE" });
+      loadGit();
+    });
+  });
+  const keep = () => {
+    state.gitSel = {
+      provider: $("git-provider")?.value || null,
+      repo: $("git-repo")?.value || null,
+      branch: $("git-branch")?.value ?? "",
+      root: $("git-root")?.value ?? ".",
+      previews: $("git-previews")?.checked ?? true,
+    };
+  };
+  const prov = $("git-provider");
+  if (prov) prov.onchange = fail(async () => {
+    keep();
+    state.gitSel.repo = null;
+    if (prov.value && !state.gitRepos[prov.value]) {
+      state.gitRepos[prov.value] = (await api(`/api/git/providers/${prov.value}/repos`)).repos;
+    }
+    renderGit();
+  });
+  const repo = $("git-repo");
+  if (repo) repo.onchange = () => {
+    keep();
+    const opt = repo.selectedOptions[0];
+    if (opt?.dataset.branch && !state.gitSel.branch) state.gitSel.branch = opt.dataset.branch;
+    renderGit();
+  };
+  const dep = $("git-deploy");
+  if (dep) dep.onclick = fail(async () => {
+    keep();
+    const s = state.gitSel;
+    await api("/api/git/connections", { method: "POST", body: JSON.stringify({ providerId: s.provider, repoId: s.repo, branch: s.branch, rootDir: s.root || ".", previews: s.previews }) });
+    state.gitSel = null;
+    toast(t("gitBuildQueued"));
+    loadGit();
+  });
+  document.querySelectorAll("[data-gitpreviews]").forEach((el) => {
+    el.onclick = fail(async () => {
+      await api(`/api/git/connections/${el.dataset.gitpreviews}`, { method: "PATCH", body: JSON.stringify({ previews: el.getAttribute("aria-pressed") !== "true" }) });
+      loadGit();
+    });
+  });
+  document.querySelectorAll("[data-gitbuild]").forEach((el) => {
+    el.onclick = fail(async () => {
+      await api(`/api/git/connections/${el.dataset.gitbuild}/build`, { method: "POST" });
+      toast(t("gitBuildQueued"));
+      loadGit();
+    });
+  });
+  document.querySelectorAll("[data-gitdisconnect]").forEach((el) => {
+    el.onclick = fail(async () => {
+      if (!confirm(t("gitDisconnectConfirm", { repo: el.dataset.repo }))) return;
+      await api(`/api/git/connections/${el.dataset.gitdisconnect}`, { method: "DELETE" });
+      loadGit();
+    });
+  });
+  document.querySelectorAll("[data-gitlog]").forEach((el) => {
+    el.onclick = fail(async () => {
+      if (state.gitLog?.id === el.dataset.gitlog) state.gitLog = null;
+      else state.gitLog = { id: el.dataset.gitlog, lines: (await api(`/api/git/builds/${el.dataset.gitlog}`)).log };
+      renderGit();
+    });
+  });
+}
+
 /* ---------- deploy ---------- */
 
+// The global drop zone: a new app goes live at once; a bundle for an existing
+// app opens its panel with what would change, and waits for a confirmation.
 async function upload(file) {
-  toast(t("deploying", { name: file.name }), true);
-  const form = new FormData();
-  form.append("bundle", file);
   try {
-    const res = await fetch("/api/deploy", { method: "POST", body: form });
-    const type = res.headers.get("content-type") || "";
-    const data = type.includes("json") ? await res.json() : {};
-    toast(res.ok ? [data.url, ...(data.log || [])].join("\n") : t("fail") + (data.error || res.statusText), true);
+    await stageBundle(file, null);
   } catch (err) {
     toast(t("deployFailed") + err.message, true);
   }
-  loadApps();
 }
 
 const drop = $("drop");
@@ -1682,6 +3942,21 @@ drop.ondrop = (e) => {
   if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]);
 };
 
+// a key for an app that is not deployed yet: the agent's first deploy creates it
+const SLUG_RE = /^[a-z][a-z0-9-]{1,30}$/;
+$("newkey-create").onclick = async () => {
+  const slug = $("newkey-slug").value.trim();
+  if (!SLUG_RE.test(slug)) return toast(t("slugInvalid"));
+  try {
+    const created = await createKey(slug, "");
+    state.freshKey = null; // shown here, not in a panel
+    $("newkey-result").innerHTML = keyBox(slug, created.key);
+    $("newkey-slug").value = "";
+  } catch (err) {
+    toast(t("fail") + err.message);
+  }
+};
+
 /* ---------- startup ---------- */
 
 $("lang").innerHTML = LANGS.map(([c, label]) => `<option value="${c}">${label}</option>`).join("");
@@ -1693,8 +3968,12 @@ document.querySelectorAll("[data-view]").forEach((tab) => {
     document.querySelectorAll("[data-view]").forEach((other) =>
       other.setAttribute("aria-selected", String(other === tab)));
     $("view-apps").hidden = tab.dataset.view !== "apps";
+    $("view-analytics").hidden = tab.dataset.view !== "analytics";
     $("view-people").hidden = tab.dataset.view !== "people";
+    $("view-git").hidden = tab.dataset.view !== "git";
     if (tab.dataset.view === "people") loadPeople();
+    if (tab.dataset.view === "git") loadGit();
+    if (tab.dataset.view === "analytics") loadAnalytics();
   };
 });
 
@@ -1702,6 +3981,8 @@ function renderDenied() {
   document.querySelector("nav").hidden = true;
   $("view-apps").hidden = true;
   $("view-people").hidden = true;
+  $("view-analytics").hidden = true;
+  $("view-git").hidden = true;
   const view = $("view-denied");
   view.hidden = false;
   view.innerHTML = `<div class="warn">
@@ -1720,6 +4001,8 @@ api("/api/me")
     if (me.admin === false) return renderDenied();
     loadApps();
     loadPeople();
+    // which apps deploy from a repository, for their panels
+    api("/api/git").then((g) => (state.git = g)).catch(() => {});
   })
   .catch((err) => toast(t("accessDenied") + err.message, true));
 
@@ -1737,6 +4020,17 @@ function editingDetail() {
 setInterval(() => {
   if (state.me && state.me.admin !== false && !editingDetail()) loadApps();
 }, 6000);
+// builds move by the second: refresh the Git tab while one is queued or running,
+// unless someone is typing in it
+setInterval(() => {
+  const busy = state.git?.builds?.some((b) => b.status === "queued" || b.status === "running");
+  const typing = $("view-git").contains(document.activeElement) && document.activeElement.tagName === "INPUT";
+  if (!$("view-git").hidden && busy && !typing) loadGit();
+}, 4000);
+// "online now" moves by the minute: refresh the analytics while they are shown
+setInterval(() => {
+  if (!$("view-analytics").hidden) loadAnalytics();
+}, 30000);
 </script>
 </body>
 </html>

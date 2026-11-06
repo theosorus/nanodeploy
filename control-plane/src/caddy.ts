@@ -10,60 +10,85 @@ const DOMAIN = process.env.APPS_DOMAIN!;
 // braces, $, quotes, backslash and newlines would break the whole config at
 // reload. A single bad site file used to take every app down with it.
 const cleanName = (s: string) => s.replace(/[\r\n"{}$\\]/g, "").slice(0, 60);
-const cleanGroups = (groups: string[]) =>
-  groups
-    .map((g) => g.replace(/[\r\n"]/g, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&").slice(0, 64))
-    .filter((g) => g.length > 0);
+// protected paths were validated by the manifest parser; keep the same shape
+// here so a hand-edited row can never inject caddyfile syntax
+const cleanPaths = (paths: string[]) => paths.filter((p) => /^\/[A-Za-z0-9._~\/-]*\*?$/.test(p));
 
-export function renderSite(app: AppRow) {
-  const host = `${app.slug}.${DOMAIN}`;
+// The routes of an app once access is settled: its API through sablier to the
+// container, everything else from dist/.
+function appRoutes(app: AppRow, indent: string): string[] {
   const name = cleanName(app.name);
-  const groups = cleanGroups(app.groups);
-  const lines: string[] = [`http://${host} {`, `\timport nanodeploy_strip`];
-
-  if (app.access !== "public") {
-    lines.push(`\timport nanodeploy_auth`);
-  }
-  if (app.access === "groups" && groups.length > 0) {
-    // tinyauth already checked the session, this narrows it to the allowed groups
-    // the provider may join groups with ", " as easily as ",": tolerate spaces
-    lines.push(`\t@allowed header_regexp Remote-Groups (^|,)\\s*(${groups.join("|")})\\s*(,|$)`);
-    lines.push(`\thandle @allowed {`);
-  }
-
-  const body: string[] = [];
+  const out: string[] = [];
   if (app.port) {
-    body.push(`\t\thandle /api/* {`);
+    out.push(`handle /api/* {`);
+    // An app never sees the platform's session cookie or a personal access key:
+    // gate has read them already, and with them the app could act as its
+    // visitor anywhere else. gate's cookies are host-bound since phase 1; the
+    // tinyauth ones are kept in the list for installs that still run it.
+    out.push(`\timport nanodeploy_hide_session`);
     if (!app.warm) {
       // sablier is an unordered directive: it must live inside a route block or
       // the whole site fails to parse (caddy then keeps its previous config and
       // the app silently never gets routed)
-      body.push(`\t\t\troute {`);
-      body.push(`\t\t\t\tsablier http://sablier:10000 {`);
-      body.push(`\t\t\t\t\tgroup ${app.slug}`);
-      body.push(`\t\t\t\t\tsession_duration ${app.idle_timeout}`);
-      body.push(`\t\t\t\t\tdynamic {`);
-      body.push(`\t\t\t\t\t\tdisplay_name ${name}`);
-      body.push(`\t\t\t\t\t\ttheme ghost`);
-      body.push(`\t\t\t\t\t}`);
-      body.push(`\t\t\t\t}`);
-      body.push(`\t\t\t\treverse_proxy app-${app.slug}:${app.port}`);
-      body.push(`\t\t\t}`);
+      out.push(`\troute {`);
+      out.push(`\t\tsablier http://sablier:10000 {`);
+      out.push(`\t\t\tgroup ${app.slug}`);
+      out.push(`\t\t\tsession_duration ${app.idle_timeout}`);
+      out.push(`\t\t\tdynamic {`);
+      out.push(`\t\t\t\tdisplay_name ${name}`);
+      out.push(`\t\t\t\ttheme ghost`);
+      out.push(`\t\t\t}`);
+      out.push(`\t\t}`);
+      out.push(`\t\treverse_proxy app-${app.slug}:${app.port}`);
+      out.push(`\t}`);
     } else {
-      body.push(`\t\t\treverse_proxy app-${app.slug}:${app.port}`);
+      out.push(`\treverse_proxy app-${app.slug}:${app.port}`);
     }
-    body.push(`\t\t}`);
+    out.push(`}`);
   }
-  body.push(`\t\thandle {`);
-  body.push(`\t\t\troot * /srv/apps/${app.slug}/dist`);
-  body.push(`\t\t\ttry_files {path} /index.html`);
-  body.push(`\t\t\tfile_server`);
-  body.push(`\t\t}`);
-  lines.push(...body);
+  out.push(`handle {`);
+  // current -> releases/<n>: a deploy or a rollback moves that link in one rename
+  out.push(`\troot * /srv/apps/${app.slug}/current/dist`);
+  out.push(`\ttry_files {path} /index.html`);
+  out.push(`\tfile_server`);
+  out.push(`}`);
+  return out.map((l) => indent + l);
+}
 
-  if (app.access === "groups" && groups.length > 0) {
+// Who may see what is decided by gate, from the database, on every request:
+// changing an app's access or a role grant never rewrites this file. The file
+// only says which requests gate must look at.
+//  - private and groups apps: every request.
+//  - public apps: the API (so the app learns who is signed in, if anyone) and
+//    the protected paths. Static files of a public app skip gate entirely.
+export function renderSite(app: AppRow) {
+  const host = `${app.slug}.${DOMAIN}`;
+  const lines: string[] = [`http://${host} {`, `\timport nanodeploy_strip`];
+  // one access log for every app: the control plane reads it for analytics.
+  // Caddy masks Cookie and Authorization in it by default.
+  lines.push(`\tlog {`, `\t\toutput file /var/log/caddy/apps.log {`, `\t\t\troll_size 20MiB`, `\t\t\troll_keep 3`, `\t\t}`, `\t\tformat json`, `\t}`);
+  // page views of a single-page app: the browser beacons each navigation here.
+  // Answered by caddy itself, it costs no process; the access log records it.
+  lines.push(`\thandle /_nd/e {`, `\t\trespond 204`, `\t}`);
+  // sign-in callback, /_nd/me, /_nd/login, /_nd/logout: served by gate on
+  // every app host, before any access check
+  lines.push(`\thandle /_nd/* {`, `\t\treverse_proxy gate:4000`, `\t}`);
+
+  if (app.access === "public") {
+    const gated = ["/api/*", ...cleanPaths((app.protect ?? []).map((r) => r.path))];
+    lines.push(`\t@gated path ${[...new Set(gated)].join(" ")}`);
+    lines.push(`\thandle @gated {`);
+    lines.push(`\t\timport nanodeploy_gate ${app.slug}`);
+    lines.push(...appRoutes(app, "\t\t"));
     lines.push(`\t}`);
-    lines.push(`\trespond "not allowed for your groups" 403`);
+    lines.push(`\thandle {`);
+    lines.push(...appRoutes(app, "\t\t"));
+    lines.push(`\t}`);
+  } else {
+    lines.push(`\thandle {`);
+    lines.push(`\t\timport nanodeploy_gate ${app.slug}`);
+    lines.push(...appRoutes(app, "\t\t"));
+    lines.push(`\t}`);
   }
   lines.push(`}`);
   return lines.join("\n") + "\n";

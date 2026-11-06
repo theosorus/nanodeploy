@@ -1,7 +1,10 @@
 import Docker from "dockerode";
 import tar from "tar-fs";
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdtemp, readFile, rm, writeFile, copyFile } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
+import { PassThrough } from "node:stream";
 
 const docker = new Docker();
 const MEM_MB = Number(process.env.DEFAULT_APP_MEMORY_MB ?? 256);
@@ -28,9 +31,12 @@ EXPOSE ${port}
 CMD ["node", "${entry}"]
 `;
 
-export async function buildImage(dir: string, slug: string, entry: string, port: number) {
+// one tag per release (nanodeploy/<slug>:r<number>): rolling back to a release
+// whose image is still there is a container swap, not a build
+export const imageTag = (slug: string, release: number) => `nanodeploy/${slug}:r${release}`;
+
+export async function buildImage(dir: string, tag: string, entry: string, port: number) {
   await writeFile(join(dir, "Dockerfile"), DOCKERFILE(entry, port));
-  const tag = `nanodeploy/${slug}:${Date.now()}`;
   const context = tar.pack(dir, { entries: [entry, "Dockerfile"] });
   const stream = await docker.buildImage(context as any, { t: tag });
   await new Promise<void>((resolve, reject) => {
@@ -244,10 +250,10 @@ export async function hostMemory() {
   };
 }
 
-// Deploys tag images nanodeploy/<slug>:<timestamp>, one per deploy. Old tags are
-// unreachable once the container has been recreated from the new one, so drop
-// every nanodeploy image except those the database still references. Removing an
-// image a container still uses fails, which just means we keep one extra image.
+// Deploys tag images nanodeploy/<slug>:r<release>. The caller passes the tags
+// worth keeping (the live one and the few most recent releases, for an instant
+// rollback); every other nanodeploy image goes. Removing an image a container
+// still uses fails, which just means we keep one extra image.
 export async function pruneImages(keep: Set<string>) {
   const list = await docker.listImages();
   for (const img of list) {
@@ -288,4 +294,198 @@ export async function reloadCaddy() {
     console.error(`caddy reload failed:\n${chunks.join("").slice(-1000)}`);
   }
   return result.ExitCode === 0;
+}
+
+/* ---------- database snapshots, run inside the postgres container ---------- */
+
+// pg_dump and pg_restore come from the postgres image itself, so their version
+// always matches the server. The control plane reaches them through its socket
+// proxy (exec), the same way it reloads caddy.
+const PG_CONTAINER = process.env.POSTGRES_CONTAINER ?? "nanodeploy-postgres-1";
+
+async function execIn(container: string, cmd: string[], stdout?: NodeJS.WritableStream) {
+  const exec = await docker.getContainer(container).exec({ Cmd: cmd, AttachStdout: true, AttachStderr: true });
+  const stream = await exec.start({ hijack: true, stdin: false });
+  const errors: Buffer[] = [];
+  const err = new PassThrough();
+  err.on("data", (c: Buffer) => errors.push(c));
+  const out = stdout ?? new PassThrough().resume();
+  docker.modem.demuxStream(stream, out, err);
+  await new Promise<void>((resolve) => {
+    (stream as any).once("end", resolve);
+    (stream as any).once("close", resolve);
+  });
+  const { ExitCode } = await exec.inspect();
+  if (ExitCode !== 0) {
+    throw new Error(`${cmd[0]} failed: ${Buffer.concat(errors).toString("utf8").trim().slice(-500)}`);
+  }
+}
+
+// custom format: compressed, and pg_restore can clean and recreate from it
+export async function dumpDatabase(db: string, file: string) {
+  const out = createWriteStream(file, { mode: 0o600 });
+  try {
+    await execIn(PG_CONTAINER, ["pg_dump", "-U", "postgres", "-Fc", "-d", db], out);
+  } finally {
+    await new Promise((r) => out.end(r));
+  }
+}
+
+// The dump is copied into the container as a file rather than streamed to
+// pg_restore's stdin: half-closing a hijacked stream through the socket proxy is
+// not something to rely on when a database is at stake.
+export async function restoreDatabase(db: string, file: string) {
+  const tmp = await mkdtemp(join(tmpdir(), "nd-restore-"));
+  const name = `nd-restore-${basename(file)}`;
+  try {
+    await copyFile(file, join(tmp, name));
+    await docker.getContainer(PG_CONTAINER).putArchive(tar.pack(tmp, { entries: [name] }) as any, { path: "/tmp" });
+    await execIn(PG_CONTAINER, [
+      "pg_restore", "-U", "postgres", "--clean", "--if-exists", "--single-transaction", "-d", db, `/tmp/${name}`,
+    ]);
+  } finally {
+    await execIn(PG_CONTAINER, ["rm", "-f", `/tmp/${name}`]).catch(() => {});
+    await rm(tmp, { recursive: true, force: true });
+  }
+}
+
+/* ---------- container events, for analytics ---------- */
+
+export type AppEvent = { slug: string; action: string; exitCode: number | null; at: number };
+
+// Follows start, stop, kill, die and oom of app containers, and reconnects if
+// the stream drops (a restart of the socket proxy, a docker upgrade).
+export function followAppEvents(onEvent: (e: AppEvent) => void) {
+  const connect = async () => {
+    try {
+      const stream: any = await docker.getEvents({
+        filters: JSON.stringify({
+          type: ["container"],
+          label: ["nanodeploy.slug"],
+          event: ["start", "stop", "kill", "die", "oom"],
+        }) as any,
+      });
+      let buffer = "";
+      stream.on("data", (chunk: Buffer) => {
+        buffer += chunk.toString("utf8");
+        let nl: number;
+        while ((nl = buffer.indexOf("\n")) >= 0) {
+          const line = buffer.slice(0, nl).trim();
+          buffer = buffer.slice(nl + 1);
+          if (!line) continue;
+          try {
+            const e = JSON.parse(line);
+            const attrs = e.Actor?.Attributes ?? {};
+            const slug = attrs["nanodeploy.slug"];
+            if (!slug) continue;
+            const exit = attrs.exitCode === undefined ? null : Number(attrs.exitCode);
+            onEvent({ slug, action: e.Action ?? e.status, exitCode: exit, at: Math.floor((e.timeNano ?? e.time * 1e9) / 1e6) });
+          } catch {
+            // a partial or foreign line: skip it
+          }
+        }
+      });
+      let retried = false;
+      const retry = () => {
+        if (retried) return;
+        retried = true;
+        setTimeout(connect, 5000);
+      };
+      stream.once("end", retry);
+      stream.once("error", retry);
+    } catch {
+      setTimeout(connect, 5000);
+    }
+  };
+  connect();
+}
+
+/* ---------- the build sandbox, for Git deploys ---------- */
+
+// Builds run code from the repository (npm scripts of every dependency). They
+// get their own network, with the internet for the package registry and
+// nothing of the platform: not the apps, not postgres, not the socket proxies.
+export const BUILD_NETWORK = "nanodeploy_build";
+export const BUILD_CACHE = "nanodeploy_npm_cache";
+const BUILD_MEMORY_MB = Number(process.env.BUILD_MEMORY_MB ?? 1536);
+
+export async function ensureImage(image: string, log: (line: string) => void) {
+  try {
+    await docker.getImage(image).inspect();
+    return;
+  } catch {
+    log(`pulling ${image}`);
+  }
+  const stream = await docker.pull(image);
+  await new Promise<void>((resolve, reject) =>
+    docker.modem.followProgress(stream, (err: any) => (err ? reject(err) : resolve())),
+  );
+}
+
+// The npm cache volume is created by docker as root; builds run as uid 1000.
+// Hand it over once, with a throwaway container that may only chown.
+export async function prepareBuildCache(image: string) {
+  const vol = await docker.getVolume(BUILD_CACHE).inspect().catch(() => null);
+  if (vol?.Labels?.["nanodeploy.owner"] === "1000") return;
+  await docker.createVolume({ Name: BUILD_CACHE, Labels: { "nanodeploy.owner": "1000" } }).catch(() => {});
+  const c = await docker.createContainer({
+    Image: image,
+    Cmd: ["chown", "1000:1000", "/cache"],
+    User: "0:0",
+    HostConfig: { Binds: [`${BUILD_CACHE}:/cache`], CapDrop: ["ALL"], CapAdd: ["CHOWN"], NetworkMode: "none" },
+  });
+  try {
+    await c.start();
+    await c.wait();
+  } finally {
+    await c.remove({ force: true }).catch(() => {});
+  }
+  // docker never changes a volume's labels: the volume was made above with the
+  // label, or existed before without it and has now been chowned
+}
+
+export async function runBuilder(opts: {
+  name: string;
+  image: string;
+  hostWork: string;
+  workdir: string;
+  command: string;
+  timeoutMs: number;
+}): Promise<{ exitCode: number | null; logs: string; timedOut: boolean }> {
+  const cpus = Math.max(1, (await import("node:os")).cpus().length - 1);
+  const c = await docker.createContainer({
+    name: opts.name,
+    Image: opts.image,
+    Cmd: ["sh", "-c", opts.command],
+    WorkingDir: opts.workdir,
+    User: "1000:1000",
+    // no credential of any kind: the archive was downloaded before this ran
+    Env: ["HOME=/tmp", "npm_config_cache=/cache", "npm_config_update_notifier=false", "CI=true"],
+    Labels: { "nanodeploy.build": "1" },
+    HostConfig: {
+      Binds: [`${opts.hostWork}:/work`, `${BUILD_CACHE}:/cache`],
+      Memory: BUILD_MEMORY_MB * 1024 * 1024,
+      MemorySwap: (BUILD_MEMORY_MB + 512) * 1024 * 1024,
+      NanoCpus: cpus * 1e9,
+      PidsLimit: 512,
+      CapDrop: ["ALL"],
+      SecurityOpt: ["no-new-privileges:true"],
+      NetworkMode: BUILD_NETWORK,
+    },
+  });
+  let timedOut = false;
+  try {
+    await c.start();
+    const timer = setTimeout(() => {
+      timedOut = true;
+      c.kill().catch(() => {});
+    }, opts.timeoutMs);
+    const result: any = await c.wait();
+    clearTimeout(timer);
+    const raw = await c.logs({ stdout: true, stderr: true, tail: 400 });
+    const logs = demux(Buffer.from(raw as any)).replace(ANSI_RE, "");
+    return { exitCode: result?.StatusCode ?? null, logs, timedOut };
+  } finally {
+    await c.remove({ force: true }).catch(() => {});
+  }
 }

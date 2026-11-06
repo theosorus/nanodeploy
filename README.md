@@ -37,8 +37,7 @@ drag of a `.zip`.
 | Caddy + Sablier plugin | routing, static files, waking apps | ~25 MB |
 | Sablier | stops and starts containers on demand | ~15 MB |
 | Postgres 16 | one database and one role per app | ~60 MB |
-| Pocket ID | accounts, passkeys, groups | ~15 MB |
-| tinyauth | forward-auth in front of every private app | ~10 MB |
+| gate | accounts, passwords, passkeys, app roles, access checks | ~40 MB |
 | control plane | uploads, provisioning, routes | ~50 MB |
 | two socket proxies | least-privilege Docker access | ~10 MB |
 
@@ -50,7 +49,7 @@ opt out of sleeping for that same 40 MB, permanently.
 ```bash
 cp -r templates/app-template my-app && cd my-app
 npm install
-export NANODEPLOY_URL=https://deploy.apps.example.com NANODEPLOY_TOKEN=...
+export NANODEPLOY_URL=https://deploy.apps.example.com NANODEPLOY_TOKEN=ndd_...
 npm run deploy
 ```
 
@@ -58,12 +57,31 @@ Your machine builds; the server compiles nothing. It gets a zip, builds a small
 image, runs migrations once, and puts the container back to sleep. No terminal?
 Drag the zip onto the dashboard.
 
+The token is a **deploy key**: made in the dashboard (an app's panel, or "deploy
+key for a new app" before its first deploy), it deploys that one app and reads
+its logs, nothing else. Give one to each CI job or AI agent; the server's own
+`DEPLOY_TOKEN` can do everything and should stay on the server.
+
+**Every deploy is a version.** It is prepared next to the running one and
+swapped in once the image is built and the migrations ran, so a broken bundle
+fails without touching what is live. Each app's panel lists its versions, with
+the message and commit `npm run deploy -- -m "..."` sent, and goes back to any
+of the last ten in one click: the last three keep their image, so that is a
+container swap, not a build. Dropping a new zip on an existing app shows what
+would change (files, migrations, variables to set) before anything goes live.
+
+Before applying a migration, the app's database is dumped. If a migration fails,
+it is put back on the spot; when you go back to a version older than a
+migration, you choose between keeping the data (the old code meets a newer
+schema) and restoring the database as it was (everything written since is
+lost).
+
 The whole contract is one file:
 
 ```yaml
 name: Expenses
 slug: expenses          # -> expenses.apps.example.com
-access: private         # public | private | groups
+access: private         # public | private | groups, for a new app only
 backend: { entry: server.js, port: 3000 }
 database: { enabled: true, migrations: ./migrations }
 idle: { timeout: 10m, warm: false }
@@ -75,21 +93,93 @@ env: [OPENAI_API_KEY]   # names only, values are typed in the dashboard
 <img src="docs/app-detail.png" alt="An app's detail panel: access mode, environment variables, recent logs" width="560">
 
 Click an app for its access mode, environment variables, logs and live memory.
-Access is a dropdown, not a redeploy: **private** (accounts you created),
+Access is a dropdown, not a redeploy, and a redeploy never changes it back:
+`access` in `app.yaml` only applies when the app is created. **private** (accounts you created),
 **groups** (people you pick), or **public** (the whole internet — the dashboard
 warns you). Env values are write-only: you can replace a secret, not read it back.
+
+## Push to deploy, from GitHub or GitLab
+
+Connect a forge in the Git tab, pick a repository and a branch, and every push to
+it deploys. **GitHub**: one click creates a private GitHub App for your server
+(GitHub's manifest flow), you choose which repositories it may read. **GitLab**:
+paste a project access token, the webhook is installed for you.
+
+A push queues a build. One build runs at a time, so a 4 GB machine is never
+building twice:
+
+1. the control plane downloads the commit's archive (the forge token never
+   enters the build);
+2. `npm ci` (or `npm install`) and `npm run build` run in a throwaway container
+   as uid 1000, with no capability, 1.5 GB of memory, and a network of its own
+   that reaches the package registry and nothing of the platform;
+3. the result goes through the same release pipeline as a dropped zip: a new
+   version, live, with the commit in its history;
+4. the commit gets a green or red status, linking to the app or to the build log.
+
+Each pull request gets a **preview** at `<app>--pr-<n>.apps.example.com`, for
+accounts of your server only, with its own empty database and the production
+app's variables. It sleeps like any app (zero memory at rest), is updated by each
+push to the branch, and goes away when the pull request is closed. Pull requests
+from forks are never built.
+
+Change how a repository builds in `app.yaml`:
+
+```yaml
+build:
+  image: node:20-bookworm-slim   # default
+  install: npm ci                # default: npm ci with a lockfile, npm install without
+  command: npm run build         # must leave dist/ (and server.js if there is a backend)
+```
+
+Behind a home router, the webhook must reach `https://deploy.apps.example.com/hooks/`:
+if the console sits behind Cloudflare Access, let that path through. "Build now"
+in the Git tab deploys the branch head without a webhook.
+
+## Analytics, without a script in your apps
+
+The Analytics tab reads what the machine already knows: Caddy's access log
+(visitors, page views, referrers, countries, devices, errors, latency), Docker's
+events (when each app woke up, went to sleep, crashed or ran out of memory, and
+how long a cold start took), a memory sample of each awake app every minute, and,
+for apps that are not public, which accounts used them on which days.
+
+No cookie, no third-party script, no extra service. A visitor is counted with a
+hash of a salt that changes every midnight, the app, the address and the browser:
+countable within a day, never followable from one day or one app to the next.
+Addresses are not stored. Behind Cloudflare, the country comes from its header for
+free. A single-page app reports its client-side navigations with one call,
+`trackPage()` in the template's `src/analytics.ts`. Set `TIMEZONE` in `.env` so
+"today" starts at your midnight.
 
 ## One account for everything
 
 <img src="docs/people.png" alt="The people tab: invite by email, group chips, admin group" width="560">
 
-No passwords anywhere. Invite by email, hand over a single-use link, the person
-enrolls a passkey. That one account opens every app they're allowed to see, and
-your apps write zero auth code — the gateway hands them the user in a header.
+Invite someone from the dashboard, hand over the single-use link, and they
+choose a password, a passkey, or both. That one account opens every app they're
+allowed to see, and your apps write zero auth code: the gateway hands them the
+user, and their roles in that app, in headers.
 
-The console can deploy code and drive Docker, so whoever reaches it has root on
-the machine. A fresh install is single-user and open; invite a second person and
-the dashboard makes you pick an admin group first.
+**Public app, private moderation.** An app can be open to the whole internet
+and still have a back office:
+
+```yaml
+access: public
+roles: [moderator]
+protect:
+  - { path: /api/admin/*, role: moderator }
+```
+
+Anyone reads and posts; `/api/admin/*` asks for a sign-in and the role. Who is a
+moderator is a click in the app's panel. On public pages the app still learns
+who is signed in, so it can show the moderation buttons to the right people.
+
+Each person has an account page at `auth.apps.example.com`: password, passkeys,
+and personal access keys for scripts that call their apps. A session is bound
+to one host: an app never receives a cookie it could replay anywhere else. The
+console asks you to confirm it is you every 12 hours, and only accounts flagged
+as administrators reach it. Scripts and AI agents get a deploy key per app.
 
 ## How it is wired
 
@@ -99,8 +189,7 @@ flowchart LR
     tun --> caddy[Caddy + Sablier plugin]
 
     subgraph edge[network: edge]
-        caddy --- auth[tinyauth]
-        auth --- pid[Pocket ID]
+        caddy --- gate[gate<br/>sign-in, access checks]
         caddy --- sab[Sablier]
         cp[control plane]
         sab --- sp2[socket proxy<br/>start / stop only]
@@ -126,7 +215,7 @@ flowchart LR
 ```
 
 One rule: **an app reaches the gateway and its own database, nothing else.** The
-Docker socket, Sablier, tinyauth and the control plane sit on a network no app
+Docker socket, Sablier, gate and the control plane sit on a network no app
 joins — an app is arbitrary code, and the socket is a root escape. Even Sablier
 and the control plane never touch the raw socket; each gets a proxy scoped to its
 job. Apps run non-root, all capabilities dropped, read-only filesystem, 256 MB
@@ -146,9 +235,13 @@ $EDITOR .env          # set APPS_DOMAIN and APPS_DIR
 ./install.sh          # builds and starts everything
 ```
 
-Then point your tunnel at `http://localhost:8080`, create your account at
-`https://id.apps.example.com`, wire an OIDC client for tinyauth, and put a Pocket
-ID API key in `.env`. The installer prints each step with your domain filled in.
+Then point your tunnel at `http://localhost:8080` and open the one-time link the
+control plane prints in its logs (`docker compose logs control-plane | grep -A1
+SETUP`) to create your administrator account. The installer prints each step
+with your domain filled in. Upgrading from a version that used Pocket ID? Start
+it once with `docker compose --profile legacy up -d pocket-id` and restart the
+control plane: accounts and groups are imported with their ids, so no app loses
+its data, and everyone gets a link to set a password or a new passkey.
 
 > **The wildcard is not optional.** The tunnel rule says where a request goes
 > once it arrives; the `*` DNS record is what makes it arrive. With the first but
@@ -186,7 +279,11 @@ same starting point: `cp -r`, edit, `npm run deploy`.
 
 Stated plainly, because finding out later is worse:
 
-- **No rollback.** A deploy replaces the container. Keep your bundles.
+- **Analytics are approximate by design.** One person on two days counts twice;
+  a privacy-minded browser behind a VPN may count twice in one day. Bots are
+  filtered by user agent only.
+- **History is short.** Ten versions per app keep their files, three their
+  image, three their database snapshot. Older ones are cleaned up.
 - **Apps see each other** on a shared network. Don't put an app open to strangers
   next to something sensitive.
 - **App secrets sit in clear text** in the control database. Encrypt backups.
@@ -194,7 +291,8 @@ Stated plainly, because finding out later is worse:
 - **Websockets don't survive sleeping.** Poll, or use reconnecting SSE.
 - **The first request after sleeping gets a waiting page**, not JSON — the
   template's fetch wrapper retries it; a bare `fetch` breaks silently.
-- **No rate limiting.** Put the console behind an outer access layer.
+- **Rate limiting covers sign-in only.** Put the console behind an outer access
+  layer if it is reachable from the internet.
 
 [SECURITY.md](SECURITY.md) is the full threat model: what is enforced, and what
 is deliberately not.

@@ -1,10 +1,9 @@
+// Pocket ID is no longer the account system: gate is. This module only reads it,
+// once, to import existing accounts and groups with their ids (accounts.ts).
 const BASE = process.env.POCKETID_URL ?? "http://pocket-id:1411";
 const KEY = process.env.POCKETID_API_KEY ?? "";
 
 export const configured = () => KEY.length > 0;
-
-// ids come from the client: never let one steer the request to another endpoint
-const enc = (s: string) => encodeURIComponent(String(s));
 
 async function call(path: string, init: RequestInit = {}) {
   const res = await fetch(`${BASE}/api${path}`, {
@@ -52,128 +51,7 @@ export async function listPeople(): Promise<Person[]> {
   }));
 }
 
-// A tinyauth session carries the groups and admin flag the person had when they
-// signed in, which can be stale right after an edit. Ask the identity provider
-// instead, cached so this stays cheap on a per-request path (adminOk runs on it).
-let cache: { at: number; people: Person[] } | null = null;
-const CACHE_MS = 60_000;
-
-async function everyone(): Promise<Person[]> {
-  if (!configured()) return [];
-  if (!cache || Date.now() - cache.at > CACHE_MS) {
-    const list = await listPeople().catch(() => null);
-    if (!list) return cache?.people ?? [];
-    cache = { at: Date.now(), people: list };
-  }
-  return cache.people;
-}
-
-// The signed-in person, matched by identity provider id first, then email.
-export async function findBySession(sub: string, email: string): Promise<Person | null> {
-  const list = await everyone();
-  return (
-    list.find((p) => p.id === sub || (email && p.email.toLowerCase() === email.toLowerCase())) ??
-    null
-  );
-}
-
-export async function groupsOf(sub: string, email: string): Promise<string[]> {
-  return (await findBySession(sub, email))?.groups ?? [];
-}
-
-// How many accounts can administer the console. Used to refuse removing the last
-// one, so an install can never end up with nobody able to manage it.
-export async function adminCount(): Promise<number> {
-  return (await everyone()).filter((p) => p.isAdmin).length;
-}
-
-// edits must be visible on the next request, not up to a minute later
-export const forgetGroups = () => (cache = null);
-
 export async function listGroups(): Promise<{ id: string; name: string }[]> {
   const payload = await call("/user-groups?pagination[limit]=200");
   return rows(payload).map((g: any) => ({ id: g.id, name: g.name ?? g.friendlyName }));
-}
-
-// Creates the account and returns a one-time link. Pocket ID is passkey-based,
-// so there is no password to send: the person follows the link and enrolls.
-export async function invite(input: {
-  username: string;
-  email: string;
-  firstName?: string;
-}) {
-  const user = await call("/users", {
-    method: "POST",
-    body: JSON.stringify({
-      username: input.username,
-      email: input.email,
-      firstName: input.firstName ?? input.username,
-      lastName: "",
-      isAdmin: false,
-    }),
-  });
-  const token = await call(`/users/${enc(user.id)}/one-time-access-token`, {
-    method: "POST",
-    body: JSON.stringify({
-      expiresAt: new Date(Date.now() + 7 * 864e5).toISOString(),
-    }),
-  }).catch(() => null);
-  return {
-    user,
-    link: token?.token
-      ? `${process.env.POCKETID_PUBLIC_URL ?? BASE}/lc/${token.token}`
-      : null,
-  };
-}
-
-export async function setGroups(userId: string, groupIds: string[]) {
-  forgetGroups();
-  return call(`/users/${enc(userId)}/user-groups`, {
-    method: "PUT",
-    body: JSON.stringify({ userGroupIds: groupIds }),
-  });
-}
-
-// Grant or revoke console access. Pocket ID's PUT replaces the whole user, so
-// read the current row and send it back with only isAdmin changed, or a toggle
-// would wipe the person's name and email.
-export async function setAdmin(userId: string, isAdmin: boolean) {
-  forgetGroups();
-  const u = await call(`/users/${enc(userId)}`);
-  return call(`/users/${enc(userId)}`, {
-    method: "PUT",
-    body: JSON.stringify({
-      username: u.username,
-      email: u.email,
-      firstName: u.firstName ?? "",
-      lastName: u.lastName ?? "",
-      isAdmin,
-    }),
-  });
-}
-
-export async function createGroup(name: string) {
-  forgetGroups();
-  return call("/user-groups", {
-    method: "POST",
-    body: JSON.stringify({ name, friendlyName: name }),
-  });
-}
-
-export async function renameGroup(groupId: string, name: string) {
-  forgetGroups();
-  return call(`/user-groups/${enc(groupId)}`, {
-    method: "PUT",
-    body: JSON.stringify({ name, friendlyName: name }),
-  });
-}
-
-export async function deleteGroup(groupId: string) {
-  forgetGroups();
-  return call(`/user-groups/${enc(groupId)}`, { method: "DELETE" });
-}
-
-export async function removePerson(userId: string) {
-  forgetGroups();
-  return call(`/users/${enc(userId)}`, { method: "DELETE" });
 }

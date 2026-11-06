@@ -15,13 +15,19 @@ networks:
   apps:
     name: nanodeploy_apps
     external: true
+  # Git builds run here: the internet (package registries) and nothing of the
+  # platform. Only the throwaway build containers join it.
+  build:
+    name: nanodeploy_build
+    external: true
 
 volumes:
   caddy_data:
   caddy_config:
   pg_data:
   pocketid_data:
-  tinyauth_data:
+  # caddy's access log, read by the control plane for analytics
+  caddy_logs:
 
 services:
   caddy:
@@ -48,7 +54,8 @@ services:
       - ${APPS_DIR}:/srv/apps:ro
       - caddy_data:/data
       - caddy_config:/config
-    # edge for tinyauth/sablier/pocket-id, apps for the reverse_proxy targets
+      - caddy_logs:/var/log/caddy
+    # edge for gate and sablier, apps for the reverse_proxy targets
     networks: [edge, apps]
 
   sablier:
@@ -95,6 +102,8 @@ services:
       BUILD: 1
       EXEC: 1
       VOLUMES: 1
+      # analytics follow app containers waking up, sleeping and crashing
+      EVENTS: 1
       POST: 1
       ALLOW_START: 1
       ALLOW_STOP: 1
@@ -132,38 +141,39 @@ services:
       timeout: 5s
       retries: 5
 
-  # pinned on purpose: pocket-id migrates its database forward on start and does
-  # not migrate back, so an unattended jump to a new major is a one-way trip
+  # Accounts, sign-in, sessions, app roles and access checks. It answers
+  # strangers on the internet, so it holds no docker access and its database
+  # role (nd_gate, created by the control plane) sees its own schema and the few
+  # columns of the apps table an access decision needs.
+  gate:
+    build: ./gate
+    image: nanodeploy/gate:latest
+    restart: unless-stopped
+    environment:
+      APPS_DOMAIN: ${APPS_DOMAIN}
+      DATABASE_URL: postgres://nd_gate:${GATE_DB_PASSWORD}@postgres:5432/nanodeploy
+      # what the browser sees, in front of the tunnel or reverse proxy
+      PUBLIC_SCHEME: ${PUBLIC_SCHEME:-https}
+      PUBLIC_PORT: ${PUBLIC_PORT:-}
+    # edge for caddy, data for postgres; never apps
+    networks: [edge, data]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Pocket ID held the accounts before gate. It only runs when asked
+  # ("docker compose --profile legacy up -d pocket-id"), so the control plane can
+  # import its accounts with their ids on an upgrade. A fresh install skips it.
   pocket-id:
     image: ghcr.io/pocket-id/pocket-id:${POCKETID_VERSION:-v2.14.0}
+    profiles: [legacy]
     restart: unless-stopped
     environment:
       APP_URL: https://id.${APPS_DOMAIN}
       TRUST_PROXY: "true"
-      # newer pocket-id builds refuse to start without an explicit key
-      ENCRYPTION_KEY: ${POCKETID_ENCRYPTION_KEY}
+      ENCRYPTION_KEY: ${POCKETID_ENCRYPTION_KEY:-unused-on-fresh-installs}
     volumes:
       - pocketid_data:/app/data
-    networks: [edge]
-
-  # v5: env vars are prefixed TINYAUTH_ (v3 env names are gone), sessions live
-  # in a sqlite database under /data, SECRET no longer exists
-  tinyauth:
-    image: ghcr.io/tinyauthapp/tinyauth:${TINYAUTH_VERSION:-v5.1.3}
-    restart: unless-stopped
-    environment:
-      TINYAUTH_APPURL: https://auth.${APPS_DOMAIN}
-      TINYAUTH_OAUTH_PROVIDERS_GENERIC_CLIENTID: ${OIDC_CLIENT_ID}
-      TINYAUTH_OAUTH_PROVIDERS_GENERIC_CLIENTSECRET: ${OIDC_CLIENT_SECRET}
-      TINYAUTH_OAUTH_PROVIDERS_GENERIC_NAME: Pocket ID
-      TINYAUTH_OAUTH_PROVIDERS_GENERIC_AUTHURL: https://id.${APPS_DOMAIN}/authorize
-      TINYAUTH_OAUTH_PROVIDERS_GENERIC_TOKENURL: https://id.${APPS_DOMAIN}/api/oidc/token
-      TINYAUTH_OAUTH_PROVIDERS_GENERIC_USERINFOURL: https://id.${APPS_DOMAIN}/api/oidc/userinfo
-      TINYAUTH_OAUTH_PROVIDERS_GENERIC_SCOPES: openid email profile groups
-      TINYAUTH_AUTH_TRUSTEDPROXIES: 172.16.0.0/12
-      TINYAUTH_ANALYTICS_ENABLED: "false"
-    volumes:
-      - tinyauth_data:/data
     networks: [edge]
 
   control-plane:
@@ -177,17 +187,25 @@ services:
       APPS_DOMAIN: ${APPS_DOMAIN}
       CADDY_CONF_DIR: /etc/caddy/conf.d
       DEPLOY_TOKEN: ${DEPLOY_TOKEN}
-      # optional: browser sessions must be in this tinyauth group to drive the
-      # platform. Leave empty for a single-admin setup.
-      ADMIN_GROUP: ${ADMIN_GROUP:-}
       POSTGRES_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/nanodeploy
       DEFAULT_APP_MEMORY_MB: 256
+      # creates the gate role and schema, manages accounts in it
+      GATE_DB_PASSWORD: ${GATE_DB_PASSWORD}
+      PUBLIC_SCHEME: ${PUBLIC_SCHEME:-https}
+      PUBLIC_PORT: ${PUBLIC_PORT:-}
+      # analytics: where a day starts, for "today" and the daily visitor count
+      TIMEZONE: ${TIMEZONE:-UTC}
+      # encrypts forge credentials (GitHub App key, GitLab tokens) at rest
+      NANODEPLOY_SECRET_KEY: ${NANODEPLOY_SECRET_KEY}
+      # APPS_DIR as the docker daemon sees it: Git builds bind-mount a workspace
+      HOST_APPS_DIR: ${APPS_DIR}
+      # upgrade only: import accounts from a Pocket ID still running (legacy)
       POCKETID_URL: http://pocket-id:1411
-      POCKETID_PUBLIC_URL: https://id.${APPS_DOMAIN}
-      POCKETID_API_KEY: ${POCKETID_API_KEY}
+      POCKETID_API_KEY: ${POCKETID_API_KEY:-}
     volumes:
       - ${APPS_DIR}:/srv/apps
       - ./caddy/conf.d:/etc/caddy/conf.d
+      - caddy_logs:/var/log/caddy:ro
     networks: [edge, data]
     depends_on:
       postgres:

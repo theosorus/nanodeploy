@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Smoke test of Nanodeploy's critical path. Run it on the host (or anywhere the
 # stack is reachable). Covers auth, the identity and cross-origin boundaries,
-# deploying a cold app, post-deploy sleep, waking through sablier, image prune
-# and reconcile.
+# deploying a cold app, post-deploy sleep, waking through sablier, the session
+# cookie kept from apps, failed deploys, access kept across deploys, deploy
+# keys, versions and rollback, image prune and reconcile.
 #
 # Variables (defaults suit a local install):
 #   NANODEPLOY_BASE   http://127.0.0.1:8080
@@ -32,6 +33,9 @@ cat > "$WORK/demo/app.yaml" <<EOF
 name: Smoke
 slug: smoke
 access: public
+roles: [moderator]
+protect:
+  - { path: /api/admin/*, role: moderator }
 frontend: true
 backend:
   entry: server.js
@@ -50,11 +54,24 @@ const port = Number(process.env.PORT ?? 3000);
 http.createServer((req, res) => {
   res.setHeader("content-type", "application/json");
   if (req.url === "/api/ping") res.end(JSON.stringify({ ok: true, pid: process.pid }));
+  else if (req.url === "/api/cookie") res.end(JSON.stringify({ cookie: req.headers.cookie ?? null }));
   else { res.statusCode = 404; res.end(JSON.stringify({ error: "not found" })); }
 }).listen(port);
 EOF
 echo "<h1>smoke</h1>" > "$WORK/demo/dist/index.html"
 (cd "$WORK/demo" && zip -qr "$WORK/smoke.zip" .)
+
+# same app with its backend missing: the image build fails
+mkdir -p "$WORK/broken/dist"
+cp "$WORK/demo/app.yaml" "$WORK/broken/app.yaml"
+echo "<h1>broken</h1>" > "$WORK/broken/dist/index.html"
+(cd "$WORK/broken" && zip -qr "$WORK/broken.zip" .)
+
+# a bundle for another app, to check that a deploy key stays in its lane
+mkdir -p "$WORK/other"
+sed 's/^slug: smoke$/slug: smoke-other/' "$WORK/demo/app.yaml" > "$WORK/other/app.yaml"
+cp "$WORK/demo/server.js" "$WORK/other/server.js"
+(cd "$WORK/other" && zip -qr "$WORK/other.zip" .)
 
 mkdir -p "$WORK/reserved"
 sed 's/^slug: smoke$/slug: deploy/' "$WORK/demo/app.yaml" > "$WORK/reserved/app.yaml"
@@ -114,12 +131,88 @@ done
 echo "$B" | grep -q '"ok":true' && ok "backend answers after sablier wake" || bad "no wake: $B"
 check "$(docker inspect -f '{{.State.Status}}' app-smoke)" "running" "container running"
 
+echo "== gate: public app with a protected back office =="
+check "$(code -H "Host: smoke.$DOM" $BASE/api/admin/anything)" "401" "protected path asks an anonymous visitor to sign in"
+L=$(curl -s -o /dev/null -w '%{redirect_url}' -H "Host: smoke.$DOM" -H 'Accept: text/html' $BASE/api/admin/anything)
+echo "$L" | grep -q "auth.$DOM/login?to=" && ok "a browser is sent to the sign-in page" || bad "no sign-in redirect: $L"
+json -H "Host: smoke.$DOM" $BASE/_nd/me | grep -q '"anonymous":true' && ok "/_nd/me on an app host" || bad "/_nd/me"
+check "$(code -H "Host: smoke.$DOM" -H 'Cookie: nd_s=forged; __Host-nd_s=forged' $BASE/api/admin/x)" "401" "forged session cookie -> 401"
+check "$(code -H "Host: smoke.$DOM" -H "Authorization: Bearer ndk_$(printf 'A%.0s' $(seq 43))" $BASE/api/admin/x)" \
+  "401" "unknown access key -> 401"
+check "$(code -H "Host: auth.$DOM" "$BASE/verify?app=smoke")" "404" "forward-auth endpoint not reachable from outside"
+check "$(code -H "Host: auth.$DOM" $BASE/login)" "200" "sign-in page"
+
+echo "== analytics =="
+check "$(code -H "Host: smoke.$DOM" "$BASE/_nd/e?p=%2Fhello")" "204" "page-view beacon answered by caddy"
+check "$(code -H "Host: deploy.$DOM" -H "$AUTH" "$BASE/api/apps/smoke/analytics?range=24h")" "200" "app analytics"
+json -H "Host: deploy.$DOM" -H "$AUTH" $BASE/api/analytics | grep -q '"slug":"smoke"' && ok "analytics overview lists the app" \
+  || bad "overview without the app"
+
+echo "== git =="
+check "$(code -H "Host: deploy.$DOM" -H "$AUTH" $BASE/api/git)" "200" "git overview"
+check "$(code -X POST -H "Host: deploy.$DOM" -H 'X-GitHub-Hook-Installation-Target-ID: 1' -d '{}' $BASE/hooks/github)" \
+  "404" "webhook from an unknown app refused, without a session"
+check "$(code -X POST -H "Host: deploy.$DOM" -d '{}' $BASE/hooks/gitlab/999999)" "404" "unknown gitlab hook"
+
+echo "== platform cookie never reaches an app =="
+# tinyauth's cookies live on the parent domain, so the browser sends them to
+# every app: an app backend holding an admin's session could drive the console
+C=$(json -H "Host: smoke.$DOM" -H 'Cookie: theme=dark; tinyauth-session-1a2b3c4d=SECRET; __Host-nd_s=S2; lang=fr' $BASE/api/cookie)
+echo "$C" | grep -q '"cookie":"theme=dark; lang=fr"' && ok "platform cookies stripped, app cookies kept" \
+  || bad "cookie reached the app: $C"
+
+echo "== a failed deploy leaves the live version alone =="
+R=$(json -X POST -H "Host: deploy.$DOM" -H "$AUTH" -F bundle=@$WORK/broken.zip $BASE/api/deploy)
+echo "$R" | grep -q 'left untouched' && ok "broken bundle refused" || bad "broken bundle: $R"
+check "$(json -H "Host: smoke.$DOM" $BASE/)" "<h1>smoke</h1>" "previous frontend still served"
+json -H "Host: smoke.$DOM" $BASE/api/ping | grep -q '"ok":true' && ok "previous backend still answers" \
+  || bad "backend gone after a failed deploy"
+
+echo "== access set in the dashboard survives a redeploy =="
+setaccess() {
+  json -X POST -H "Host: deploy.$DOM" -H "$AUTH" -H 'content-type: application/json' \
+    -d "{\"access\":\"$1\"}" "$BASE/api/apps/smoke/access" >/dev/null
+}
+setaccess private
+R=$(json -X POST -H "Host: deploy.$DOM" -H "$AUTH" -F bundle=@$WORK/smoke.zip $BASE/api/deploy)
+A=$(json -H "Host: deploy.$DOM" -H "$AUTH" $BASE/api/apps | grep -o '"slug":"smoke","name":"[^"]*","access":"[a-z]*"')
+echo "$A" | grep -q '"access":"private"' && ok "still private after deploying access: public" || bad "access overwritten: $A"
+echo "$R" | grep -q 'access kept as' && ok "deploy log says why" || bad "no access note: $R"
+setaccess public
+
+echo "== deploy keys =="
+K=$(json -X POST -H "Host: deploy.$DOM" -H "$AUTH" -H 'content-type: application/json' \
+  -d '{"label":"smoke"}' $BASE/api/apps/smoke/keys | grep -o 'ndd_[A-Za-z0-9_-]*')
+KEY="Authorization: Bearer $K"
+[ ${#K} -eq 47 ] && ok "key created" || bad "no key: $K"
+R=$(json -X POST -H "Host: deploy.$DOM" -H "$KEY" -F bundle=@$WORK/smoke.zip $BASE/api/deploy)
+echo "$R" | grep -q '"ok":true' && ok "key deploys its own app, without a session" || bad "key deploy: $R"
+check "$(code -H "Host: deploy.$DOM" -H "$KEY" $BASE/api/apps)" "403" "key cannot list apps"
+check "$(code -H "Host: deploy.$DOM" -H "$KEY" -X DELETE $BASE/api/apps/smoke)" "403" "key cannot delete"
+check "$(code -H "Host: deploy.$DOM" -H "$KEY" -X POST -F bundle=@$WORK/other.zip $BASE/api/deploy)" \
+  "403" "key refused for another app"
+FAKE="ndd_$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=' | cut -c1-43)"
+check "$(code -H "Host: deploy.$DOM" -H "Authorization: Bearer $FAKE" $BASE/api/apps)" "401" "unknown key -> 401"
+ID=$(json -H "Host: deploy.$DOM" -H "$AUTH" $BASE/api/apps/smoke/keys | grep -o '"id":"[0-9]*"' | head -1 | cut -d'"' -f4)
+json -X DELETE -H "Host: deploy.$DOM" -H "$AUTH" "$BASE/api/apps/smoke/keys/$ID" >/dev/null
+check "$(code -H "Host: deploy.$DOM" -H "$KEY" -X POST -F bundle=@$WORK/smoke.zip $BASE/api/deploy)" \
+  "401" "revoked key -> 401"
+
+echo "== versions and rollback =="
+R=$(json -H "Host: deploy.$DOM" -H "$AUTH" $BASE/api/apps/smoke/releases)
+PREV=$(echo "$R" | grep -o '"id":"[0-9]*","number":[0-9]*,"dir":[0-9]*,"source":"[a-z]*","message":"[^"]*","commitSha":[^,]*,"commitMessage":[^,]*,"status":"superseded"' | head -1 | grep -o '"id":"[0-9]*"' | cut -d'"' -f4)
+[ -n "$PREV" ] && ok "earlier version listed" || bad "no superseded version: $R"
+R=$(json -X POST -H "Host: deploy.$DOM" -H "$AUTH" -H 'content-type: application/json' -d '{}' \
+  "$BASE/api/apps/smoke/releases/$PREV/rollback")
+echo "$R" | grep -q '"ok":true' && ok "rollback to the previous version" || bad "rollback: $R"
+check "$(json -H "Host: smoke.$DOM" $BASE/)" "<h1>smoke</h1>" "frontend served after the rollback"
+
 echo "== prune and delete =="
-for _ in 1 2; do
+for _ in 1 2 3 4; do
   curl -s -o /dev/null -X POST -H "Host: deploy.$DOM" -H "$AUTH" -F bundle=@$WORK/smoke.zip $BASE/api/deploy
 done
 N=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -c '^nanodeploy/smoke:')
-check "$N" "1" "one image left after 3 deploys (prune)"
+[ "$N" -le 3 ] && ok "at most 3 images kept for instant rollbacks ($N)" || bad "$N images left after prune"
 
 docker rm -f app-smoke >/dev/null 2>&1
 docker images --format '{{.Repository}}:{{.Tag}}' | grep '^nanodeploy/smoke:' | xargs -I{} docker rmi {} >/dev/null 2>&1

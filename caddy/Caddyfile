@@ -3,10 +3,14 @@
 	auto_https off
 	# The proxy in front terminates TLS and says so with X-Forwarded-Proto.
 	# Caddy overwrites that header with its own scheme unless the client is a
-	# trusted proxy, so without this tinyauth builds every login redirect as
-	# http:// and drops browsers back to plain http after they sign in.
+	# trusted proxy, so without this the sign-in redirects are built as
+	# http:// and drop browsers back to plain http after they sign in.
 	servers {
 		trusted_proxies static private_ranges
+		# Behind a Cloudflare tunnel every request comes from cloudflared: the
+		# visitor's address is in CF-Connecting-IP. Analytics count visitors by
+		# it; without this line the whole internet would be one visitor.
+		client_ip_headers CF-Connecting-IP X-Forwarded-For
 	}
 	# loopback only: the admin API has no auth, and apps share a network with
 	# caddy. The control plane reloads caddy by docker exec, not through this.
@@ -17,12 +21,30 @@
 	order request_header before forward_auth
 }
 
-# reusable forward-auth snippet, imported by every private app
-(nanodeploy_auth) {
-	forward_auth tinyauth:3000 {
-		uri /api/auth/caddy
-		copy_headers Remote-User Remote-Name Remote-Email Remote-Groups Remote-Sub
+# Every access decision is gate's: it reads the app's policy and the caller's
+# session or access key from the database and answers 200 (with the identity
+# headers when someone is signed in, without when an anonymous visitor may
+# pass), a redirect to the sign-in page, 401 or 403. The argument is the app
+# slug, or __console for the dashboard.
+(nanodeploy_gate) {
+	forward_auth gate:4000 {
+		uri /verify?app={args[0]}
+		copy_headers Remote-User Remote-Name Remote-Email Remote-Groups Remote-Sub Remote-Roles Remote-Via
 	}
+}
+
+# Platform credentials never reach an app backend: gate has read them by the
+# time this runs (inside an app's handle, after forward_auth). The host session
+# cookie (__Host-nd_s, or nd_s on a plain-http test stack) is bound to this one
+# host already; it is removed anyway, the app has no use for it. tinyauth's
+# cookies are on the list for installs upgrading from it. A personal access key
+# (ndk_...) is removed too: with it, the app could act as its visitor on every
+# other app. The "; " left at the front when the first cookie went is dropped;
+# an app's own cookies are kept.
+(nanodeploy_hide_session) {
+	request_header Cookie "(^|;\s*)((__Host-)?nd_s|tinyauth-[^=;]*)=[^;]*" ""
+	request_header Cookie "^;\s*" ""
+	request_header Authorization "^Bearer\s+ndk_.*$" ""
 }
 
 # identity headers are gateway-owned, never accept them from a client
@@ -32,14 +54,24 @@
 	request_header -Remote-Email
 	request_header -Remote-Groups
 	request_header -Remote-Sub
+	request_header -Remote-Roles
+	request_header -Remote-Via
 }
 
+# sign-in pages, account page, passkeys: all gate. /verify is the forward-auth
+# endpoint and is only meant for caddy itself.
 http://auth.{$APPS_DOMAIN} {
-	reverse_proxy tinyauth:3000
-}
-
-http://id.{$APPS_DOMAIN} {
-	reverse_proxy pocket-id:1411
+	import nanodeploy_strip
+	header {
+		X-Frame-Options DENY
+		-Server
+	}
+	handle /verify* {
+		respond 404
+	}
+	handle {
+		reverse_proxy gate:4000
+	}
 }
 
 http://deploy.{$APPS_DOMAIN} {
@@ -53,7 +85,7 @@ http://deploy.{$APPS_DOMAIN} {
 		-Server
 	}
 	# the CLI authenticates with the exact bearer token, the browser with
-	# tinyauth. Matching the literal token (not "Bearer*") closes the bypass
+	# gate. Matching the literal token (not "Bearer*") closes the bypass
 	# where any fake Authorization header skipped the forward-auth. {$DEPLOY_TOKEN}
 	# is resolved from the caddy container env: rotate it in .env then
 	# "docker compose up -d caddy".
@@ -61,8 +93,29 @@ http://deploy.{$APPS_DOMAIN} {
 	handle @cli {
 		reverse_proxy control-plane:8000
 	}
+	# per-app deploy keys skip the login too. Caddy cannot know whether a key is
+	# valid, only its exact shape: the control plane checks it against the
+	# database and answers 401 for anything else, and a key only ever opens the
+	# deploy and logs routes of its own app.
+	@deploykey header_regexp Authorization ^Bearer\sndd_[A-Za-z0-9_-]{43}$
+	handle @deploykey {
+		reverse_proxy control-plane:8000
+	}
+	# GitHub and GitLab webhooks: no session, the control plane checks each
+	# delivery's signature or secret token before reading it
+	handle /hooks/* {
+		request_body {
+			max_size 2MB
+		}
+		reverse_proxy control-plane:8000
+	}
+	# the sign-in callback of the console's own session
+	handle /_nd/* {
+		reverse_proxy gate:4000
+	}
+	# a browser: an administrator who signed in within the last 12 hours
 	handle {
-		import nanodeploy_auth
+		import nanodeploy_gate __console
 		reverse_proxy control-plane:8000
 	}
 }

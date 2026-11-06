@@ -162,18 +162,69 @@ api<Note[]>("/api/notes", undefined, { onWaking: () => setStatus("waking") });
 
 ## User identity
 
-The app does not handle login. Caddy authenticates, then injects `Remote-Sub`,
-`Remote-Email`, `Remote-Name` and `Remote-Groups`. Read them through
-`server/auth.ts`, never by hand.
+The app does not handle login. The gateway (gate) checks access, then injects
+`Remote-Sub`, `Remote-Email`, `Remote-Name`, `Remote-Groups` and
+`Remote-Roles`. Read them through `server/auth.ts`, never by hand: it also
+decodes names written in any script.
 
 ```typescript
 const user = tryGetUser(c);   // null when the request carries no identity
+requireRole(c, "moderator");  // 401 if signed out, 403 without the role
 ```
 
-An app switched to `public` from the dashboard receives no identity header at
-all. Every route that needs a user therefore answers 401 when `tryGetUser`
-returns null; that is what avoids a cascade of 500s. `getUser(c)`, which throws,
-is only justified in an app that will always stay private.
+On a `public` app, a visitor who is not signed in has no identity header, and a
+signed-in one does. Every route that needs a user therefore answers 401 when
+`tryGetUser` returns null; that is what avoids a cascade of 500s. `getUser(c)`,
+which throws, is only justified in an app that will always stay private.
+
+### Deploying from a repository
+
+When the app lives in a GitHub or GitLab repository connected to the server
+(the dashboard's Git tab), do not deploy with `npm run deploy`: commit and push.
+A push to the connected branch builds and deploys; a pull request gets a preview
+at `<slug>--pr-<n>.<domain>`, for accounts of the server only, with its own empty
+database. Work on a branch, open a pull request, give the preview URL, and let
+the user merge. The commit status on the forge (green or red, with the build
+log) tells you whether the build passed.
+
+The server runs `npm ci` (or `npm install`) then `npm run build`, which must leave
+`dist/`, `server.js` and `migrations/` exactly where `npm run deploy` packs them.
+Commit `package-lock.json`. Change the commands in `app.yaml` (`build.install`,
+`build.command`) only when the template's do not fit. Never change `slug` in a
+connected repository: the build fails on purpose.
+
+### Page views
+
+The platform counts visits on its own, from the gateway's log: never add an
+analytics script, a tracking pixel or a third-party SDK. In a single-page app,
+call `trackPage()` from `src/analytics.ts` after each client-side route change
+(not on the first render, which the gateway already counted).
+
+### Public app, managed by a few people
+
+The common case: anyone can read and post, a few trusted people moderate or
+edit. Never build a login, an admin password or a "secret admin URL" for that.
+Declare a role and the paths it guards in `app.yaml`:
+
+```yaml
+access: public
+roles: [moderator]
+protect:
+  - { path: /api/admin/*, role: moderator }
+```
+
+- The gateway refuses a protected path to anyone without the role, before the
+  request reaches the app. The route still calls `requireRole(c, "moderator")`:
+  two locks, so a mistyped rule never opens it.
+- Who is a moderator is decided in the dashboard (the app's panel, Roles), not
+  in code. Administrators hold every role.
+- In the frontend, `src/identity.ts` gives `getMe()` (`/_nd/me`), `hasRole()`,
+  `loginUrl()` and `logoutUrl`. Show a discreet "sign in" link (footer) to
+  anonymous visitors, and the moderation controls only when
+  `hasRole(me, "moderator")`. Hiding a button is comfort; the server check is
+  the security.
+- Put moderation endpoints under the protected prefix (`/api/admin/...`), and
+  keep the public endpoints outside it.
 
 Every user-owned table carries an `ownerId` column filled with `user.id`, and
 **every read filters on it**. That filter is the entire authorisation model:
@@ -217,8 +268,11 @@ an app from itself.
 name: Expenses
 slug: depenses          # becomes depenses.<domain>, [a-z0-9-] only
                         # deploy, auth, id and www are reserved by the platform
-access: private         # public | private | groups
+access: private         # public | private | groups, used when the app is created;
+                        # later changes are made in the dashboard, not here
 groups: []
+roles: []               # e.g. [moderator]; given to people in the dashboard
+protect: []             # e.g. - { path: /api/admin/*, role: moderator }
 frontend: true
 backend:
   entry: server.js
@@ -249,17 +303,39 @@ env: [OPENAI_API_KEY]   # names only, values are typed in the dashboard
 9. **Deploy**: `npm run deploy`. That builds the frontend, bundles the server,
    zips `dist/ server.js app.yaml migrations/` and posts it to the control
    plane. Needs `NANODEPLOY_URL` and `NANODEPLOY_TOKEN` in the environment.
+   The token must be a **deploy key** (`ndd_...`) for this app's slug: ask the
+   user to create one in the dashboard (the app's panel, or "deploy key for a
+   new app" before the first deploy). Never ask for the server's
+   `DEPLOY_TOKEN`: it controls the whole machine, a deploy key only this app. A
+   `403` saying the key "is for" another app means `app.yaml` and the key
+   disagree on the slug.
 
 After a successful deploy, give the URL and list the environment variables still
 waiting for a value, if any.
 
 ## Changing an existing app
 
+A failed deployment changes nothing: the running version stays live. Every
+deploy is a numbered version; deploy with `npm run deploy -- -m "what changed"`
+so the history says why. If a deploy broke the app, go back to the previous
+version (`GET /api/apps/<slug>/releases`, then
+`POST /api/apps/<slug>/releases/<id>/rollback` with the same deploy key), then fix
+forward. Changing
+`access` in `app.yaml` has no effect on an existing app, say so and point the user
+to the dashboard instead.
+
 A deployment replaces the image and the container, but **never the database**. A
 schema change therefore goes through a new migration: edit `server/schema.ts`,
 run `npm run db:generate`, read the generated SQL, then deploy. Never edit a
 migration that has already been deployed, and never drop a column without saying
 so explicitly.
+
+Write migrations that **expand, then contract**: add a nullable column or a new
+table, ship the code that uses it, and only remove the old one in a later
+deploy. That way the previous version still runs against the new schema, and
+going back to it never needs to restore the database (which would lose what was
+written since). The platform snapshots the database before each migration and
+restores it if a migration fails, but that is the safety net, not the plan.
 
 When changing an existing app, read its `theme.css` first and work inside its
 direction. Do not quietly restyle an app that already has one.
@@ -294,7 +370,8 @@ Reach for these rather than reinventing them; each one was paid for once.
 - [ ] every route under `/api/*`
 - [ ] every user-owned table filtered by `ownerId`, on reads and on writes
 - [ ] every input type-checked and length-bounded, every list query limited
-- [ ] no authentication code in the app
+- [ ] no authentication code in the app; moderation through `roles` and
+      `protect`, with `requireRole` on each protected route
 - [ ] every API call through `src/client.ts`
 - [ ] loading, waking, empty and error states all written
 - [ ] slug unique, lowercase, no underscore, not a reserved name

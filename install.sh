@@ -50,12 +50,28 @@ set_var() {
 if [ ! -f .env ]; then
   cp .env.example .env
   set_var POSTGRES_PASSWORD "$(openssl rand -hex 24)"
-  set_var POCKETID_ENCRYPTION_KEY "$(openssl rand -hex 24)"
   set_var DEPLOY_TOKEN "$(openssl rand -hex 24)"
+  set_var GATE_DB_PASSWORD "$(openssl rand -hex 24)"
+  set_var NANODEPLOY_SECRET_KEY "$(openssl rand -hex 32)"
   chmod 600 .env
   ok "generated .env with fresh secrets"
   warn "edit .env now to set APPS_DOMAIN and APPS_DIR, then run install.sh again"
   exit 0
+fi
+
+# an .env from before gate existed: add its secret instead of asking for a
+# reinstall
+if ! grep -q '^GATE_DB_PASSWORD=.' .env; then
+  grep -q '^GATE_DB_PASSWORD=' .env || printf '\nGATE_DB_PASSWORD=\n' >> .env
+  set_var GATE_DB_PASSWORD "$(openssl rand -hex 24)"
+  ok "added GATE_DB_PASSWORD to .env"
+fi
+
+# same for the key that encrypts forge credentials (Git deploys)
+if ! grep -q '^NANODEPLOY_SECRET_KEY=.' .env; then
+  grep -q '^NANODEPLOY_SECRET_KEY=' .env || printf '\nNANODEPLOY_SECRET_KEY=\n' >> .env
+  set_var NANODEPLOY_SECRET_KEY "$(openssl rand -hex 32)"
+  ok "added NANODEPLOY_SECRET_KEY to .env"
 fi
 
 source_env
@@ -66,7 +82,7 @@ source_env
 case "$APPS_DOMAIN" in *.*) ;; *) die "APPS_DOMAIN must be a domain name, got '$APPS_DOMAIN'";; esac
 [ -n "${APPS_DIR:-}" ] || die "APPS_DIR is empty in .env"
 case "$APPS_DIR" in /*) ;; *) die "APPS_DIR must be an absolute path, got '$APPS_DIR'";; esac
-for secret in POSTGRES_PASSWORD POCKETID_ENCRYPTION_KEY DEPLOY_TOKEN; do
+for secret in POSTGRES_PASSWORD DEPLOY_TOKEN GATE_DB_PASSWORD NANODEPLOY_SECRET_KEY; do
   eval "value=\${$secret:-}"
   [ -n "$value" ] || die "$secret is empty in .env, delete .env and rerun to regenerate the secrets"
 done
@@ -78,6 +94,7 @@ mkdir -p "$APPS_DIR"
 docker network create nanodeploy_edge 2>/dev/null && ok "network nanodeploy_edge" || ok "network nanodeploy_edge exists"
 docker network create --internal nanodeploy_data 2>/dev/null && ok "network nanodeploy_data" || ok "network nanodeploy_data exists"
 docker network create nanodeploy_apps 2>/dev/null && ok "network nanodeploy_apps" || ok "network nanodeploy_apps exists"
+docker network create nanodeploy_build 2>/dev/null && ok "network nanodeploy_build" || ok "network nanodeploy_build exists"
 ok "apps dir $APPS_DIR"
 
 say "3/5 building the caddy image with the sablier plugin"
@@ -98,21 +115,26 @@ cat <<TXT
      Without the wildcard, apps deploy and run but no browser can resolve them.
      Cloudflare tunnel: one Public Hostname entry, subdomain "*", service
      HTTP -> localhost:$PORT.
-  2. Open https://id.$APPS_DOMAIN and create your Pocket ID admin account.
-  3. In Pocket ID, create an OIDC client for tinyauth with callback
-     https://auth.$APPS_DOMAIN/api/oauth/callback/generic
-     then put the client id and secret in .env and run:
-       docker compose up -d tinyauth
-  4. In Pocket ID, create an API key and put it in POCKETID_API_KEY, then:
-       docker compose up -d control-plane
-     That is what enables the People tab, and with it the admin group.
-  5. Open https://deploy.$APPS_DOMAIN, People tab, and pick an admin group.
-     Until you do, every account that can sign in controls this server.
+  2. Create your administrator account. The control plane prints a one-time
+     link for it in its logs:
+       docker compose logs control-plane | grep -A1 SETUP
+     Open it, choose a password, then add a passkey from your account page.
+     Upgrading from Pocket ID? Start it once before this step so its accounts
+     are imported with their ids:
+       docker compose --profile legacy up -d pocket-id
+       docker compose restart control-plane
+  3. Open https://deploy.$APPS_DOMAIN. The People tab invites the others: each
+     gets a link to choose a password or a passkey. Only accounts you flag as
+     administrators can reach the console.
+  4. Give CI jobs and AI agents a deploy key (an app's panel in the dashboard),
+     never the deploy token.
+  5. Sign-in pages live at https://auth.$APPS_DOMAIN, with each person's
+     account page (password, passkeys, access keys for scripts).
   6. To bring everything back after a power cut:
        sudo cp nanodeploy.service /etc/systemd/system/
        sudo systemctl daemon-reload && sudo systemctl enable nanodeploy
      Adjust WorkingDirectory and RequiresMountsFor inside the file first.
-  7. Your deploy token is in .env as DEPLOY_TOKEN. Keep it in your password
-     manager, the CLI needs it.
+  7. Your deploy token is in .env as DEPLOY_TOKEN. It can do everything: keep
+     it in your password manager, for emergencies.
 
 TXT

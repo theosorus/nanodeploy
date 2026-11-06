@@ -12,11 +12,24 @@ export type Manifest = {
   database: { enabled: boolean; migrations: string };
   idle: { timeout: string; warm: boolean };
   env: string[];
+  roles: string[];
+  protect: { path: string; role: string }[];
+  // how a repository is built on the server (Git deploys only); a zip upload
+  // arrives already built and ignores it
+  build: { image: string; install: string | null; command: string };
 };
 
-const SLUG_RE = /^[a-z][a-z0-9-]{1,30}$/;
+// "--pr-<n>" is the suffix of a pull request preview, made by the platform
+const SLUG_RE = /^[a-z][a-z0-9-]{1,30}(--pr-\d{1,6})?$/;
+export const isPreviewSlug = (slug: string) => /--pr-\d{1,6}$/.test(slug);
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 const IDLE_RE = /^\d+(ms|s|m|h)$/;
+// role names travel in a header as a comma separated list
+const ROLE_RE = /^[a-z][a-z0-9_-]{0,31}$/;
+// a protected path lands in a caddy path matcher and in gate's own matcher:
+// plain characters, and "*" only as a trailing wildcard, the one form both
+// read the same way
+const PROTECT_RE = /^\/[A-Za-z0-9._~\/-]*\*?$/;
 const NAME_MAX = 60;
 const ENV_MAX = 64;
 // These subdomains belong to the platform. An app that claimed one would emit a
@@ -33,6 +46,9 @@ export function parseManifest(raw: string): Manifest {
   if (!m || typeof m !== "object") bad("manifest must be a yaml object");
   if (!m.slug || !SLUG_RE.test(m.slug)) {
     bad("slug must match [a-z][a-z0-9-]{1,30}");
+  }
+  if (String(m.slug).replace(/--pr-\d{1,6}$/, "").includes("--")) {
+    bad(`slug must not contain "--": that separator is reserved for previews`);
   }
   if (RESERVED_SLUGS.has(m.slug)) {
     bad(`slug "${m.slug}" is reserved by the platform, pick another one`);
@@ -91,6 +107,41 @@ export function parseManifest(raw: string): Manifest {
     }
   }
 
+  const roles = [...new Set(Array.isArray(m.roles) ? m.roles : [])];
+  if (roles.length > 16) bad(`at most 16 roles, got ${roles.length}`);
+  for (const r of roles) {
+    if (typeof r !== "string" || !ROLE_RE.test(r)) {
+      bad(`role names must match [a-z][a-z0-9_-]*, got: ${String(r).slice(0, 40)}`);
+    }
+  }
+  const protect = (Array.isArray(m.protect) ? m.protect : []).map((p: any) => {
+    const path = String(p?.path ?? "");
+    const role = String(p?.role ?? "");
+    if (!PROTECT_RE.test(path) || path.length > 128) {
+      bad(`protect path must start with / and may only end with *, got: ${path.slice(0, 60)}`);
+    }
+    if (!roles.includes(role)) bad(`protect ${path} needs role "${role}", which is not in roles`);
+    return { path, role };
+  });
+  if (protect.length > 32) bad(`at most 32 protected paths, got ${protect.length}`);
+
+  // build commands run in a sandboxed container; still, one line each, no
+  // control characters, and an image name that is only an image name
+  const line = (v: unknown, what: string, fallback: string | null) => {
+    if (v === undefined || v === null) return fallback;
+    const s = String(v);
+    if (/[\r\n\0]/.test(s) || s.length > 500) bad(`build.${what} must be a single line of at most 500 characters`);
+    return s.trim() || fallback;
+  };
+  const image = line(m.build?.image, "image", "node:20-bookworm-slim")!;
+  if (!/^[a-z0-9][a-z0-9._\/:@-]{0,199}$/.test(image)) bad(`build.image is not an image name: ${image.slice(0, 60)}`);
+  const build = {
+    image,
+    // null: npm ci when a lockfile exists, npm install otherwise
+    install: m.build?.install === "" ? "" : line(m.build?.install, "install", null),
+    command: line(m.build?.command, "command", "npm run build")!,
+  };
+
   return {
     name,
     slug: m.slug,
@@ -105,5 +156,8 @@ export function parseManifest(raw: string): Manifest {
     // warm apps opt out of scale-to-zero: they stay up and restart with docker
     idle: { timeout, warm: m.idle?.warm === true },
     env,
+    roles,
+    protect,
+    build,
   };
 }
