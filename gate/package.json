@@ -16,7 +16,7 @@
     "postgres": "^3.4.5"
   },
   "devDependencies": {
-    "@simplewebauthn/browser": "^13.2.2",
+    "@simplewebauthn/browser": "^14.0.0",
     "@types/node": "^24.0.0",
     "esbuild": "^0.28.2",
     "tsx": "^4.19.2",
