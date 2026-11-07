@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.1.6",
-    "@simplewebauthn/server": "^13.3.3",
+    "@simplewebauthn/server": "^14.0.3",
     "hono": "^4.13.17",
     "postgres": "^3.4.5"
   },
