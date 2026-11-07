@@ -449,6 +449,10 @@ async function reconcile() {
         await writeSite(fresh);
         if (!fresh.image || !fresh.port) return;
         const status = await dk.appStatus(fresh.slug);
+        const isolated = await dk.containerIsIsolated(fresh.slug);
+        // An image rebuild can fail (for example while a registry is down).
+        // Never leave an old, externally routed container running in that case.
+        if (status !== "missing" && !isolated) await dk.removeContainer(fresh.slug);
         // Reattach gateway/database after Compose recreates either container,
         // and migrate old containers off the shared app bridge on upgrades.
         await dk.ensureAppNetwork(fresh.slug);
@@ -465,7 +469,7 @@ async function reconcile() {
           console.log(`reconcile: rebuilt image for ${fresh.slug}`);
         }
         const needsRecreate =
-          rebuilt || status === "missing" || !(await dk.containerMatchesConfig(fresh.slug, fresh.warm)) || (fresh.warm && status === "sleeping");
+          rebuilt || !isolated || status === "missing" || !(await dk.containerMatchesConfig(fresh.slug, fresh.warm)) || (fresh.warm && status === "sleeping");
         if (!needsRecreate) return;
 
         analytics.quiet(fresh.slug);

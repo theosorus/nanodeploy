@@ -20,6 +20,7 @@ const MEM_MB = Number(process.env.DEFAULT_APP_MEMORY_MB ?? 256);
 export const APPS_NETWORK = "nanodeploy_apps"; // legacy shared network, never used for new containers
 const NETWORK_PREFIX = process.env.APP_NETWORK_PREFIX ?? "nanodeploy_app_";
 const SECURITY_REVISION = "2026-11-isolation-egress-v1";
+const RUNTIME_REVISION = "node24-2026-11";
 const EGRESS_CONTAINER = process.env.EGRESS_CONTAINER ?? "nanodeploy-egress-1";
 const EGRESS_ENV = {
   HTTP_PROXY: "http://egress:3128", HTTPS_PROXY: "http://egress:3128",
@@ -34,6 +35,7 @@ export const containerName = (slug: string) => `app-${slug}`;
 
 // a trivial Dockerfile: the bundle is already built on the dev machine
 const DOCKERFILE = (entry: string, port: number) => `FROM node:24-bookworm-slim
+LABEL nanodeploy.runtime="${RUNTIME_REVISION}"
 WORKDIR /app
 ENV NODE_ENV=production
 COPY ${JSON.stringify([entry, `./${entry}`])}
@@ -123,10 +125,21 @@ export async function containerMatchesConfig(slug: string, warm: boolean) {
   }
 }
 
+export async function containerIsIsolated(slug: string) {
+  try {
+    const info = await docker.getContainer(containerName(slug)).inspect();
+    return info.Config.Labels?.["nanodeploy.security"] === SECURITY_REVISION &&
+      Object.keys(info.NetworkSettings.Networks).length === 1 && Boolean(info.NetworkSettings.Networks[appNetwork(slug)]);
+  } catch { return false; }
+}
+
 export async function imageExists(image: string) {
   try {
-    await docker.getImage(image).inspect();
-    return true;
+    // Presence alone would keep existing Node 20 images alive indefinitely.
+    // Rebuild stored releases before reuse when their runtime predates this
+    // security baseline, including startup reconcile and release rollback.
+    const info = await docker.getImage(image).inspect();
+    return info.Config?.Labels?.["nanodeploy.runtime"] === RUNTIME_REVISION;
   } catch {
     return false;
   }
@@ -195,13 +208,8 @@ export async function runContainer(opts: {
       Tmpfs: { "/tmp": "rw,noexec,nosuid,nodev,size=16m" },
       LogConfig: { Type: "local", Config: { "max-size": "5m", "max-file": "2" } },
       Binds: [`${dataVolume(opts.slug)}:/data`],
-      // apps join only nanodeploy_apps, which carries caddy and postgres. They
-      // used to also join nanodeploy_data to reach postgres, but the control
-      // plane lives on that network too: an app could open a tcp connection to
-      // control-plane:8000 and, by sending its own Remote-* headers (caddy is
-      // the only thing that strips them, and it was bypassed), drive the whole
-      // platform as an admin. Postgres is now reachable through nanodeploy_apps
-      // instead, so an app and the control plane share no network at all.
+      // Only this app's internal bridge. Gateway, database and filtered egress
+      // are attached separately; no neighbouring app or platform proxy joins.
       NetworkMode: network,
       Sysctls: { "net.ipv6.conf.all.disable_ipv6": "1" },
       // no PortBindings: the app must only be reachable through caddy

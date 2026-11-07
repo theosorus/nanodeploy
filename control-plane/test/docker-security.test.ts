@@ -152,12 +152,15 @@ test("independent app bridges block direct backend access and preserve gateway/d
   await writeFile(join(source, "server.js"), "require('http').createServer((q,s)=>s.end('app')).listen(3000,'0.0.0.0')");
   builtImage = `${prefix}:app`;
   await dk.buildImage(source, builtImage, "server.js", 3000);
+  assert.equal(await dk.imageExists(image), false, "an existing image without the current runtime baseline must be rebuilt");
+  assert.equal(await dk.imageExists(builtImage), true);
   const slugs = [`cyber-${process.pid}-a`, `cyber-${process.pid}-b`];
   for (const slug of slugs) {
     apps.push(slug);
     await dk.runContainer({ slug, image: builtImage, port: 3000, idleTimeout: "10m", warm: true, env: {} });
   }
   const first = engine.getContainer(dk.containerName(slugs[0]));
+  assert.equal(await dk.containerIsIsolated(slugs[0]), true);
   const second = await engine.getContainer(dk.containerName(slugs[1])).inspect();
   const target = second.NetworkSettings.Networks[dk.appNetwork(slugs[1])].IPAddress;
   const blocked = await command(first, ["node", "-e", `fetch('http://${target}:3000',{signal:AbortSignal.timeout(1000)}).then(()=>{console.log('REACHABLE')}).catch(()=>console.log('BLOCKED'))`]);

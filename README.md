@@ -197,45 +197,48 @@ flowchart LR
     net([Internet]) --> tun[Tunnel or reverse proxy<br/>terminates TLS]
     tun --> caddy[Caddy + Sablier plugin]
 
-    subgraph edge[network: edge]
-        caddy --- gate[gate<br/>sign-in, access checks]
-        caddy --- sab[Sablier]
-        cp[control plane]
-        sab --- sp2[socket proxy<br/>start / stop only]
-        cp --- sp1[socket proxy<br/>build / exec]
-    end
+    caddy --- gate[gate<br/>sign-in, access checks]
+    caddy --- sab[Sablier]
+    caddy --- cp[control plane]
+    sab --- sp2[socket proxy<br/>managed app lifecycle]
+    cp --- sp1[socket proxy<br/>build / exec]
 
-    subgraph appsnet[network: apps]
+    subgraph appnet1[private internal bridge: expenses]
         a1[app-expenses]
+    end
+    subgraph appnet2[private internal bridge: notes]
         a2[app-notes]
     end
-
-    subgraph datanet[network: data, no internet]
-        pg[(Postgres)]
-    end
+    pg[(Postgres)]
+    egress[filtered HTTP/S proxy]
 
     caddy --> a1
     caddy --> a2
     a1 --> pg
     a2 --> pg
+    a1 --> egress
+    a2 --> egress
+    egress --> api([Public APIs only])
     cp --> pg
     sp1 -.-> dock[[Docker socket]]
     sp2 -.-> dock
 ```
 
-One rule: **an app reaches the gateway and its own database, nothing else.** The
-Docker socket, Sablier, gate and the control plane sit on a network no app
-joins — an app is arbitrary code, and the socket is a root escape. Even Sablier
-and the control plane never touch the raw socket; each gets a proxy scoped to its
-job. Apps run non-root, all capabilities dropped, read-only filesystem, 256 MB
-cap, no published port.
+Each app has its own internal bridge without a host gateway. It reaches Caddy,
+Postgres and an egress proxy for public HTTP/S; neighbouring backends, the LAN,
+host services, gate and Docker proxies have no direct route. Node 24 and npm
+use the configured proxy automatically; other HTTP libraries need proxy support.
+Sablier and the control plane each get a separate Docker proxy. Apps run non-root,
+all capabilities dropped, read-only root filesystem, bounded memory/CPU/pids and
+logs, and no published port. Git builders have private tmpfs work/cache mounts
+and no host files or production secrets.
 
 ## Install
 
 You need Docker + Compose v2 (on storage that isn't an SD card), a domain with a
 **wildcard** `*.apps.example.com` pointing at the machine (a
 [Cloudflare tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
-is easiest behind a home router), and Node 20 on your laptop.
+is easiest behind a home router), and Node 24 on your laptop.
 
 ```bash
 git clone https://github.com/theosorus/nanodeploy && cd nanodeploy
@@ -273,6 +276,11 @@ goes back to the previous commit if not. [docs/UPGRADING.md](docs/UPGRADING.md)
 has the setup, and the one-time steps from a version that used tinyauth and
 Pocket ID.
 
+The November 2026 security upgrade requires a backup and a manual first
+installation: it encrypts stored app
+secrets and recreates legacy containers/networks. Keep the existing encryption
+key; a code-only rollback to the old plaintext format is incompatible.
+
 ## Build apps by asking
 
 "Build me an app" fails with a chatbot because there are a thousand ways to
@@ -302,15 +310,18 @@ Stated plainly, because finding out later is worse:
   filtered by user agent only.
 - **History is short.** Ten versions per app keep their files, three their
   image, three their database snapshot. Older ones are cleaned up.
-- **Apps see each other** on a shared network. Don't put an app open to strangers
-  next to something sensitive.
-- **App secrets sit in clear text** in the control database. Encrypt backups.
+- **Containers share the host kernel.** Keep the OS, Docker and images patched;
+  this isolation is not a separate virtual machine per app.
+- **A compromised app can export its own secrets over public HTTPS.** Stored
+  app/forge credentials are encrypted, but the running app needs its own values.
+  Encrypt full backups, which include the database and its encryption key.
 - **Nothing is backed up for you.** One shared Postgres, one point of loss.
 - **Websockets don't survive sleeping.** Poll, or use reconnecting SSE.
 - **The first request after sleeping gets a waiting page**, not JSON — the
   template's fetch wrapper retries it; a bare `fetch` breaks silently.
-- **Rate limiting covers sign-in only.** Put the console behind an outer access
-  layer if it is reachable from the internet.
+- **Rate limits are local and storage is shared.** Authentication/API budgets
+  and bounded container resources reduce abuse; app data volumes have no disk
+  quotas and a sustained denial of service still needs host/edge protections.
 
 [SECURITY.md](SECURITY.md) is the full threat model: what is enforced, and what
 is deliberately not.
