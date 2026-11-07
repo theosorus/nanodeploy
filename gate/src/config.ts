@@ -13,7 +13,7 @@ const portSuffix = PUBLIC_PORT ? `:${PUBLIC_PORT}` : "";
 
 // Off only for a local test stack served over plain http: secure cookies are
 // what lets the __Host- prefix pin a cookie to one host.
-export const SECURE_COOKIES = process.env.COOKIE_SECURE !== "false";
+export const SECURE_COOKIES = process.env.COOKIE_SECURE !== "false" || SCHEME === "https";
 
 export const AUTH_HOST = `auth.${DOMAIN}`;
 export const CONSOLE_HOST = `deploy.${DOMAIN}`;

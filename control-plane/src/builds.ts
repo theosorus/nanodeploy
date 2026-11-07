@@ -1,12 +1,9 @@
-import AdmZip from "adm-zip";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { chown, lstat, mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { join, posix, resolve } from "node:path";
 import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import { createGunzip } from "node:zlib";
-import tar from "tar-fs";
 import { parseDocument } from "yaml";
 import * as store from "./db.js";
 import * as dk from "./docker.js";
@@ -16,6 +13,7 @@ import { parseManifest } from "./manifest.js";
 import type { Manifest } from "./manifest.js";
 import * as releases from "./releases.js";
 import * as secrets from "./secrets.js";
+import { extractTar, packArtifacts } from "./artifacts.js";
 
 // Deploys from GitHub and GitLab. A push to the connected branch, or a pull
 // request against it, queues a build. One build runs at a time on the whole
@@ -26,8 +24,6 @@ import * as secrets from "./secrets.js";
 
 const sql = store.sql;
 const APPS_DIR = process.env.APPS_DIR ?? "/srv/apps";
-// the same directory as seen by the docker daemon, for the build's bind mount
-const HOST_APPS_DIR = process.env.HOST_APPS_DIR || APPS_DIR;
 const BUILD_DIR = join(APPS_DIR, ".builds");
 const BUILD_TIMEOUT = Number(process.env.BUILD_TIMEOUT_MINUTES ?? 10) * 60_000;
 const PREVIEW_TTL_DAYS = 14;
@@ -96,9 +92,22 @@ export async function init(h: Hooks) {
   await sql`alter table apps add column if not exists preview_of text`;
   await sql`alter table apps add column if not exists preview_pr int`;
   await sql`alter table apps add column if not exists preview_comment text`;
+  if (!(await store.getSetting("security.preview-secrets-isolated"))) {
+    for (const row of await sql<{ slug: string; preview_of: string }[]>`select slug, preview_of from apps where preview_of is not null`) {
+      const [preview, parent] = await Promise.all([store.getApp(row.slug), store.getApp(row.preview_of)]);
+      if (!preview || !parent) continue;
+      const env = { ...preview.env };
+      for (const [key, value] of Object.entries(env)) {
+        if (key !== "DATABASE_URL" && Object.hasOwn(parent.env, key) && parent.env[key] === value) delete env[key];
+      }
+      await store.upsertApp({ slug: row.slug, env });
+    }
+    await store.setSetting("security.preview-secrets-isolated", "1");
+  }
   // a build cut short by a restart cannot resume: say so, and keep the queue
   await sql`update builds set status = 'failed', finished_at = now(),
     log = log || ${"\ninterrupted: the control plane restarted during this build"} where status = 'running'`;
+  await dk.removeOrphanBuilders();
   await rm(BUILD_DIR, { recursive: true, force: true });
   await mkdir(BUILD_DIR, { recursive: true });
   setInterval(() => sweep().catch((err) => console.error("preview sweep failed", err)), 6 * 3_600_000).unref();
@@ -143,6 +152,7 @@ export async function removeProvider(id: string) {
   const [{ n }] = await sql<{ n: number }[]>`select count(*)::int as n from git_connections where provider_id = ${id}`;
   if (n > 0) throw new Error("disconnect its repositories first");
   if (p.kind === "gitlab") await forges.gitlabDisconnect(p).catch(() => {});
+  await sql`delete from webhook_deliveries where id like ${`${id}:%`}`;
   await sql`delete from git_providers where id = ${id}`;
 }
 
@@ -280,15 +290,6 @@ async function kick() {
 
 /* ---------- one build ---------- */
 
-async function chownTree(dir: string) {
-  await chown(dir, 1000, 1000);
-  for (const e of await readdir(dir, { withFileTypes: true })) {
-    const p = join(dir, e.name);
-    if (e.isDirectory()) await chownTree(p);
-    else await chown(p, 1000, 1000).catch(() => {});
-  }
-}
-
 // a 4 GB machine serving apps: wait for some room rather than push them into swap
 async function waitForMemory(say: (s: string) => void) {
   for (let i = 0; i < 30; i++) {
@@ -298,8 +299,6 @@ async function waitForMemory(say: (s: string) => void) {
     await new Promise((r) => setTimeout(r, 10_000));
   }
 }
-
-let cacheReady = false;
 
 async function run(b: Build) {
   const lines: string[] = [];
@@ -319,20 +318,17 @@ async function run(b: Build) {
   const forge = forges.forgeOf(p);
   const work = join(BUILD_DIR, String(b.id));
   const src = join(work, "src");
+  const artifacts = join(work, "artifacts");
+  let outputRoot: string;
   try {
     say(`${c.repo}@${b.sha.slice(0, 7)} ${b.kind === "preview" ? `(pull request #${b.pr})` : `(${b.ref})`} for ${b.target_slug}`);
     const archive = await forge.archive(c.repo, b.sha);
     say(`archive downloaded, ${Math.round(archive.length / 1024)} KB`);
     await mkdir(src, { recursive: true });
-    await pipeline(
-      Readable.from(archive),
-      createGunzip(),
-      // forges wrap the tree in one top directory; links are left out, paths
-      // are kept inside the workspace by tar-fs, owners are not taken from it
-      tar.extract(src, { strip: 1, chown: false, ignore: (_name: string, h: any) => h.type !== "file" && h.type !== "directory" } as any),
-    );
+    await extractTar(Readable.from(archive).pipe(createGunzip()), src, { strip: 1, repository: true });
     const root = resolve(src, c.root_dir);
     if (root !== src && !root.startsWith(src + "/")) throw new Error("root directory escapes the repository");
+    outputRoot = root;
     const rawManifest = await readFile(join(root, "app.yaml"), "utf8").catch(() => null);
     if (rawManifest === null) throw new Error(`no app.yaml in ${c.root_dir}`);
     let manifest = parseManifest(rawManifest);
@@ -346,11 +342,6 @@ async function run(b: Build) {
     if (install || command) {
       await waitForMemory(say);
       await dk.ensureImage(manifest.build.image, say);
-      if (!cacheReady) {
-        await dk.prepareBuildCache(manifest.build.image);
-        cacheReady = true;
-      }
-      await chownTree(src);
       const script = ["set -e", install && `echo "$ ${install.replace(/"/g, '\\"')}"`, install, command && `echo "$ ${command.replace(/"/g, '\\"')}"`, command]
         .filter(Boolean)
         .join("\n");
@@ -358,14 +349,20 @@ async function run(b: Build) {
       const out = await dk.runBuilder({
         name: `nanodeploy-build-${b.id}`,
         image: manifest.build.image,
-        hostWork: join(HOST_APPS_DIR, ".builds", String(b.id), "src"),
+        source: src,
         workdir: posix.join("/work", c.root_dir),
         command: script,
         timeoutMs: BUILD_TIMEOUT,
+        outputs: [
+          ...(manifest.frontend ? [{ path: "dist", destination: artifacts }] : []),
+          ...(manifest.backend ? [{ path: manifest.backend.entry, destination: artifacts }] : []),
+          ...(manifest.database.enabled ? [{ path: manifest.database.migrations, destination: artifacts, optional: true }] : []),
+        ],
       });
       for (const l of out.logs.split("\n")) if (l) lines.push(l);
       if (out.timedOut) throw new Error(`the build took more than ${BUILD_TIMEOUT / 60_000} minutes`);
       if (out.exitCode !== 0) throw new Error(`the build exited with code ${out.exitCode}`);
+      outputRoot = artifacts;
     } else {
       say("nothing to build: no package.json, the files are deployed as they are");
     }
@@ -380,21 +377,7 @@ async function run(b: Build) {
       yamlText = doc.toString();
       manifest = parseManifest(yamlText);
     }
-    const zip = new AdmZip();
-    zip.addFile("app.yaml", Buffer.from(yamlText));
-    if (manifest.frontend) {
-      if (!existsSync(join(root, "dist"))) throw new Error("no dist/ after the build: the frontend must be built into dist/");
-      zip.addLocalFolder(join(root, "dist"), "dist");
-    }
-    if (manifest.backend) {
-      const entry = join(root, manifest.backend.entry);
-      if (!(await lstat(entry).then((s) => s.isFile(), () => false))) throw new Error(`no ${manifest.backend.entry} after the build`);
-      zip.addLocalFile(entry, posix.dirname(manifest.backend.entry) === "." ? "" : posix.dirname(manifest.backend.entry));
-    }
-    if (manifest.database.enabled && existsSync(join(root, manifest.database.migrations))) {
-      zip.addLocalFolder(join(root, manifest.database.migrations), posix.normalize(manifest.database.migrations));
-    }
-    const bytes = zip.toBuffer();
+    const bytes = await packArtifacts(outputRoot, manifest, yamlText);
     if (b.kind === "preview") await preparePreview(c, b, manifest);
 
     const outcome = await hooks.lock(b.target_slug, async () => {
@@ -431,9 +414,9 @@ async function preparePreview(c: Connection, b: Build, m: Manifest) {
     await sql`update apps set preview_of = ${c.slug}, preview_pr = ${b.pr} where slug = ${b.target_slug}`;
     return;
   }
-  const parent = await store.getApp(c.slug);
   const env: Record<string, string> = {};
-  for (const k of m.env) if (parent?.env?.[k]) env[k] = parent.env[k];
+  // A branch author is not necessarily allowed to read production API keys.
+  // Configure separate preview values explicitly in that preview's settings.
   await store.upsertApp({ slug: b.target_slug, name: m.name, access: "private", groups: [], env, declared_env: m.env } as any);
   await sql`update apps set preview_of = ${c.slug}, preview_pr = ${b.pr} where slug = ${b.target_slug}`;
 }
@@ -460,7 +443,8 @@ async function sweep() {
     select a.slug from apps a where a.preview_of is not null and not exists (
       select 1 from builds b where b.target_slug = a.slug and b.created_at > now() - make_interval(days => ${PREVIEW_TTL_DAYS}))`;
   for (const s of stale) await hooks.removeApp(s.slug, true);
-  await sql`delete from webhook_deliveries where received_at < now() - interval '7 days'`;
+  // Keep signed-body fingerprints for the lifetime of their provider. Expiring
+  // them would make an old signed deployment replayable again after a week.
 }
 
 /* ---------- webhooks ---------- */
@@ -479,11 +463,9 @@ export async function webhook(kind: "github" | "gitlab", providerId: string | nu
   if (!forge.verify(headers, body)) return { status: 401, message: "bad signature" };
   if (kind === "github" && headers.get("x-github-event") === "ping") return { status: 200, message: "pong" };
 
-  const delivery = forge.deliveryId(headers);
-  if (delivery) {
-    const fresh = await sql`insert into webhook_deliveries (id) values (${`${p.id}:${delivery}`}) on conflict do nothing returning id`;
-    if (!fresh.length) return { status: 200, message: "already received" };
-  }
+  const delivery = forges.webhookFingerprint(p.id, body);
+  const fresh = await sql`insert into webhook_deliveries (id) values (${delivery}) on conflict do nothing returning id`;
+  if (!fresh.length) return { status: 200, message: "already received" };
   let payload: any;
   try {
     payload = JSON.parse(body.toString("utf8"));
@@ -492,7 +474,11 @@ export async function webhook(kind: "github" | "gitlab", providerId: string | nu
   }
   const event = forge.parse(headers, payload);
   if (!event) return { status: 202, message: "ignored" };
-  return handle(p, event);
+  try { return await handle(p, event); }
+  catch (err) {
+    await sql`delete from webhook_deliveries where id = ${delivery}`;
+    throw err;
+  }
 }
 
 async function handle(p: ProviderRow, e: GitEvent) {
@@ -500,18 +486,23 @@ async function handle(p: ProviderRow, e: GitEvent) {
   let queued = 0;
   if (e.kind === "push") {
     for (const c of conns.filter((x) => x.branch === e.branch)) {
+      const head = await forges.forgeOf(p).head(c.repo, c.branch);
+      if (head.sha !== e.sha) continue; // stale deliveries cannot roll production back
       if (await enqueue(c, { kind: "production", ref: e.branch, sha: e.sha, pr: null, message: e.message, author: e.author })) queued++;
     }
     return { status: 202, message: queued ? `queued ${queued} build(s)` : "no app deploys this branch" };
   }
+  if (!Number.isInteger(e.number) || e.number < 1 || e.number > 999999) return { status: 400, message: "invalid pull request number" };
   for (const c of conns.filter((x) => x.branch === e.base)) {
+    const current = await forges.forgeOf(p).pullRequest(c.repo, e.number);
     if (e.action === "close") {
+      if (current.open) continue; // an old close event must not remove a reopened preview
       await removePreview(c, e.number);
       continue;
     }
     if (!c.previews) continue;
     // a fork's pull request is a stranger's code: never built on its own
-    if (e.fromFork) continue;
+    if (e.fromFork || current.fromFork || !current.open || current.sha !== e.sha || current.base !== c.branch) continue;
     if (await enqueue(c, { kind: "preview", ref: e.head, sha: e.sha, pr: e.number, message: e.message, author: e.author })) queued++;
   }
   return { status: 202, message: queued ? `queued ${queued} preview build(s)` : "nothing to build" };

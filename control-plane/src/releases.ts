@@ -1,4 +1,3 @@
-import AdmZip from "adm-zip";
 import { createHash } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { existsSync } from "node:fs";
@@ -8,8 +7,10 @@ import { parseManifest } from "./manifest.js";
 import type { Manifest } from "./manifest.js";
 import * as store from "./db.js";
 import * as dk from "./docker.js";
-import { applySite } from "./caddy.js";
+import { applySite, dropSite } from "./caddy.js";
 import * as analytics from "./analytics.js";
+import { readBundle, extractBundle } from "./bundle.js";
+export { readBundle, MAX_BUNDLE_BYTES, MAX_BUNDLE_UNPACKED, MAX_BUNDLE_ENTRIES } from "./bundle.js";
 
 // Layout of an app on disk:
 //   <APPS_DIR>/<slug>/releases/<n>/   app.yaml, dist/, server.js, migrations/
@@ -26,14 +27,11 @@ const KEEP_DIRS = 10; // releases whose files stay on disk
 const KEEP_IMAGES = 3; // releases whose image stays built: instant rollback
 const KEEP_SNAPSHOTS = 3; // database snapshots per app
 
-export const MAX_BUNDLE_BYTES = 100 * 1024 * 1024;
-export const MAX_BUNDLE_UNPACKED = 512 * 1024 * 1024;
-export const MAX_BUNDLE_ENTRIES = 5000;
-
 const appDir = (slug: string) => join(APPS_DIR, slug);
 const releasesDir = (slug: string) => join(appDir(slug), "releases");
 export const releaseDir = (slug: string, dir: number) => join(releasesDir(slug), String(dir));
 const currentLink = (slug: string) => join(appDir(slug), "current");
+const appUrl = (slug: string) => `${process.env.PUBLIC_SCHEME === "http" ? "http" : "https"}://${slug}.${process.env.APPS_DOMAIN}${process.env.PUBLIC_PORT ? ":" + process.env.PUBLIC_PORT : ""}`;
 
 export type Release = {
   id: string;
@@ -71,6 +69,31 @@ export async function init() {
   await rm(STAGING_DIR, { recursive: true, force: true });
   await mkdir(STAGING_DIR, { recursive: true });
   await mkdir(SNAPSHOT_DIR, { recursive: true, mode: 0o700 });
+  // A power cut may have happened after replacing the container or current
+  // link, before the database committed the release. Heal from committed state.
+  for (const r of await sql<Release[]>`select * from releases where status = 'building' order by id`) {
+    const previous = await store.getApp(r.slug);
+    const [{ current_release: current }] = await sql<{ current_release: string | null }[]>`
+      select (select current_release from apps where slug = ${r.slug}) as current_release`;
+    const log = [...r.log.split("\n").filter(Boolean), "interrupted: the control plane restarted during this release"];
+    if (current === r.id) {
+      // Older platform versions wrote the app row before finishing the release.
+      await sql`update releases set status = 'superseded' where slug = ${r.slug} and status = 'live'`;
+      await finish(r.id, "live", [...log, "recovered the committed release"]);
+      continue;
+    }
+    if (r.db_snapshot) {
+      const credentials = previous?.db_user && previous.db_password
+        ? { user: previous.db_user, password: previous.db_password } : await store.provisionDatabase(r.slug);
+      await restore(r.slug, credentials.user, r.db_snapshot, false, credentials.password);
+      log.push("database restored from the pre-deployment snapshot");
+    }
+    const live = await liveRelease(r.slug);
+    if (live) await pointCurrent(r.slug, live.dir);
+    else await rm(currentLink(r.slug), { force: true });
+    await dk.removeContainer(r.slug);
+    await finish(r.id, "failed", [...log, "the committed version will be recreated by reconcile"]);
+  }
 }
 
 /* ---------- rows ---------- */
@@ -101,42 +124,15 @@ async function finish(id: string, status: Release["status"], log: string[], extr
 /* ---------- bundle checks ---------- */
 
 // Reads the manifest out of an uploaded zip without extracting anything.
-export function readBundle(bytes: Buffer): Manifest {
-  const zip = new AdmZip(bytes);
-  const entries = zip.getEntries();
-  if (entries.length === 0) throw new Error("empty bundle");
-  if (entries.length > MAX_BUNDLE_ENTRIES) throw new Error("too many files in bundle");
-  const unpacked = entries.reduce((sum, e) => sum + (e.header.size ?? 0), 0);
-  if (unpacked > MAX_BUNDLE_UNPACKED) throw new Error("bundle too large");
-  const manifests = entries.filter((e) => !e.isDirectory && e.entryName === "app.yaml");
-  if (manifests.length !== 1) throw new Error("bundle must contain exactly one top-level app.yaml");
-  return parseManifest(zip.readAsText(manifests[0]));
-}
-
-async function dirStats(dir: string): Promise<{ bytes: number; files: number }> {
-  let bytes = 0;
-  let files = 0;
-  const stack = [dir];
-  while (stack.length) {
-    const current = stack.pop()!;
-    for (const e of await readdir(current, { withFileTypes: true })) {
-      const p = join(current, e.name);
-      if (e.isDirectory()) stack.push(p);
-      else if (e.isFile()) {
-        bytes += (await stat(p)).size;
-        files++;
-      }
-    }
-  }
-  return { bytes, files };
-}
-
 /* ---------- stage: files on disk, nothing live changes ---------- */
 
 // A bundle becomes release <n> in its own directory, next to the live one.
 // Nothing about the running app changes until promote(). One staged release per
 // app at a time: a new upload replaces one that was never confirmed.
 export async function stage(manifest: Manifest, bytes: Buffer, meta: Meta): Promise<Release> {
+  // Git deploys call stage directly too. Never trust a caller to have checked
+  // the archive or allow its manifest to differ from the one saved on disk.
+  if (JSON.stringify(readBundle(bytes)) !== JSON.stringify(manifest)) throw new Error("bundle manifest does not match the release");
   const slug = manifest.slug;
   for (const old of await sql<{ id: string }[]>`select id from releases where slug = ${slug} and status = 'staged'`) {
     await discard(old.id);
@@ -149,12 +145,7 @@ export async function stage(manifest: Manifest, bytes: Buffer, meta: Meta): Prom
   const number = await nextNumber(slug);
   const tmp = await mkdtemp(join(STAGING_DIR, `${slug}-`));
   try {
-    new AdmZip(bytes).extractAllTo(tmp, true);
-    // zip headers can lie about sizes: measure the extracted bundle for real
-    const { bytes: size, files } = await dirStats(tmp);
-    if (files > MAX_BUNDLE_ENTRIES || size > MAX_BUNDLE_UNPACKED) {
-      throw new Error("bundle exceeds the unpacked size limits");
-    }
+    await extractBundle(bytes, tmp);
     await mkdir(releasesDir(slug), { recursive: true });
     const dir = releaseDir(slug, number);
     await rm(dir, { recursive: true, force: true }); // a number freed by a discarded upload
@@ -178,7 +169,8 @@ export async function discard(id: string) {
   const r = await getRelease(id);
   if (!r || r.status !== "staged") return false;
   await sql`delete from releases where id = ${id}`;
-  await rm(releaseDir(r.slug, r.dir), { recursive: true, force: true });
+  const shared = await sql`select 1 from releases where slug = ${r.slug} and dir = ${r.dir} limit 1`;
+  if (!shared.length) await rm(releaseDir(r.slug, r.dir), { recursive: true, force: true });
   return true;
 }
 
@@ -249,7 +241,7 @@ export async function diff(r: Release): Promise<Diff> {
       to: m.backend ? await sizeOf(join(dir, m.backend.entry)) : null,
     },
     migrations: m.database.enabled ? await store.pendingMigrations(join(dir, m.database.migrations), url).catch(() => []) : [],
-    envToSet: m.env.filter((k) => !app?.env?.[k]),
+    envToSet: m.env.filter((k) => !Object.hasOwn(app?.env ?? {}, k)),
     envDropped: (app?.declared_env ?? []).filter((k) => !m.env.includes(k)),
     access: app && app.access !== m.access ? { manifest: m.access, kept: app.access } : null,
     rolesAdded: m.roles.filter((x) => !(app?.roles ?? []).includes(x)),
@@ -282,24 +274,53 @@ async function hostResolves(host: string) {
   }
 }
 
-async function snapshot(slug: string, db: string, release: number) {
+async function snapshot(slug: string, db: string, release: number, password?: string) {
   await mkdir(join(SNAPSHOT_DIR, slug), { recursive: true, mode: 0o700 });
   const file = join(SNAPSHOT_DIR, slug, `r${release}-${Date.now()}.dump`);
-  await dk.dumpDatabase(db, file);
+  const app = password ? { db_password: password, db_user: db } : await store.getApp(slug);
+  if (!app?.db_password || app.db_user !== db) throw new Error("app database credentials unavailable for snapshot");
+  await dk.dumpDatabase(db, file, app.db_password);
   return file;
 }
 
 // The running container is stopped for the restore: pg_restore --clean must
 // drop the tables the app is using. A warm app is started again afterwards.
-async function restore(slug: string, db: string, file: string, restart: boolean) {
+async function restore(slug: string, db: string, file: string, restart: boolean, password?: string) {
   analytics.quiet(slug, 120_000);
   await dk.stopContainer(slug);
   await store.disconnectDatabase(db);
-  await dk.restoreDatabase(db, file);
+  const app = password ? { db_password: password, db_user: db } : await store.getApp(slug);
+  if (!app?.db_password || app.db_user !== db) throw new Error("app database credentials unavailable for restore");
+  await dk.restoreDatabase(db, file, app.db_password);
   if (restart) await dk.startContainer(slug).catch(() => {});
 }
 
 export type Outcome = { ok: true; url: string; log: string[]; release: number };
+
+// Environment changes replace a backend too. Persist only after Docker has
+// accepted the replacement, and recover the previous backend if anything fails.
+export async function replaceEnvironment(current: store.AppRow, env: Record<string, string>) {
+  const backend = Boolean(current.image && current.port);
+  const status = backend ? await dk.appStatus(current.slug) : "missing";
+  const run = (values: Record<string, string>) => dk.runContainer({ slug: current.slug, image: current.image!,
+    port: current.port!, idleTimeout: current.idle_timeout, warm: current.warm, env: values });
+  try {
+    if (backend) {
+      analytics.quiet(current.slug);
+      await run(env);
+      if (!current.warm) await dk.stopContainer(current.slug);
+    }
+    await store.upsertApp({ slug: current.slug, env });
+  } catch (err) {
+    if (backend) {
+      try {
+        await run(current.env);
+        if (status !== "awake" && !current.warm) await dk.stopContainer(current.slug);
+      } catch (recoveryError) { console.error(`environment recovery failed for ${current.slug}`, recoveryError); }
+    }
+    throw err;
+  }
+}
 
 // Labels cannot be changed on a Docker container. Replace it and the route
 // together, then commit the override; reconcile heals an interrupted change
@@ -347,25 +368,36 @@ export async function replaceWarm(current: store.AppRow, warm: boolean) {
 // lock. Until the "current" link moves, the live version is untouched: a build
 // that fails or a migration that fails leaves the app as it was, and a failed
 // migration puts the database back from the snapshot taken just before.
-export async function promote(id: string): Promise<Outcome> {
+export async function promote(id: string, options: {
+  reuseImage?: boolean; skipMigrations?: boolean; restoreSnapshot?: string; log?: string[];
+} = {}): Promise<Outcome> {
   const r = await getRelease(id);
   if (!r || r.status !== "staged") throw new Error("this release is not waiting to go live");
   const m = r.manifest;
   const slug = r.slug;
   const dir = releaseDir(slug, r.dir);
-  const log: string[] = [];
+  const log: string[] = options.log ?? [];
   await sql`update releases set status = 'building' where id = ${id}`;
   const previous = await store.getApp(slug);
   const warm = previous?.warm_override ?? m.idle.warm;
+  if (previous) await adoptLegacy(previous);
+  const previousRelease = await liveRelease(slug);
+  const previousStatus = previous?.port ? await dk.appStatus(slug) : "missing";
   let swapped = false;
+  let containerTouched = false;
+  let routeTouched = false;
+  let databaseTouched = false;
+  let databaseRestored = false;
+  let database: string | null = null;
+  let databasePassword: string | undefined;
   let snapshotFile: string | null = null;
   let applied: string[] = [];
 
   try {
-    const env: Record<string, string> = {};
+    const env: Record<string, string> = Object.create(null);
     for (const key of m.env) {
       const value = previous?.env?.[key];
-      if (value) env[key] = value;
+      if (Object.hasOwn(previous?.env ?? {}, key)) env[key] = value!;
       else log.push(`env ${key} is declared but not set yet, set it in the dashboard`);
     }
 
@@ -390,29 +422,60 @@ export async function promote(id: string): Promise<Outcome> {
     // for code that never shipped
     let image: string | null = previous?.image ?? null;
     if (m.backend) {
-      image = await dk.buildImage(dir, dk.imageTag(slug, r.dir), m.backend.entry, m.backend.port);
-      log.push(`image ${image} built`);
+      image = r.image ?? dk.imageTag(slug, r.dir);
+      if (!options.reuseImage || !(await dk.imageExists(image))) {
+        image = await dk.buildImage(dir, dk.imageTag(slug, r.dir), m.backend.entry, m.backend.port);
+        log.push(`image ${image} built`);
+      } else log.push(`image ${image} reused`);
+      await sql`update releases set image = ${image} where id = ${id}`;
+    }
+
+    if (options.restoreSnapshot) {
+      if (!previous?.db_user) throw new Error("this app has no database to restore");
+      if (previous.port) {
+        containerTouched = true;
+        analytics.quiet(slug, 120_000);
+        await dk.stopContainer(slug);
+      }
+      // A failed rollback must be recoverable too: keep the current database
+      // before restoring an older snapshot, and persist its path before acting.
+      snapshotFile = await snapshot(slug, previous.db_user, r.number);
+      await sql`update releases set db_snapshot = ${snapshotFile} where id = ${id}`;
+      database = previous.db_user;
+      databaseTouched = true;
+      await restore(slug, database, options.restoreSnapshot, false);
+      log.push("database restored from the selected snapshot");
     }
 
     let dbUser = previous?.db_user ?? null;
     let dbPassword = previous?.db_password ?? null;
     if (m.database.enabled) {
-      const existed = Boolean(previous?.db_user);
       const creds = await store.provisionDatabase(slug);
+      const existed = creds.existed;
+      databasePassword = creds.password;
       dbUser = creds.user;
       dbPassword = creds.password;
       env.DATABASE_URL = store.databaseUrl(creds.user, creds.password);
       const migrationsDir = join(dir, m.database.migrations);
-      const pending = await store.pendingMigrations(migrationsDir, env.DATABASE_URL);
+      const pending = options.skipMigrations ? [] : await store.pendingMigrations(migrationsDir, env.DATABASE_URL);
       if (pending.length && existed) {
-        snapshotFile = await snapshot(slug, creds.user, r.number);
+        if (previous?.port) {
+          containerTouched = true;
+          analytics.quiet(slug, 120_000);
+          await dk.stopContainer(slug);
+        }
+        snapshotFile = await snapshot(slug, creds.user, r.number, creds.password);
+        await sql`update releases set db_snapshot = ${snapshotFile} where id = ${id}`;
         log.push(`database snapshot taken before migrating`);
       }
       try {
-        applied = await store.runMigrations(migrationsDir, env.DATABASE_URL);
+        database = creds.user;
+        databaseTouched ||= pending.length > 0;
+        applied = options.skipMigrations ? [] : await store.runMigrations(migrationsDir, env.DATABASE_URL);
       } catch (err: any) {
         if (snapshotFile) {
-          await restore(slug, creds.user, snapshotFile, Boolean(previous?.warm));
+          await restore(slug, creds.user, snapshotFile, Boolean(previous?.warm), creds.password);
+          databaseRestored = true;
           throw new Error(`migration failed (${err?.message ?? err}); the database was restored from the snapshot taken just before`);
         }
         throw new Error(`migration failed: ${err?.message ?? err}`);
@@ -422,6 +485,7 @@ export async function promote(id: string): Promise<Outcome> {
 
     if (m.backend && image) {
       analytics.quiet(slug);
+      containerTouched = true;
       await dk.runContainer({ slug, image, port: m.backend.port, idleTimeout: m.idle.timeout, warm, env });
       // a cold app goes straight back to sleep: a running container sablier did
       // not start would have no session and never scale back down on its own
@@ -429,13 +493,14 @@ export async function promote(id: string): Promise<Outcome> {
       log.push(`backend container ${dk.containerName(slug)} created`);
     } else if (previous?.port) {
       // the backend was dropped from the manifest
+      containerTouched = true;
       await dk.removeContainer(slug);
     }
 
     await pointCurrent(slug, r.dir);
     swapped = true;
 
-    await store.upsertApp({
+    const next = {
       slug,
       name: m.name,
       access,
@@ -450,12 +515,11 @@ export async function promote(id: string): Promise<Outcome> {
       declared_env: m.env,
       roles: m.roles,
       protect: m.protect,
-    } as any);
-    await sql`update apps set current_release = ${id}, deployed_at = now() where slug = ${slug}`;
-    await sql`update releases set status = 'superseded' where slug = ${slug} and status = 'live'`;
-
-    const routed = await applySite((await store.getApp(slug))!);
-    log.push(routed ? "caddy route is live" : "WARNING: caddy refused the new route and the previous config was restored, the app is not reachable");
+    };
+    routeTouched = true;
+    const routed = await applySite({ ...previous, ...next } as store.AppRow);
+    if (!routed) throw new Error("caddy refused the new route");
+    log.push("caddy route is live");
     const host = `${slug}.${process.env.APPS_DOMAIN}`;
     if (!(await hostResolves(host))) {
       log.push(
@@ -464,21 +528,50 @@ export async function promote(id: string): Promise<Outcome> {
       );
     }
     log.push(`release ${r.number} is live`);
-    await finish(id, "live", log, { image, migrations_applied: applied, db_snapshot: snapshotFile });
-    await analytics.markDeploy(slug, r.number, Boolean(m.backend && warm));
-    await prune(slug);
-    return { ok: true, url: `https://${host}`, log, release: r.number };
+    await sql.begin(async (tx) => {
+      await store.upsertApp(next, tx);
+      await tx`update apps set current_release = ${id}, deployed_at = now() where slug = ${slug}`;
+      await tx`update releases set status = 'superseded' where slug = ${slug} and status = 'live'`;
+      await tx`update releases set status = 'live', log = ${log.join("\n")}, finished_at = now(),
+        image = ${m.backend ? image : null}, migrations_applied = ${applied}, db_snapshot = ${snapshotFile} where id = ${id}`;
+    });
   } catch (err: any) {
     log.push(`FAILED: ${err?.message ?? err}`);
-    log.push(swapped ? "the new files were already live when this failed" : "the running version was left untouched");
+    let recovered = true;
+    const recover = async (name: string, fn: () => Promise<unknown>) => {
+      try { await fn(); }
+      catch (e: any) { recovered = false; log.push(`RECOVERY FAILED (${name}): ${e?.message ?? e}`); }
+    };
+    if (databaseTouched && snapshotFile && database && !databaseRestored) {
+      await recover("database", () => restore(slug, database!, snapshotFile!, false, databasePassword));
+    }
+    if (swapped) await recover("files", async () => {
+      if (previousRelease) await pointCurrent(slug, previousRelease.dir);
+      else await rm(currentLink(slug), { force: true });
+    });
+    if (containerTouched) await recover("backend", async () => {
+      if (previous?.image && previous.port) {
+        await dk.runContainer({ slug, image: previous.image, port: previous.port, idleTimeout: previous.idle_timeout,
+          warm: previous.warm, env: previous.env });
+        if (previousStatus !== "awake" && !previous.warm) await dk.stopContainer(slug);
+      } else await dk.removeContainer(slug);
+    });
+    if (routeTouched) await recover("route", async () => {
+      if (!(previous ? await applySite(previous) : await dropSite(slug))) throw new Error("caddy refused recovery");
+    });
+    log.push(recovered ? "the previous version is restored" : "automatic recovery is incomplete; inspect the release log before retrying");
     await finish(id, "failed", log, { migrations_applied: applied, db_snapshot: snapshotFile });
-    if (!swapped) await rm(dir, { recursive: true, force: true });
-    await prune(slug).catch(() => {});
+    if (recovered && r.source !== "rollback") await rm(dir, { recursive: true, force: true });
     const e = new Error(err?.message ?? String(err)) as Error & { log: string[]; untouched: boolean };
     e.log = log;
-    e.untouched = !swapped;
+    e.untouched = !swapped && !containerTouched && !databaseTouched;
     throw e;
   }
+  // Once committed, housekeeping must never turn a live release into a failed
+  // one or trigger compensation of a successful deployment.
+  await analytics.markDeploy(slug, r.number, Boolean(m.backend && warm)).catch((err) => console.error("deploy event failed", err));
+  await prune(slug).catch((err) => console.error("release retention failed", err));
+  return { ok: true, url: appUrl(slug), log, release: r.number };
 }
 
 /* ---------- rollback ---------- */
@@ -496,7 +589,7 @@ export type RollbackInfo = {
 export async function rollbackInfo(target: Release, history: Release[]): Promise<RollbackInfo> {
   // oldest first, so the migrations read in the order they were applied
   const later = history
-    .filter((h) => Number(h.id) > Number(target.id) && h.status !== "failed" && h.status !== "staged")
+    .filter((h) => Number(h.id) > Number(target.id) && (h.status === "live" || h.status === "superseded"))
     .sort((a, b) => Number(a.id) - Number(b.id));
   const migrationsAhead = [...new Set(later.flatMap((h) => h.migrations_applied))];
   // the earliest later release that migrated: its snapshot is the database as
@@ -513,7 +606,7 @@ export async function rollbackInfo(target: Release, history: Release[]): Promise
 export async function rollback(slug: string, targetId: string, withDatabase: boolean, createdBy: string): Promise<Outcome> {
   const target = await getRelease(targetId);
   if (!target || target.slug !== slug) throw new Error("unknown release");
-  if (target.status === "failed" || target.status === "staged") throw new Error("only a release that went live can be restored");
+  if (target.status !== "live" && target.status !== "superseded") throw new Error("only a release that went live can be restored");
   const live = await liveRelease(slug);
   if (live && live.dir === target.dir && !withDatabase) throw new Error("this release is already live");
   const history = await listReleases(slug, 500);
@@ -524,68 +617,21 @@ export async function rollback(slug: string, targetId: string, withDatabase: boo
   const m = target.manifest;
   const app = await store.getApp(slug);
   if (!app) throw new Error("unknown app");
-  const warm = app.warm_override ?? m.idle.warm;
-  const dir = releaseDir(slug, target.dir);
   const log: string[] = [`restoring release ${target.number}`];
-
-  let image: string | null = null;
-  if (m.backend) {
-    image = target.image ?? dk.imageTag(slug, target.dir);
-    if (!(await dk.imageExists(image))) {
-      image = await dk.buildImage(dir, dk.imageTag(slug, target.dir), m.backend.entry, m.backend.port);
-      log.push(`image ${image} rebuilt from the release files`);
-    }
-  }
-  if (withDatabase && app.db_user) {
-    await restore(slug, app.db_user, info.snapshot!, false);
-    log.push("database restored from the snapshot taken before the next migration");
-  } else if (info.migrationsAhead.length) {
+  if (!withDatabase && info.migrationsAhead.length) {
     log.push(`database kept as is: it already has ${info.migrationsAhead.join(", ")}, which this code does not know`);
   }
-
-  const env: Record<string, string> = {};
-  for (const key of m.env) if (app.env?.[key]) env[key] = app.env[key];
-  if (app.env?.DATABASE_URL) env.DATABASE_URL = app.env.DATABASE_URL;
-
-  if (m.backend && image) {
-    analytics.quiet(slug);
-    await dk.runContainer({ slug, image, port: m.backend.port, idleTimeout: m.idle.timeout, warm, env });
-    if (!warm) await dk.stopContainer(slug);
-  } else {
-    await dk.removeContainer(slug);
-  }
-  await pointCurrent(slug, target.dir);
-
   const number = await nextNumber(slug);
   const [row] = await sql<Release[]>`
     insert into releases (slug, number, dir, source, message, commit_sha, commit_message, bundle_sha256,
-                          manifest, image, rollback_of, status, created_by, finished_at)
+                          manifest, image, rollback_of, status, created_by)
     values (${slug}, ${number}, ${target.dir}, 'rollback',
             ${`back to release ${target.number}` + (withDatabase ? ", with its database" : "")},
             ${target.commit_sha}, ${target.commit_message}, ${target.bundle_sha256}, ${sql.json(m as any)},
-            ${image}, ${target.id}, 'building', ${createdBy.slice(0, 120)}, now())
+            ${target.image}, ${target.id}, 'staged', ${createdBy.slice(0, 120)})
     returning *`;
-  await store.upsertApp({
-    slug,
-    name: m.name,
-    port: m.backend?.port ?? null,
-    idle_timeout: m.idle.timeout,
-    warm,
-    env,
-    image,
-    declared_env: m.env,
-    roles: m.roles,
-    protect: m.protect,
-  } as any);
-  await sql`update apps set current_release = ${row.id}, deployed_at = now() where slug = ${slug}`;
-  await sql`update releases set status = 'superseded' where slug = ${slug} and status = 'live'`;
-  const routed = await applySite((await store.getApp(slug))!);
-  if (!routed) log.push("WARNING: caddy refused the route, the previous config was kept");
-  log.push(`release ${number} is live (files of release ${target.number})`);
-  await finish(row.id, "live", log, { image });
-  await analytics.markDeploy(slug, number, Boolean(m.backend && warm));
-  await prune(slug);
-  return { ok: true, url: `https://${slug}.${process.env.APPS_DOMAIN}`, log, release: number };
+  return promote(row.id, { reuseImage: true, skipMigrations: true,
+    restoreSnapshot: withDatabase ? info.snapshot! : undefined, log });
 }
 
 /* ---------- retention ---------- */

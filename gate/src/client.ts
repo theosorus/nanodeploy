@@ -19,7 +19,10 @@ async function post(path: string, body: unknown) {
     credentials: "same-origin",
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+  if (!res.ok) {
+    if (data.login) location.assign(data.login);
+    throw new Error(data.error ?? `HTTP ${res.status}`);
+  }
   return data;
 }
 

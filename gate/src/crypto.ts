@@ -9,16 +9,28 @@ export const sha256 = (s: string) => createHash("sha256").update(s).digest();
 // stored with each hash, so raising them later only affects new passwords.
 const N = 32768;
 const R = 8;
-const P = 1;
+const P = 3;
 const KEYLEN = 32;
 const MAXMEM = 96 * 1024 * 1024;
+let deriving = 0;
+const waiting: (() => void)[] = [];
+export class PasswordBusyError extends Error {}
 
-function derive(password: string, salt: Buffer, n: number, r: number, p: number): Promise<Buffer> {
-  return new Promise((resolve, reject) =>
+async function derive(password: string, salt: Buffer, n: number, r: number, p: number): Promise<Buffer> {
+  if (deriving >= 2) {
+    if (waiting.length >= 8) throw new PasswordBusyError("password service busy; try again shortly");
+    await new Promise<void>((resolve) => waiting.push(resolve));
+  } else deriving++;
+  try {
+    return await new Promise<Buffer>((resolve, reject) =>
     scrypt(password.normalize("NFKC"), salt, KEYLEN, { N: n, r, p, maxmem: MAXMEM }, (err, key) =>
       err ? reject(err) : resolve(key),
     ),
-  );
+    );
+  } finally {
+    const next = waiting.shift();
+    if (next) next(); else deriving--;
+  }
 }
 
 export async function hashPassword(password: string): Promise<string> {
@@ -27,7 +39,10 @@ export async function hashPassword(password: string): Promise<string> {
   return `scrypt$${N}$${R}$${P}$${salt.toString("base64")}$${key.toString("base64")}`;
 }
 
+export const passwordNeedsRehash = (stored: string) => !stored.startsWith(`scrypt$${N}$${R}$${P}$`);
+
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  if (password.length > 1024 || password.normalize("NFKC").length > 200) return false;
   const [algo, n, r, p, salt, key] = stored.split("$");
   if (algo !== "scrypt" || !salt || !key) return false;
   const expected = Buffer.from(key, "base64");
@@ -39,7 +54,7 @@ export async function verifyPassword(password: string, stored: string): Promise<
 // as a wrong password and the response time does not reveal who has an account.
 let dummy: Promise<string> | null = null;
 export async function burnTime(password: string) {
-  dummy ??= hashPassword(randomToken());
+  dummy ??= hashPassword(randomToken()).catch((err) => { dummy = null; throw err; });
   await verifyPassword(password, await dummy);
 }
 
@@ -52,6 +67,7 @@ const COMMON = new Set([
 ]);
 
 export function passwordProblem(password: string, username: string): string | null {
+  password = password.normalize("NFKC");
   if (password.length < 10) return "pwTooShort";
   if (password.length > 200) return "pwTooLong";
   const lower = password.toLowerCase();

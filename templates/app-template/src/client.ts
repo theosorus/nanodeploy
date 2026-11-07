@@ -6,7 +6,13 @@
 const WAKE_RETRIES = 4;
 const WAKE_RETRY_MS = 1500;
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number, signal?: AbortSignal | null) => new Promise<void>((resolve, reject) => {
+  const reason = () => signal?.reason ?? new DOMException("The operation was aborted", "AbortError");
+  if (signal?.aborted) { reject(reason()); return; }
+  const abort = () => { clearTimeout(timer); reject(reason()); };
+  const timer = setTimeout(() => { signal?.removeEventListener("abort", abort); resolve(); }, ms);
+  signal?.addEventListener("abort", abort, { once: true });
+});
 
 export type ApiOptions = {
   // Called the first time a request lands on the waiting page. Show a "waking
@@ -21,17 +27,18 @@ export async function api<T>(path: string, init?: RequestInit, opts?: ApiOptions
   // sablier answers 200/503 with an HTML page while the container starts
   for (let attempt = 0; attempt <= WAKE_RETRIES; attempt++) {
     res = await fetch(path, init);
-    const type = res.headers.get("content-type") ?? "";
-    const waitingPage = (res.status === 200 || res.status === 503) && !type.includes("json");
+    const type = (res.headers.get("content-type") ?? "").toLowerCase();
+    const waitingPage = !res.redirected && (res.status === 200 || res.status === 503) && type.includes("text/html");
     if (!waitingPage) break;
     opts?.onWaking?.(attempt + 1);
     if (attempt === WAKE_RETRIES) {
       throw new Error("the backend did not wake up in time");
     }
-    await sleep(WAKE_RETRY_MS);
+    await sleep(WAKE_RETRY_MS, init?.signal);
   }
 
   const final = res as Response;
+  if (final.status === 204 || final.status === 205) return undefined as T;
   if (!final.ok) {
     let message = final.statusText;
     try {

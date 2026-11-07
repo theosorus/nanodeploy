@@ -9,16 +9,37 @@ networks:
   data:
     name: nanodeploy_data
     external: true
-  # app containers join this one: it only carries caddy and postgres. The
-  # platform services on nanodeploy_edge (socket-proxy especially) must stay
-  # unreachable from an app, which is arbitrary code.
+  # No exposed service shares a network with a Docker socket proxy.
+  console:
+    name: nanodeploy_console
+    external: true
+  wake:
+    name: nanodeploy_wake
+    external: true
+  docker:
+    name: nanodeploy_docker
+    external: true
+  sablier_control:
+    name: nanodeploy_sablier_control
+    external: true
+  gate_data:
+    name: nanodeploy_gate_data
+    external: true
+  legacy:
+    name: nanodeploy_legacy
+    external: true
+  # Legacy network, retained for existing installs. New app containers use
+  # their own internal nanodeploy_app_<slug> bridge, created by the control plane.
   apps:
     name: nanodeploy_apps
     external: true
-  # Git builds run here: the internet (package registries) and nothing of the
-  # platform. Only the throwaway build containers join it.
+  # Internal, without a host gateway. Builders reach public HTTP(S) through
+  # the filtered egress service, which holds no platform credentials.
   build:
-    name: nanodeploy_build
+    name: nanodeploy_build_secure
+    external: true
+  egress:
+    name: nanodeploy_egress
     external: true
 
 volumes:
@@ -30,17 +51,32 @@ volumes:
   caddy_logs:
 
 services:
+  # Only this service gives apps/builds access to public HTTP(S). It has no
+  # socket, database credentials or host files. Direct private/LAN traffic has
+  # no route from an app, and the proxy refuses private and metadata addresses.
+  egress:
+    build: ./egress
+    image: nanodeploy/egress:latest
+    restart: unless-stopped
+    networks: [egress, build]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    pids_limit: 64
+    logging:
+      driver: local
+      options: {max-size: "5m", max-file: "2"}
   caddy:
     build:
       context: ./caddy
       args:
-        CADDY_VERSION: ${CADDY_VERSION:-2.11.4}
+        CADDY_VERSION: ${CADDY_VERSION:-2.11.9}
     image: nanodeploy/caddy:with-sablier
     restart: unless-stopped
     environment:
       APPS_DOMAIN: ${APPS_DOMAIN}
-      # exact token for the CLI bypass matcher in the Caddyfile
-      DEPLOY_TOKEN: ${DEPLOY_TOKEN}
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-127.0.0.1/32 ::1/128}
     ports:
       # host port is overridable: on some hosts 8080 is already taken
       - "127.0.0.1:${CADDY_PORT:-8080}:80"
@@ -50,13 +86,28 @@ services:
       # one until the container is recreated. A Caddyfile edit that silently
       # does nothing after "git pull" is the worst kind of upgrade bug.
       - ./caddy:/etc/caddy:ro
-      - ./caddy/conf.d:/etc/caddy/conf.d
+      - ./caddy/conf.d:/etc/caddy/conf.d:ro
       - ${APPS_DIR}:/srv/apps:ro
       - caddy_data:/data
       - caddy_config:/config
       - caddy_logs:/var/log/caddy
-    # edge for gate and sablier, apps for the reverse_proxy targets
-    networks: [edge, apps]
+    # Pairwise access to gate, console and Sablier. The control plane connects
+    # Caddy to each app's private network for its reverse_proxy targets.
+    networks: [edge, console, wake]
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+      - /srv/apps/.snapshots:ro,noexec,nosuid,nodev,size=1m
+      - /srv/apps/.builds:ro,noexec,nosuid,nodev,size=1m
+      - /srv/apps/.staging:ro,noexec,nosuid,nodev,size=1m
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    pids_limit: 128
+    logging: &bounded_logs
+      driver: local
+      options: {max-size: "10m", max-file: "3"}
 
   sablier:
     image: sablierapp/sablier:${SABLIER_VERSION:-1.17.0}
@@ -69,23 +120,34 @@ services:
       # ":ro" on a socket mount restricts nothing at all (it is the API that
       # writes, not the file). Its own proxy cannot build images or exec.
       DOCKER_HOST: tcp://sablier-socket:2375
-    networks: [edge]
+    networks: [wake, sablier_control]
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=16m"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    pids_limit: 64
+    logging: *bounded_logs
     depends_on: [sablier-socket]
 
   # least privilege for sablier: list, inspect, start, stop, watch events
   sablier-socket:
     image: tecnativa/docker-socket-proxy:${SOCKET_PROXY_VERSION:-0.3.0}
     restart: unless-stopped
-    environment:
-      CONTAINERS: 1
-      EVENTS: 1
-      INFO: 1
-      POST: 1
-      ALLOW_START: 1
-      ALLOW_STOP: 1
+    # CONTAINERS=1 + POST=1 in the stock proxy also permits create and exec.
+    # This explicit ACL allows read operations and start/stop only.
+    entrypoint: [haproxy, -W, -db, -f, /etc/nanodeploy/sablier.cfg]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    networks: [edge]
+      - ./docker-proxy/sablier.cfg:/etc/nanodeploy/sablier.cfg:ro
+    networks: [sablier_control]
+    read_only: true
+    tmpfs: ["/run:rw,noexec,nosuid,nodev,size=1m"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 64m
+    pids_limit: 64
+    logging: *bounded_logs
 
   # the control plane's own proxy: it builds images, so this one is powerful.
   # Nothing on nanodeploy_apps can reach it, which is the whole point of the
@@ -110,7 +172,14 @@ services:
       ALLOW_RESTARTS: 1
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    networks: [edge]
+    networks: [docker]
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=8m", "/run:rw,noexec,nosuid,nodev,size=1m"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 64m
+    pids_limit: 64
+    logging: *bounded_logs
 
   postgres:
     image: postgres:${POSTGRES_VERSION:-16-alpine}
@@ -130,11 +199,13 @@ services:
       - max_connections=60
     volumes:
       - pg_data:/var/lib/postgresql/data
-    # data carries the control plane, apps carries the app containers. Postgres
-    # sits on both so each side reaches it on its own network, and apps never
-    # share a network with the control plane. Postgres publishes no port, so
-    # being on the non-internal apps network does not expose it to the internet.
-    networks: [data, apps]
+    # App bridges are connected dynamically. Neither app, gate nor control
+    # plane shares a database network with either of the other two.
+    networks: [data, gate_data]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    pids_limit: 128
+    logging: *bounded_logs
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 20s
@@ -156,7 +227,14 @@ services:
       PUBLIC_SCHEME: ${PUBLIC_SCHEME:-https}
       PUBLIC_PORT: ${PUBLIC_PORT:-}
     # edge for caddy, data for postgres; never apps
-    networks: [edge, data]
+    networks: [edge, gate_data]
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=16m"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 384m
+    pids_limit: 128
+    logging: *bounded_logs
     depends_on:
       postgres:
         condition: service_healthy
@@ -174,7 +252,7 @@ services:
       ENCRYPTION_KEY: ${POCKETID_ENCRYPTION_KEY:-unused-on-fresh-installs}
     volumes:
       - pocketid_data:/app/data
-    networks: [edge]
+    networks: [legacy]
 
   control-plane:
     build: ./control-plane
@@ -197,8 +275,6 @@ services:
       TIMEZONE: ${TIMEZONE:-UTC}
       # encrypts forge credentials (GitHub App key, GitLab tokens) at rest
       NANODEPLOY_SECRET_KEY: ${NANODEPLOY_SECRET_KEY}
-      # APPS_DIR as the docker daemon sees it: Git builds bind-mount a workspace
-      HOST_APPS_DIR: ${APPS_DIR}
       # upgrade only: import accounts from a Pocket ID still running (legacy)
       POCKETID_URL: http://pocket-id:1411
       POCKETID_API_KEY: ${POCKETID_API_KEY:-}
@@ -206,7 +282,19 @@ services:
       - ${APPS_DIR}:/srv/apps
       - ./caddy/conf.d:/etc/caddy/conf.d
       - caddy_logs:/var/log/caddy:ro
-    networks: [edge, data]
+    networks: [console, docker, data, legacy]
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=768m"]
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE, FOWNER]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1536m
+    pids_limit: 256
+    logging: *bounded_logs
     depends_on:
+      caddy:
+        condition: service_started
+      egress:
+        condition: service_started
       postgres:
         condition: service_healthy

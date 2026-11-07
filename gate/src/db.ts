@@ -122,10 +122,13 @@ export const bumpPasskey = (id: string, counter: number) =>
 export const credentialCount = (userId: string) =>
   sql<{ n: number }[]>`select count(*)::int as n from gate.credentials where user_id = ${userId}`.then((r) => r[0].n);
 
-export const deletePasskey = (userId: string, id: string) =>
-  sql`delete from gate.credentials where user_id = ${userId} and id = ${id} and kind = 'passkey' returning id`.then(
-    (r) => r.length > 0,
-  );
+export const deletePasskey = (userId: string, id: string) => sql.begin(async (tx) => {
+  await tx`select id from gate.users where id = ${userId} for update`;
+  const [{ n }] = await tx`select count(*)::int as n from gate.credentials where user_id = ${userId}`;
+  if (n <= 1) return "last" as const;
+  const rows = await tx`delete from gate.credentials where user_id = ${userId} and id = ${id} and kind = 'passkey' returning id`;
+  return rows.length ? "deleted" as const : "missing" as const;
+});
 
 /* ---------- sessions ---------- */
 
@@ -221,7 +224,7 @@ export const findToken = (raw: string) =>
 
 // single use: the update only succeeds once, even with two tabs racing
 export const useToken = (hash: Buffer) =>
-  sql`update gate.tokens set used_at = now() where token_hash = ${hash} and used_at is null returning 1`.then(
+  sql`update gate.tokens set used_at = now() where token_hash = ${hash} and used_at is null and expires_at > now() returning 1`.then(
     (r) => r.length > 0,
   );
 

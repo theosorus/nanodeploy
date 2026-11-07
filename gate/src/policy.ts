@@ -12,30 +12,39 @@ export type Decision =
   | { ok: true; roles: string[] }
   | { ok: false; status: 401 | 403; reason: string; roles: string[] };
 
-// Paths are compared the way caddy's path matcher compares them, and then some:
-// case-insensitive, percent-decoded (except an encoded slash), dot segments
-// resolved. Every one of those can only make a path look *more* protected, never
-// less: "/API/Admin/../admin/x" is matched as "/api/admin/x".
+// Match the decoded path, including encoded separators. Do not feed a leading
+// double slash to URL: it treats the first segment as a hostname and drops it.
 export function normalizePath(uri: string): string {
   const raw = uri.split("?")[0] || "/";
   let decoded = raw;
-  try {
-    decoded = decodeURI(raw);
-  } catch {
-    // malformed escapes: match on the raw form
+  for (let depth = 0; depth < 4; depth++) {
+    const previous = decoded;
+    try {
+      decoded = decodeURIComponent(decoded);
+    } catch {
+      decoded = decoded.replace(/(?:%[0-9a-f]{2})+/gi, (s) => {
+        try { return decodeURIComponent(s); } catch { return s; }
+      });
+    }
+    if (decoded === previous) break;
   }
-  let path = decoded;
-  try {
-    path = new URL(decoded, "http://x").pathname;
-  } catch {
-    // keep the decoded form
+  const segments: string[] = [];
+  const path = decoded.replace(/\\/g, "/");
+  for (const segment of path.split("/")) {
+    if (segment === "..") segments.pop();
+    else if (segment && segment !== ".") segments.push(segment);
   }
-  return path.toLowerCase();
+  const trailing = /(?:\/|\/\.|\/\.\.)$/.test(path) && segments.length > 0 ? "/" : "";
+  return ("/" + segments.join("/") + trailing).toLowerCase();
 }
 
 export function matchPath(pattern: string, path: string): boolean {
   const p = pattern.toLowerCase();
-  return p.endsWith("*") ? path.startsWith(p.slice(0, -1)) : path === p;
+  if (p.endsWith("*")) {
+    const prefix = p.slice(0, -1);
+    return path.startsWith(prefix) || (prefix.endsWith("/") && path === prefix.slice(0, -1));
+  }
+  return path.replace(/\/+$/, "") === p.replace(/\/+$/, "");
 }
 
 export function protectRule(app: AppPolicy, uri: string) {
@@ -53,8 +62,9 @@ export function effectiveRoles(app: AppPolicy, id: Identity | null, granted: str
 
 export function decide(app: AppPolicy, id: Identity | null, granted: string[], uri: string): Decision {
   const roles = effectiveRoles(app, id, granted);
-  const rule = protectRule(app, uri);
-  const needUser = app.access !== "public" || rule !== null;
+  const path = normalizePath(uri);
+  const rules = app.protect.filter((rule) => matchPath(rule.path, path));
+  const needUser = app.access !== "public" || rules.length > 0;
 
   if (!id) {
     return needUser ? { ok: false, status: 401, reason: "sign in first", roles } : { ok: true, roles };
@@ -70,7 +80,10 @@ export function decide(app: AppPolicy, id: Identity | null, granted: string[], u
       return { ok: false, status: 403, reason: "this app is reserved to some groups", roles };
     }
   }
-  if (rule && !roles.includes(rule.role)) {
+  // All matching requirements apply. A broad rule listed first must never
+  // hide a stronger rule on the application's administrative subtree.
+  const rule = rules.find((rule) => !roles.includes(rule.role));
+  if (rule) {
     return { ok: false, status: 403, reason: `this needs the ${rule.role} role`, roles };
   }
   return { ok: true, roles };

@@ -6,11 +6,18 @@
 	# trusted proxy, so without this the sign-in redirects are built as
 	# http:// and drop browsers back to plain http after they sign in.
 	servers {
-		trusted_proxies static private_ranges
+		trusted_proxies static {$TRUSTED_PROXY_CIDRS:127.0.0.1/32 ::1/128}
+		trusted_proxies_strict
 		# Behind a Cloudflare tunnel every request comes from cloudflared: the
 		# visitor's address is in CF-Connecting-IP. Analytics count visitors by
 		# it; without this line the whole internet would be one visitor.
 		client_ip_headers CF-Connecting-IP X-Forwarded-For
+		max_header_size 16KB
+		timeouts {
+			read_header 10s
+			read_body 2m
+			idle 30s
+		}
 	}
 	# loopback only: the admin API has no auth, and apps share a network with
 	# caddy. The control plane reloads caddy by docker exec, not through this.
@@ -42,13 +49,16 @@
 # other app. The "; " left at the front when the first cookie went is dropped;
 # an app's own cookies are kept.
 (nanodeploy_hide_session) {
-	request_header Cookie "(^|;\s*)((__Host-)?nd_s|tinyauth-[^=;]*)=[^;]*" ""
+	request_header Cookie "(^|;\s*)((__Host-)?nd_(s|root|wa)|tinyauth-[^=;]*)=[^;]*" ""
 	request_header Cookie "^;\s*" ""
-	request_header Authorization "^Bearer\s+ndk_.*$" ""
+	request_header Authorization "(?i)^Bearer\s+nd[kd]_.*$" ""
 }
 
 # identity headers are gateway-owned, never accept them from a client
 (nanodeploy_strip) {
+	# Overwrite any client-supplied value; gate uses this single address for its
+	# rate limiter instead of the attacker-controlled left end of an XFF list.
+	request_header X-Nanodeploy-Client-IP {client_ip}
 	request_header -Remote-User
 	request_header -Remote-Name
 	request_header -Remote-Email
@@ -65,6 +75,9 @@ http://auth.{$APPS_DOMAIN} {
 	header {
 		X-Frame-Options DENY
 		-Server
+	}
+	request_body {
+		max_size 64KB
 	}
 	handle /verify* {
 		respond 404
@@ -84,12 +97,12 @@ http://deploy.{$APPS_DOMAIN} {
 		Referrer-Policy same-origin
 		-Server
 	}
-	# the CLI authenticates with the exact bearer token, the browser with
-	# gate. Matching the literal token (not "Bearer*") closes the bypass
-	# where any fake Authorization header skipped the forward-auth. {$DEPLOY_TOKEN}
-	# is resolved from the caddy container env: rotate it in .env then
-	# "docker compose up -d caddy".
-	@cli header Authorization "Bearer {$DEPLOY_TOKEN}"
+	request_body {
+		max_size 101MB
+	}
+	# The control plane independently verifies every credential. Caddy only
+	# recognizes its syntax, so it no longer needs a copy of the root token.
+	@cli header_regexp Authorization ^Bearer\s[A-Za-z0-9_-]{24,128}$
 	handle @cli {
 		reverse_proxy control-plane:8000
 	}

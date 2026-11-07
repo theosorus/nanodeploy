@@ -116,7 +116,7 @@ export const BUCKETS = [10, 25, 50, 100, 250, 500, 1000, 2500, Infinity];
 
 const minutes = new Map<string, Agg>();
 const visitorsHour = new Map<string, Set<string>>();
-const views: { at: Date; slug: string; visitor: Buffer; path: string; referrer: string | null; country: string | null; device: string; browser: string }[] = [];
+let views: { at: Date; slug: string; visitor: Buffer; path: string; referrer: string | null; country: string | null; device: string; browser: string }[] = [];
 // who was seen in the last minutes, for "online now"
 const recent = new Map<string, Map<string, number>>();
 // wakes waiting for their first real answer, to measure the cold start. A list:
@@ -252,65 +252,117 @@ export async function ingestLine(line: string) {
 // Follows the log by file handle: when caddy rolls it (renames it and opens a
 // new one), the old handle still reads what was written before the roll, then
 // the new file is opened from its start. The position survives restarts.
-let tail: { fh: FileHandle; ino: number; offset: number; rest: string } | null = null;
+let tail: { fh: FileHandle; ino: number; offset: number; rest: Buffer } | null = null;
 
-async function readLog() {
+let work: Promise<unknown> = Promise.resolve();
+let scheduled = false;
+function exclusive<T>(fn: () => Promise<T>) {
+  const next = work.then(fn);
+  work = next.catch(() => {});
+  return next;
+}
+function schedule(fn: () => Promise<void>) {
+  if (scheduled) return Promise.resolve();
+  scheduled = true;
+  return exclusive(fn).finally(() => { scheduled = false; });
+}
+
+export const readLog = () => schedule(readLogOnce);
+export const flush = () => schedule(flushOnce);
+
+async function readLogOnce() {
   if (!tail) {
     const s = await stat(LOG_FILE).catch(() => null);
     if (!s) return;
     const saved = (await store.getSetting("analytics.log")) ?? "";
     const [ino, offset] = saved.split(":").map(Number);
-    tail = { fh: await open(LOG_FILE, "r"), ino: s.ino, offset: ino === s.ino && offset <= s.size ? offset : 0, rest: "" };
+    tail = { fh: await open(LOG_FILE, "r"), ino: s.ino, offset: ino === s.ino && offset <= s.size ? offset : 0, rest: Buffer.alloc(0) };
   }
   for (;;) {
     const buf = Buffer.alloc(256 * 1024);
     const { bytesRead } = await tail.fh.read(buf, 0, buf.length, tail.offset);
     if (bytesRead === 0) break;
     tail.offset += bytesRead;
-    const text = tail.rest + buf.subarray(0, bytesRead).toString("utf8");
-    const lines = text.split("\n");
-    tail.rest = lines.pop() ?? "";
-    for (const line of lines) if (line) await ingestLine(line);
+    // Decode only complete lines: a UTF-8 character may span two read buffers.
+    const text = Buffer.concat([tail.rest, buf.subarray(0, bytesRead)]);
+    let start = 0, end: number;
+    while ((end = text.indexOf(10, start)) >= 0) {
+      if (end > start) await ingestLine(text.subarray(start, end).toString("utf8"));
+      start = end + 1;
+    }
+    tail.rest = Buffer.from(text.subarray(start));
   }
   const s = await stat(LOG_FILE).catch(() => null);
   if (s && s.ino !== tail.ino) {
     await tail.fh.close();
-    tail = { fh: await open(LOG_FILE, "r"), ino: s.ino, offset: 0, rest: "" };
+    tail = { fh: await open(LOG_FILE, "r"), ino: s.ino, offset: 0, rest: Buffer.alloc(0) };
+  } else if (s && s.size < tail.offset) {
+    tail.offset = 0;
+    tail.rest = Buffer.alloc(0);
   }
 }
 
-async function flush() {
+async function flushOnce() {
   const batch = [...minutes.entries()];
   minutes.clear();
-  for (const [key, a] of batch) {
-    const [slug, minute] = key.split("\0");
-    await sql`
-      insert into traffic_minute (slug, minute, requests, pages, api, s4xx, s5xx, bytes, dur_ms, hist)
-      values (${slug}, ${minute}, ${a.requests}, ${a.pages}, ${a.api}, ${a.s4xx}, ${a.s5xx}, ${a.bytes}, ${a.durMs}, ${a.hist})
-      on conflict (slug, minute) do update set
-        requests = traffic_minute.requests + excluded.requests,
-        pages = traffic_minute.pages + excluded.pages,
-        api = traffic_minute.api + excluded.api,
-        s4xx = traffic_minute.s4xx + excluded.s4xx,
-        s5xx = traffic_minute.s5xx + excluded.s5xx,
-        bytes = traffic_minute.bytes + excluded.bytes,
-        dur_ms = traffic_minute.dur_ms + excluded.dur_ms,
-        hist = array(select a + b from unnest(traffic_minute.hist, excluded.hist) as t(a, b))`;
-  }
   const vbatch = [...visitorsHour.entries()];
   visitorsHour.clear();
-  for (const [key, set] of vbatch) {
-    const [slug, hour] = key.split("\0");
-    for (const v of set) {
-      await sql`insert into visitors_hour (slug, hour, visitor) values (${slug}, ${hour}, ${Buffer.from(v, "hex")})
-        on conflict do nothing`;
+  const pv = views;
+  views = [];
+  const position = tail ? `${tail.ino}:${tail.offset - tail.rest.length}` : null;
+  // A dashboard need not be open for expired visitors to leave memory.
+  const cutoff = Date.now() - 5 * 60_000;
+  for (const [slug, seen] of recent) {
+    for (const [visitor, at] of seen) if (at < cutoff) seen.delete(visitor);
+    if (!seen.size) recent.delete(slug);
+  }
+  try {
+    await sql.begin(async (tx) => {
+      for (const [key, a] of batch) {
+        const [slug, minute] = key.split("\0");
+        await tx`
+          insert into traffic_minute (slug, minute, requests, pages, api, s4xx, s5xx, bytes, dur_ms, hist)
+          values (${slug}, ${minute}, ${a.requests}, ${a.pages}, ${a.api}, ${a.s4xx}, ${a.s5xx}, ${a.bytes}, ${a.durMs}, ${a.hist})
+          on conflict (slug, minute) do update set
+            requests = traffic_minute.requests + excluded.requests,
+            pages = traffic_minute.pages + excluded.pages,
+            api = traffic_minute.api + excluded.api,
+            s4xx = traffic_minute.s4xx + excluded.s4xx,
+            s5xx = traffic_minute.s5xx + excluded.s5xx,
+            bytes = traffic_minute.bytes + excluded.bytes,
+            dur_ms = traffic_minute.dur_ms + excluded.dur_ms,
+            hist = array(select a + b from unnest(traffic_minute.hist, excluded.hist) as t(a, b))`;
+      }
+      const visitorRows: { slug: string; hour: string; visitor: Buffer }[] = [];
+      for (const [key, set] of vbatch) {
+        const [slug, hour] = key.split("\0");
+        for (const v of set) visitorRows.push({ slug, hour, visitor: Buffer.from(v, "hex") });
+      }
+      for (let i = 0; i < visitorRows.length; i += 500) {
+        await tx`insert into visitors_hour ${tx(visitorRows.slice(i, i + 500))} on conflict do nothing`;
+      }
+      for (let i = 0; i < pv.length; i += 500) await tx`insert into pageviews ${tx(pv.slice(i, i + 500))}`;
+      if (position) await tx`insert into settings (key, value) values ('analytics.log', ${position})
+        on conflict (key) do update set value = excluded.value`;
+    });
+  } catch (err) {
+    // Retain the entire batch on failure. The transaction also rolls back its
+    // cursor, so a partial write cannot lose or double-count the other rows.
+    for (const [key, a] of batch) {
+      const newer = minutes.get(key);
+      if (!newer) minutes.set(key, a);
+      else {
+        for (const field of ["requests", "pages", "api", "s4xx", "s5xx", "bytes", "durMs"] as const) newer[field] += a[field];
+        for (let i = 0; i < a.hist.length; i++) newer.hist[i] += a.hist[i];
+      }
     }
+    for (const [key, set] of vbatch) {
+      if (!visitorsHour.has(key)) visitorsHour.set(key, set);
+      else for (const visitor of set) visitorsHour.get(key)!.add(visitor);
+    }
+    views = [...pv, ...views];
+    throw err;
   }
-  const pv = views.splice(0, views.length);
-  for (const v of pv) {
-    await sql`insert into pageviews ${sql(v)}`;
-  }
-  if (tail) await store.setSetting("analytics.log", `${tail.ino}:${tail.offset - Buffer.byteLength(tail.rest)}`);
 }
 
 /* ---------- containers: awake, asleep, crashed ---------- */
@@ -401,11 +453,16 @@ export function start() {
   dk.followAppEvents((e) => void onContainerEvent(e).catch((err) => console.error("analytics event failed", err)));
 }
 
-export const forgetApp = async (slug: string) => {
+export const forgetApp = (slug: string) => exclusive(async () => {
+  for (const key of minutes.keys()) if (key.startsWith(slug + "\0")) minutes.delete(key);
+  for (const key of visitorsHour.keys()) if (key.startsWith(slug + "\0")) visitorsHour.delete(key);
+  views = views.filter((v) => v.slug !== slug);
+  for (const map of [recent, pendingWake, quietUntil, stopping, oomAt]) map.delete(slug);
   for (const table of ["traffic_minute", "visitors_hour", "pageviews", "app_events", "resource_samples"]) {
     await sql.unsafe(`delete from ${table} where slug = $1`, [slug]);
   }
-};
+  await sql`delete from gate.member_activity where slug = ${slug}`;
+});
 
 /* ---------- reading it back ---------- */
 

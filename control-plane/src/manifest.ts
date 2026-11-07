@@ -20,8 +20,9 @@ export type Manifest = {
 };
 
 // "--pr-<n>" is the suffix of a pull request preview, made by the platform
-const SLUG_RE = /^[a-z][a-z0-9-]{1,30}(--pr-\d{1,6})?$/;
+const SLUG_RE = /^[a-z][a-z0-9-]{0,29}[a-z0-9](--pr-\d{1,6})?$/;
 export const isPreviewSlug = (slug: string) => /--pr-\d{1,6}$/.test(slug);
+export const PLATFORM_ENV = new Set(["DATABASE_URL", "PORT", "HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "NO_PROXY", "no_proxy", "NODE_USE_ENV_PROXY"]);
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 const IDLE_RE = /^\d+(ms|s|m|h)$/;
 // role names travel in a header as a comma separated list
@@ -37,21 +38,33 @@ const ENV_MAX = 64;
 // every reload fails from then on, and the gateway can no longer be updated.
 export const RESERVED_SLUGS = new Set(["deploy", "auth", "id", "www"]);
 
+export const isAppSlug = (slug: unknown): slug is string =>
+  typeof slug === "string" && SLUG_RE.test(slug) &&
+  !slug.replace(/--pr-\d{1,6}$/, "").includes("--") &&
+  !RESERVED_SLUGS.has(slug.replace(/--pr-\d{1,6}$/, ""));
+
 const bad = (msg: string): never => {
   throw new Error(msg);
 };
 
 export function parseManifest(raw: string): Manifest {
-  const m = parse(raw) as Record<string, any>;
-  if (!m || typeof m !== "object") bad("manifest must be a yaml object");
-  if (!m.slug || !SLUG_RE.test(m.slug)) {
-    bad("slug must match [a-z][a-z0-9-]{1,30}");
+  if (Buffer.byteLength(raw) > 64 * 1024) bad("manifest is larger than 64 KB");
+  const value: unknown = parse(raw, { maxAliasCount: 20, uniqueKeys: true });
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("manifest must be a yaml object");
+  const m = value as Record<string, any>;
+  if (!isAppSlug(m.slug)) {
+    bad("slug must be 2 to 31 lowercase letters, digits or dashes, end with a letter or digit, and not use a reserved name or separator");
   }
-  if (String(m.slug).replace(/--pr-\d{1,6}$/, "").includes("--")) {
-    bad(`slug must not contain "--": that separator is reserved for previews`);
+  for (const key of ["backend", "database", "idle", "build"]) {
+    const value = m[key];
+    if (value !== undefined && !(key === "backend" && value === false) &&
+        (!value || typeof value !== "object" || Array.isArray(value))) bad(`${key} must be an object`);
   }
-  if (RESERVED_SLUGS.has(m.slug)) {
-    bad(`slug "${m.slug}" is reserved by the platform, pick another one`);
+  for (const [key, value] of [["frontend", m.frontend], ["database.enabled", m.database?.enabled], ["idle.warm", m.idle?.warm]]) {
+    if (value !== undefined && typeof value !== "boolean") bad(`${key} must be a boolean`);
+  }
+  for (const key of ["groups", "env", "roles", "protect"]) {
+    if (m[key] !== undefined && !Array.isArray(m[key])) bad(`${key} must be a list`);
   }
   const access: Access = m.access ?? "private";
   if (!["public", "private", "groups"].includes(access)) {
@@ -81,19 +94,22 @@ export function parseManifest(raw: string): Manifest {
   }
 
   const entry = String(m.backend?.entry ?? "server.js").trim();
-  if (!entry || entry.includes("..") || entry.startsWith("/") || entry.includes("\\")) {
+  if (!entry || !/^[A-Za-z0-9_.\/-]+$/.test(entry) || entry.split("/").includes("..") || entry.startsWith("/") || entry.endsWith("/") || entry === "Dockerfile") {
     bad("backend.entry must be a plain relative path inside the bundle");
   }
+  if (m.backend?.port !== undefined && typeof m.backend.port !== "number") bad("backend.port must be a number");
   const port = Number(m.backend?.port ?? 3000);
   if (port < 1 || port > 65535 || !Number.isInteger(port)) {
     bad(`backend.port must be an integer in [1, 65535], got ${port}`);
   }
 
   const timeout = String(m.idle?.timeout ?? "10m");
-  if (!IDLE_RE.test(timeout)) bad(`idle.timeout must match \\d+(ms|s|m|h), got ${timeout}`);
+  if (!IDLE_RE.test(timeout) || !Number.isSafeInteger(Number(timeout.replace(/\D/g, ""))) || Number(timeout.replace(/\D/g, "")) <= 0) {
+    bad(`idle.timeout must be a positive duration matching \\d+(ms|s|m|h), got ${timeout}`);
+  }
 
   const migrations = String(m.database?.migrations ?? "./migrations");
-  if (migrations.includes("..") || migrations.startsWith("/")) {
+  if (!migrations || !/^[A-Za-z0-9_.\/-]+$/.test(migrations) || migrations.split("/").includes("..") || migrations.startsWith("/")) {
     bad("database.migrations must stay inside the bundle");
   }
 
@@ -105,6 +121,7 @@ export function parseManifest(raw: string): Manifest {
     if (typeof key !== "string" || !ENV_KEY_RE.test(key)) {
       bad(`env names must match [A-Za-z_][A-Za-z0-9_]* , got: ${String(key).slice(0, 40)}`);
     }
+    if (PLATFORM_ENV.has(key)) bad(`env ${key} is managed by the platform`);
   }
 
   const roles = [...new Set(Array.isArray(m.roles) ? m.roles : [])];
@@ -117,7 +134,7 @@ export function parseManifest(raw: string): Manifest {
   const protect = (Array.isArray(m.protect) ? m.protect : []).map((p: any) => {
     const path = String(p?.path ?? "");
     const role = String(p?.role ?? "");
-    if (!PROTECT_RE.test(path) || path.length > 128) {
+    if (!PROTECT_RE.test(path) || path.length > 128 || path.includes("//") || path.split("/").some((s) => s === "." || s === "..")) {
       bad(`protect path must start with / and may only end with *, got: ${path.slice(0, 60)}`);
     }
     if (!roles.includes(role)) bad(`protect ${path} needs role "${role}", which is not in roles`);
@@ -133,7 +150,7 @@ export function parseManifest(raw: string): Manifest {
     if (/[\r\n\0]/.test(s) || s.length > 500) bad(`build.${what} must be a single line of at most 500 characters`);
     return s.trim() || fallback;
   };
-  const image = line(m.build?.image, "image", "node:20-bookworm-slim")!;
+  const image = line(m.build?.image, "image", "node:24-bookworm-slim")!;
   if (!/^[a-z0-9][a-z0-9._\/:@-]{0,199}$/.test(image)) bad(`build.image is not an image name: ${image.slice(0, 60)}`);
   const build = {
     image,

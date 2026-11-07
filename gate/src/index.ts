@@ -2,7 +2,9 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import type { Context } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import { HTTPException } from "hono/http-exception";
 import { randomUUID } from "node:crypto";
 import {
   generateAuthenticationOptions,
@@ -29,7 +31,7 @@ import {
   originOf,
   slugOfHost,
 } from "./config.js";
-import { burnTime, hashPassword, passwordProblem, sha256, verifyPassword } from "./crypto.js";
+import { burnTime, hashPassword, PasswordBusyError, passwordNeedsRehash, passwordProblem, sha256, verifyPassword } from "./crypto.js";
 import * as db from "./db.js";
 import { ago, pickLang, translator } from "./i18n.js";
 import type { Lang } from "./i18n.js";
@@ -37,10 +39,30 @@ import { accountPage, forbiddenPage, loginPage, messagePage, tokenPage } from ".
 import { canOpen, decide, effectiveRoles } from "./policy.js";
 import type { Identity } from "./policy.js";
 import * as limit from "./ratelimit.js";
+import { recentlyAuthenticated, safeRedirectPath, sameRequestOrigin } from "./request-security.js";
 
 await db.waitForSchema();
 
 const app = new Hono();
+app.onError((err, c) => {
+  if (err instanceof PasswordBusyError) {
+    c.header("Retry-After", "5");
+    return c.json({ error: "password service busy; try again shortly" }, 429);
+  }
+  if (err instanceof HTTPException) return err.getResponse();
+  if (err instanceof SyntaxError) return c.json({ error: "invalid request body" }, 400);
+  console.error("gate request failed", err);
+  return c.json({ error: "internal error" }, 500);
+});
+app.use("*", async (c, next) => {
+  c.header("Cache-Control", "no-store");
+  c.header("X-Content-Type-Options", "nosniff");
+  c.header("X-Frame-Options", "DENY");
+  c.header("Referrer-Policy", "no-referrer");
+  c.header("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; script-src 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'");
+  await next();
+});
+app.use("*", bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.json({ error: "payload too large" }, 413) }));
 
 /* ---------- small helpers ---------- */
 
@@ -48,7 +70,17 @@ const hostOf = (c: Context) => (c.req.header("host") ?? "").toLowerCase().replac
 const langOf = (c: Context): Lang => pickLang(c.req.header("accept-language"));
 const tOf = (c: Context) => translator(langOf(c));
 // caddy sets X-Forwarded-For from the client address it trusts
-const ipOf = (c: Context) => (c.req.header("x-forwarded-for") ?? "").split(",")[0].trim() || "unknown";
+const ipOf = (c: Context) => c.req.header("x-nanodeploy-client-ip") ?? "unknown";
+app.use("*", async (c, next) => {
+  if (c.req.method === "POST") {
+    const wait = limit.take(`post:${ipOf(c)}`, 60, 60_000);
+    if (wait) {
+      c.header("Retry-After", String(wait));
+      return c.json({ error: "too many requests" }, 429);
+    }
+  }
+  await next();
+});
 const wantsHtml = (c: Context, method: string) =>
   method === "GET" && (c.req.header("accept") ?? "").includes("text/html");
 
@@ -60,9 +92,7 @@ const headerSafe = (s: string) => Buffer.from(s.replace(/[\r\n]/g, " "), "utf8")
 // Every state-changing request on the auth host must come from one of its own
 // pages. Browsers send Origin on POST, form or fetch alike.
 function sameOrigin(c: Context) {
-  const origin = c.req.header("origin");
-  if (origin) return origin === AUTH_ORIGIN;
-  return c.req.header("sec-fetch-site") === "same-origin";
+  return sameRequestOrigin(c.req.header("origin"), c.req.header("sec-fetch-site"), AUTH_ORIGIN);
 }
 
 const cookieBase = { path: "/", httpOnly: true, secure: SECURE_COOKIES, sameSite: "Lax" as const };
@@ -86,7 +116,7 @@ function safeTarget(to: string | undefined): URL | null {
 }
 
 // a path on the current host, never "//evil.example" or "/\evil.example"
-const safePath = (p: string | undefined) => (p && /^\/(?![\/\\])/.test(p) ? p : "/");
+const safePath = safeRedirectPath;
 
 /* ---------- identity ---------- */
 
@@ -135,7 +165,7 @@ app.use("*", async (c, next) => {
   if (host === AUTH_HOST) {
     c.header("X-Frame-Options", "DENY");
     c.header("X-Content-Type-Options", "nosniff");
-    c.header("Referrer-Policy", "same-origin");
+    c.header("Referrer-Policy", "no-referrer");
     c.header(
       "Content-Security-Policy",
       "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; script-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'",
@@ -182,6 +212,13 @@ app.get("/verify", async (c) => {
   const uri = c.req.header("x-forwarded-uri") ?? "/";
   const method = c.req.header("x-forwarded-method") ?? "GET";
   const { id, session } = await identify(c, host);
+
+  // Sibling apps are same-site. SameSite cookies alone do not stop a
+  // compromised app from submitting a form with another app's session.
+  if (id?.via === "session" && !["GET", "HEAD", "OPTIONS"].includes(method) &&
+      !sameRequestOrigin(c.req.header("origin"), c.req.header("sec-fetch-site"), originOf(host))) {
+    return c.json({ error: "cross-origin request refused" }, 403);
+  }
 
   if (slug === CONSOLE) {
     // the console is for administrators, signed in recently, in a browser:
@@ -259,6 +296,9 @@ app.get("/_nd/me", async (c) => {
   const { id } = await identify(c, host);
   c.header("Cache-Control", "no-store");
   if (!id) return c.json({ anonymous: true, login: "/_nd/login", logout: "/_nd/logout" });
+  if (id.via === "key" && id.keyApps && !id.keyApps.includes(slug)) {
+    return c.json({ error: "this access key is not valid for this app" }, 403);
+  }
   let roles: string[] = [];
   if (slug !== CONSOLE) {
     const policy = await db.getApp(slug);
@@ -323,7 +363,7 @@ const needsFresh = (target: URL | null) => Boolean(target && slugOfHost(target.h
 app.get("/login", async (c) => {
   const target = safeTarget(c.req.query("to"));
   const root = await rootSession(c);
-  if (root && (!needsFresh(target) || isFresh(root.authenticated_at))) {
+  if (root && c.req.query("fresh") !== "1" && (!needsFresh(target) || isFresh(root.authenticated_at))) {
     return c.redirect(await destination(root.id_hash, target), 302);
   }
   return c.html(
@@ -360,6 +400,7 @@ app.post("/login", async (c) => {
     return render(t("wrongCredentials"), 401);
   }
   limit.succeeded(keys);
+  if (hash && passwordNeedsRehash(hash)) await db.setPassword(user.id, await hashPassword(password));
   await db.markPasswordUsed(user.id);
   await db.audit(user.id, "login", "password", { ip: ipOf(c) });
   const rootHash = await startRoot(c, user);
@@ -384,7 +425,7 @@ const passkeyCookie = (c: Context, id: string) =>
 
 app.post("/webauthn/login/options", async (c) => {
   if (!sameOrigin(c)) return c.json({ error: "cross-origin request refused" }, 403);
-  const options = await generateAuthenticationOptions({ rpID: RP_ID, userVerification: "preferred" });
+  const options = await generateAuthenticationOptions({ rpID: RP_ID, userVerification: "required" });
   passkeyCookie(c, await db.saveChallenge(options.challenge, null));
   return c.json(options);
 });
@@ -409,6 +450,7 @@ app.post("/webauthn/login/verify", async (c) => {
       expectedChallenge: challenge.challenge,
       expectedOrigin: AUTH_ORIGIN,
       expectedRPID: RP_ID,
+      requireUserVerification: true,
       credential: {
         id: passkey.webauthn_id,
         publicKey: new Uint8Array(passkey.public_key),
@@ -439,14 +481,14 @@ async function registrant(c: Context, token: unknown): Promise<{ user: db.User; 
     return user && user.status === "active" ? { user, tokenRow: row } : null;
   }
   const root = await rootSession(c);
-  return root ? { user: root.user, tokenRow: null } : null;
+  return root && recentlyAuthenticated(root.authenticated_at) ? { user: root.user, tokenRow: null } : null;
 }
 
 app.post("/webauthn/register/options", async (c) => {
   if (!sameOrigin(c)) return c.json({ error: "cross-origin request refused" }, 403);
   const body = await c.req.json().catch(() => ({}));
   const who = await registrant(c, body?.token);
-  if (!who) return c.json({ error: "sign in first" }, 401);
+  if (!who) return c.json({ error: "confirm sign in first", login: "/login?fresh=1" }, 401);
   const existing = await db.passkeysOf(who.user.id);
   const options = await generateRegistrationOptions({
     rpName: RP_NAME,
@@ -457,7 +499,7 @@ app.post("/webauthn/register/options", async (c) => {
     attestationType: "none",
     excludeCredentials: existing.map((p) => ({ id: p.webauthn_id, transports: p.transports as AuthenticatorTransportFuture[] })),
     // discoverable: the login page asks for "a passkey", not for a username first
-    authenticatorSelection: { residentKey: "required", userVerification: "preferred" },
+    authenticatorSelection: { residentKey: "required", userVerification: "required" },
   });
   passkeyCookie(c, await db.saveChallenge(options.challenge, who.user.id));
   return c.json(options);
@@ -477,6 +519,7 @@ app.post("/webauthn/register/verify", async (c) => {
       expectedChallenge: challenge.challenge,
       expectedOrigin: AUTH_ORIGIN,
       expectedRPID: RP_ID,
+      requireUserVerification: true,
     });
     if (!result.verified || !result.registrationInfo) throw new Error("not verified");
     info = result.registrationInfo;
@@ -589,9 +632,12 @@ async function accountView(c: Context, root: db.Session, extra: { newKey?: strin
 }
 
 // every /account route needs the root session; without one, sign in and come back
-async function requireRoot(c: Context) {
+async function requireRoot(c: Context, recent = false) {
   const root = await rootSession(c);
   if (!root) return { root: null, redirect: c.redirect(`/login?to=${encodeURIComponent(`${AUTH_ORIGIN}/account`)}`, 303) };
+  if (recent && !recentlyAuthenticated(root.authenticated_at)) {
+    return { root: null, redirect: c.redirect(`/login?fresh=1&to=${encodeURIComponent(`${AUTH_ORIGIN}/account`)}`, 303) };
+  }
   return { root, redirect: null };
 }
 
@@ -606,7 +652,7 @@ app.get("/account", async (c) => {
 app.post("/account/password", async (c) => {
   const t = tOf(c);
   if (!sameOrigin(c)) return c.text("cross-origin request refused", 403);
-  const { root, redirect } = await requireRoot(c);
+  const { root, redirect } = await requireRoot(c, true);
   if (!root) return redirect;
   const form = await c.req.parseBody();
   const current = await db.passwordOf(root.user.id);
@@ -624,6 +670,8 @@ app.post("/account/password", async (c) => {
   if (problem) return c.html(await accountView(c, root, { error: t(problem as Parameters<typeof t>[0]) }), 400);
   if (password !== String(form.confirm ?? "")) return c.html(await accountView(c, root, { error: t("pwMismatch") }), 400);
   await db.setPassword(root.user.id, await hashPassword(password));
+  await db.endUserSessions(root.user.id);
+  await startRoot(c, root.user);
   await db.audit(root.user.id, "password_changed", null);
   return c.html(await accountView(c, root, { notice: t("passwordSaved") }));
 });
@@ -631,25 +679,35 @@ app.post("/account/password", async (c) => {
 app.post("/account/passkeys/:id/delete", async (c) => {
   const t = tOf(c);
   if (!sameOrigin(c)) return c.text("cross-origin request refused", 403);
-  const { root, redirect } = await requireRoot(c);
+  const { root, redirect } = await requireRoot(c, true);
   if (!root) return redirect;
-  if ((await db.credentialCount(root.user.id)) <= 1) {
+  if (!/^\d{1,18}$/.test(c.req.param("id"))) return c.notFound();
+  if ((await db.deletePasskey(root.user.id, c.req.param("id"))) === "last") {
     return c.html(await accountView(c, root, { error: t("lastCredential") }), 400);
   }
-  await db.deletePasskey(root.user.id, c.req.param("id"));
   await db.audit(root.user.id, "passkey_removed", c.req.param("id"));
   return c.redirect("/account", 303);
 });
 
 app.post("/account/keys", async (c) => {
   if (!sameOrigin(c)) return c.text("cross-origin request refused", 403);
-  const { root, redirect } = await requireRoot(c);
+  const { root, redirect } = await requireRoot(c, true);
   if (!root) return redirect;
   const form = await c.req.parseBody();
   const label = String(form.label ?? "").replace(/[\r\n]/g, " ").trim().slice(0, 60) || "key";
   const slug = String(form.app ?? "");
   if ((await db.accessKeysOf(root.user.id)).length >= 20) return c.redirect("/account", 303);
-  const apps = slug && /^[a-z][a-z0-9-]{1,62}$/.test(slug) ? [slug] : null;
+  if (slug) {
+    if (!/^[a-z][a-z0-9-]{1,62}$/.test(slug)) return c.json({ error: "invalid app" }, 400);
+    const policy = await db.getApp(slug);
+    const groups = await groupsFor(root.user.id);
+    const granted = policy ? await db.grantedRoles(slug, root.user.id, groups.map((g) => g.id)) : [];
+    const identity: Identity = { user: root.user, groups, via: "session" };
+    if (!policy || !canOpen(policy, identity, effectiveRoles(policy, identity, granted))) {
+      return c.json({ error: "unknown or inaccessible app" }, 400);
+    }
+  }
+  const apps = slug ? [slug] : null;
   const key = await db.createAccessKey(root.user.id, label, apps, 90);
   await db.audit(root.user.id, "access_key_created", label, { apps });
   // shown in this response only: there is no way to read it back
@@ -658,8 +716,9 @@ app.post("/account/keys", async (c) => {
 
 app.post("/account/keys/:id/delete", async (c) => {
   if (!sameOrigin(c)) return c.text("cross-origin request refused", 403);
-  const { root, redirect } = await requireRoot(c);
+  const { root, redirect } = await requireRoot(c, true);
   if (!root) return redirect;
+  if (!/^\d{1,18}$/.test(c.req.param("id"))) return c.notFound();
   await db.deleteAccessKey(root.user.id, c.req.param("id"));
   await db.audit(root.user.id, "access_key_removed", c.req.param("id"));
   return c.redirect("/account", 303);

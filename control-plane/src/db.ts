@@ -1,8 +1,11 @@
 import postgres from "postgres";
+import type { Sql, TransactionSql } from "postgres";
 import { createHash, randomBytes } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { initGateSchema } from "./gate-schema.js";
+import { openAppSecrets, sealEnvironment, sealDatabasePassword } from "./app-secrets.js";
+import * as secrets from "./secrets.js";
 
 const admin = postgres(process.env.POSTGRES_URL!, { max: 2, idle_timeout: 20 });
 
@@ -71,6 +74,7 @@ export type AppRow = {
 
 // added after the first release, existing installs need the column too
 export async function migrateState() {
+  if (!secrets.ready()) throw new Error("NANODEPLOY_SECRET_KEY is required to protect application secrets; run ./install.sh before starting");
   try {
     await admin`alter table apps add column if not exists warm boolean not null default false`;
     await admin`alter table apps add column if not exists warm_override boolean`;
@@ -124,6 +128,15 @@ export async function migrateState() {
       created_at timestamptz not null default now(),
       last_used_at timestamptz
     )`;
+  // Move existing cleartext values to ciphertext without changing the public
+  // API or keeping a second plaintext copy. A restart is safe and idempotent.
+  for (const row of await admin<AppRow[]>`select * from apps`) {
+    const plain = openAppSecrets(row);
+    if (typeof row.env === "string" && (!row.db_password || row.db_password.startsWith("v1."))) continue;
+    await admin`update apps set env = ${admin.json(sealEnvironment(row.slug, plain.env))},
+      db_password = ${plain.db_password ? sealDatabasePassword(row.slug, plain.db_password) : null}
+      where slug = ${row.slug}`;
+  }
 }
 
 // after migrateState: the gate role is granted columns added there
@@ -190,24 +203,30 @@ export async function verifyDeployKey(key: string): Promise<{ id: string; slug: 
 }
 
 export const listApps = () =>
-  admin<AppRow[]>`select * from apps order by slug`;
+  admin<AppRow[]>`select * from apps order by slug`.then((rows) => rows.map(openAppSecrets));
 
 export const getApp = (slug: string) =>
-  admin<AppRow[]>`select * from apps where slug = ${slug}`.then((r) => r[0]);
+  admin<AppRow[]>`select * from apps where slug = ${slug}`.then((r) => r[0] && openAppSecrets(r[0]));
 
 // Partial rows are common (env-only changes, image refresh after a rebuild).
 // INSERT ... ON CONFLICT would null the NOT NULL columns a partial row omits,
 // and a bare update must not touch deployed_at: only a real deploy bumps it.
-export async function upsertApp(row: Partial<AppRow> & { slug: string }) {
+export async function upsertApp(row: Partial<AppRow> & { slug: string }, query: Sql | TransactionSql = admin) {
   // postgres.js sends a JS array as a postgres array: protect is jsonb, say so
-  if (Array.isArray(row.protect)) row = { ...row, protect: admin.json(row.protect) as any };
-  const existing = await getApp(row.slug);
+  if (Array.isArray(row.protect)) row = { ...row, protect: query.json(row.protect) as any };
+  const [stored] = await query<AppRow[]>`select * from apps where slug = ${row.slug}`;
+  const existing = stored && openAppSecrets(stored);
+  const encode = (value: Partial<AppRow> & { slug: string }) => ({
+    ...value,
+    env: query.json(sealEnvironment(value.slug, value.env ?? {})),
+    db_password: value.db_password ? sealDatabasePassword(value.slug, value.db_password) : null,
+  });
   if (existing) {
     const merged = { ...existing, ...row, deployed_at: existing.deployed_at };
-    if (Array.isArray(merged.protect)) merged.protect = admin.json(merged.protect) as any;
-    await admin`update apps set ${admin(merged)} where slug = ${row.slug}`;
+    if (Array.isArray(merged.protect)) merged.protect = query.json(merged.protect) as any;
+    await query`update apps set ${query(encode(merged))} where slug = ${row.slug}`;
   } else {
-    await admin`insert into apps ${admin(row)}`;
+    await query`insert into apps ${query(encode(row))}`;
   }
 }
 
@@ -226,25 +245,30 @@ export async function deleteApp(slug: string) {
 export async function provisionDatabase(slug: string) {
   const existing = await getApp(slug);
   if (existing?.db_user && existing.db_password) {
-    return { user: existing.db_user, password: existing.db_password };
+    return { user: existing.db_user, password: existing.db_password, existed: true };
   }
   const user = `app_${slug.replace(/-/g, "_")}`;
   const password = randomBytes(18).toString("hex");
+  const databases = await admin`select 1 from pg_database where datname = ${user}`;
 
   await admin.unsafe(`create role "${user}" login password '${password}'`).catch(async (e) => {
-    if (!String(e.message).includes("already exists")) throw e;
+    if (e.code !== "42710") throw e;
     await admin.unsafe(`alter role "${user}" with password '${password}'`);
   });
   await admin.unsafe(`create database "${user}" owner "${user}"`).catch((e) => {
-    if (!String(e.message).includes("already exists")) throw e;
+    if (e.code !== "42P04") throw e;
   });
   await admin.unsafe(`revoke connect on database "${user}" from public`);
   await admin.unsafe(`grant connect on database "${user}" to "${user}"`);
-  return { user, password };
+  return { user, password, existed: databases.length > 0 };
 }
 
 export function databaseUrl(user: string, password: string) {
-  return `postgres://${user}:${password}@postgres:5432/${user}`;
+  const url = new URL(process.env.POSTGRES_URL!);
+  url.username = user;
+  url.password = password;
+  url.pathname = `/${user}`;
+  return url.href;
 }
 
 // The migration files of a bundle that the app's database has not applied yet.

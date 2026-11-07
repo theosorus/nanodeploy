@@ -11,8 +11,9 @@
 #  5. check the console answers and still lists at least as many apps;
 #     otherwise go back to the previous commit and restart it.
 set -euo pipefail
+umask 077
 cd "$(dirname "$0")/.."
-exec 9>"${TMPDIR:-/tmp}/nanodeploy-update.lock"
+exec 9>.update.lock
 flock -n 9 || exit 0
 set -a
 # shellcheck disable=SC1091
@@ -72,8 +73,18 @@ say "${current:0:7} -> ${next:0:7}, $before app(s) before"
 ./scripts/backup.sh
 
 rollback() {
-  say "rolling back to ${current:0:7}"
   echo "$next" >"$FAILED_MARK"
+  # Ciphertext replaces the old plaintext JSON in apps.env. Older binaries
+  # cannot read it: preserve the new checkout and stop the control plane
+  # rather than start incompatible code against the migrated database.
+  if ! git cat-file -e "$current:control-plane/src/app-secrets.ts" 2>/dev/null &&
+     git cat-file -e "$next:control-plane/src/app-secrets.ts" 2>/dev/null; then
+    say "automatic rollback crosses the application-secret encryption migration; refusing incompatible code"
+    docker compose stop control-plane || true
+    say "keep this checkout and repair forward, or restore the matching database, app files and .env from the pre-update backup"
+    exit 1
+  fi
+  say "rolling back to ${current:0:7}"
   git reset -q --hard "$current"
   ./install.sh || say "the rollback did not start cleanly either: see 'docker compose ps' and the latest backup"
   exit 1

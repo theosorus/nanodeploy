@@ -2,10 +2,13 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import type { Context, Next } from "hono";
+import { bodyLimit } from "hono/body-limit";
+import { getCookie } from "hono/cookie";
 import { timingSafeEqual } from "node:crypto";
 import { readFile, rm } from "node:fs/promises";
-import { join } from "node:path";
-import { parseManifest, RESERVED_SLUGS, isPreviewSlug } from "./manifest.js";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { parseManifest, RESERVED_SLUGS, isPreviewSlug, isAppSlug, PLATFORM_ENV } from "./manifest.js";
 import * as store from "./db.js";
 import * as dk from "./docker.js";
 import { writeSite, applySite, dropSite } from "./caddy.js";
@@ -16,13 +19,15 @@ import * as builds from "./builds.js";
 import * as forges from "./forges.js";
 import * as secrets from "./secrets.js";
 import { randomBytes } from "node:crypto";
+import { verifyConsoleSession } from "./console-auth.js";
+import { consoleCsp, requestBudget, sameConsoleOrigin } from "./http-security.js";
 
 const APPS_DIR = process.env.APPS_DIR ?? "/srv/apps";
 const TOKEN = process.env.DEPLOY_TOKEN ?? "";
 // An empty token would make the caddy CLI bypass match "Bearer " and every
 // bearer check succeed on an empty string. Refuse to run rather than come up
 // wide open because someone hand-edited .env.
-if (TOKEN.length < 24) {
+if (!/^[A-Za-z0-9_-]{24,128}$/.test(TOKEN)) {
   console.error(
     "DEPLOY_TOKEN is missing or shorter than 24 characters. " +
       "Run ./install.sh, or set a long random value in .env, then restart.",
@@ -33,35 +38,53 @@ if (TOKEN.length < 24) {
 // set by the auth middleware when the caller is a deploy key: the only slug it
 // may deploy
 type Env = { Variables: { deployKeySlug?: string } };
-const app = new Hono<Env>();
+export const app = new Hono<Env>();
+const apiBudget = requestBudget(240, 60_000);
+const hookBudget = requestBudget(60, 60_000);
+
+app.use("*", async (c, next) => {
+  c.header("Cache-Control", "no-store");
+  c.header("X-Content-Type-Options", "nosniff");
+  c.header("X-Frame-Options", "DENY");
+  c.header("Referrer-Policy", "no-referrer");
+  c.header("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'");
+  if (c.req.path.startsWith("/api/") || c.req.path.startsWith("/hooks/")) {
+    const ip = c.req.header("x-nanodeploy-client-ip") ?? "unknown";
+    const wait = (c.req.path.startsWith("/hooks/") ? hookBudget : apiBudget)(ip);
+    if (wait) {
+      c.header("Retry-After", String(wait));
+      return c.json({ error: "too many requests" }, 429);
+    }
+  }
+  await next();
+});
 
 
 // an app slug, or a pull request preview of one (<slug>--pr-<n>)
-const SLUG_RE = /^[a-z][a-z0-9-]{1,30}(--pr-\d{1,6})?$/;
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
-// env keys owned by the platform: not user-settable, not listed in the UI
-const PLATFORM_ENV = new Set(["DATABASE_URL"]);
 
 const GROUP_NAME_RE = /^[\p{L}\p{N}._'-]+$/u;
 
-await store.initState();
-await store.migrateState();
-await store.initGate();
-// accounts from Pocket ID first, with their ids; retried until it answers
-if ((await accounts.importFromPocketId()) < 0) {
-  const retry = setInterval(async () => {
-    const n = await accounts.importFromPocketId().catch(() => -1);
-    if (n >= 0) {
-      clearInterval(retry);
-      await accounts.bootstrapLinks().catch((err) => console.error("bootstrap links failed", err));
-    }
-  }, 60_000);
-} else {
-  await accounts.bootstrapLinks();
-}
+async function initialize() {
+  await store.initState();
+  await store.migrateState();
+  await store.initGate();
+  // Accounts from Pocket ID first, with their ids; retried until it answers.
+  if ((await accounts.importFromPocketId()) < 0) {
+    const retry = setInterval(async () => {
+      const n = await accounts.importFromPocketId().catch(() => -1);
+      if (n >= 0) {
+        clearInterval(retry);
+        await accounts.bootstrapLinks().catch((err) => console.error("bootstrap links failed", err));
+      }
+    }, 60_000);
+  } else {
+    await accounts.bootstrapLinks();
+  }
 
-await releases.init();
-await analytics.init();
+  await releases.init();
+  await analytics.init();
+}
 
 /* ---------- auth ---------- */
 
@@ -98,7 +121,16 @@ const deployKeyRoutes = (c: Context, slug: string) => {
   return false;
 };
 
-const sessionOk = (c: Context) => Boolean(c.req.header("remote-sub"));
+const sessionChecks = new WeakMap<Context, Promise<boolean>>();
+const sessionOk = (c: Context) => {
+  let check = sessionChecks.get(c);
+  if (!check) {
+    const cookie = process.env.COOKIE_SECURE === "false" && process.env.PUBLIC_SCHEME === "http" ? "nd_s" : "__Host-nd_s";
+    check = verifyConsoleSession(getCookie(c, cookie), c.req.header("remote-sub"));
+    sessionChecks.set(c, check);
+  }
+  return check;
+};
 
 const sessionGroups = (c: Context) =>
   Buffer.from(c.req.header("remote-groups") ?? "", "latin1").toString("utf8")
@@ -114,7 +146,7 @@ const sessionGroups = (c: Context) =>
 // control plane prints in its logs.
 const adminOk = async (c: Context) => {
   if (tokenOk(c)) return true;
-  if (!sessionOk(c)) return false;
+  if (!(await sessionOk(c))) return false;
   return Boolean((await accounts.findById(c.req.header("remote-sub") ?? ""))?.isAdmin);
 };
 
@@ -127,17 +159,7 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 // bundle to /api/deploy with their session cookie and get arbitrary code running
 // on the server, with no preflight to block it. Token callers carry no ambient
 // authority and are exempt.
-const sameOrigin = (c: Context) => {
-  const site = c.req.header("sec-fetch-site");
-  if (site) return site === "same-origin" || site === "none";
-  const origin = c.req.header("origin");
-  if (!origin) return true; // curl, the CLI, anything that is not a browser
-  try {
-    return new URL(origin).host === (c.req.header("host") ?? "");
-  } catch {
-    return false;
-  }
-};
+const sameOrigin = sameConsoleOrigin;
 
 app.use("/api/*", async (c: Context<Env>, next: Next) => {
   const viaToken = tokenOk(c);
@@ -160,14 +182,31 @@ app.use("/api/*", async (c: Context<Env>, next: Next) => {
   if (!viaToken && !SAFE_METHODS.has(c.req.method) && !sameOrigin(c)) {
     return c.json({ error: "cross-origin request refused" }, 403);
   }
-  if (isMe(c) ? viaToken || sessionOk(c) : await adminOk(c)) return await next();
+  if (isMe(c) ? viaToken || await sessionOk(c) : await adminOk(c)) return await next();
   // tell a signed-in non-admin apart from a stranger: the dashboard shows
   // "you are not an administrator" instead of "your session expired"
-  if (sessionOk(c)) {
+  if (await sessionOk(c)) {
     return c.json({ error: "this account is not an administrator", admin: false }, 403);
   }
   return c.json({ error: "unauthorized" }, 401);
 });
+
+let receivingBundle = false;
+app.use("/api/*", async (c, next) => {
+  const upload = c.req.method === "POST" && ["/api/deploy", "/api/releases"].includes(c.req.path);
+  if (upload && receivingBundle) {
+    c.header("Retry-After", "5");
+    return c.json({ error: "another bundle is being processed; retry shortly" }, 429);
+  }
+  if (upload) receivingBundle = true;
+  try { await next(); } finally { if (upload) receivingBundle = false; }
+});
+app.use("/api/*", async (c, next) => bodyLimit({
+  maxSize: ["/api/deploy", "/api/releases"].includes(c.req.path)
+    ? releases.MAX_BUNDLE_BYTES + 1024 * 1024 : 2 * 1024 * 1024,
+  onError: (ctx) => ctx.json({ error: "payload too large" }, 413),
+})(c, next));
+app.use("/hooks/*", bodyLimit({ maxSize: 2 * 1024 * 1024, onError: (c) => c.json({ error: "payload too large" }, 413) }));
 
 /* ---------- per-slug serialization ---------- */
 
@@ -191,14 +230,15 @@ async function runLocked<T>(slug: string, fn: () => Promise<T>): Promise<T> {
 
 const slugParam = (c: Context): string | null => {
   const slug = c.req.param("slug") as string;
-  return SLUG_RE.test(slug) ? slug : null;
+  return isAppSlug(slug) ? slug : null;
 };
 
 // A malformed JSON body should be the caller's fault (400), not a 500 with a
 // stack trace. c.req.json() throws on bad input; this turns that into null.
 async function jsonBody<T>(c: Context): Promise<T | null> {
   try {
-    return await c.req.json<T>();
+    const body = await c.req.json<T>();
+    return body && typeof body === "object" && !Array.isArray(body) ? body : null;
   } catch {
     return null;
   }
@@ -219,7 +259,9 @@ function actor(c: Context<Env>): string {
 // machine, holding two copies of a 100 MB bundle while apps are running is the
 // difference between a deploy and an OOM.
 async function readUpload(c: Context<Env>) {
-  const body = await c.req.parseBody();
+  let body;
+  try { body = await c.req.parseBody(); }
+  catch { return { error: "invalid multipart body", status: 400 as const }; }
   const bundle = body["bundle"];
   if (!(bundle instanceof File)) return { error: "missing bundle", status: 400 as const };
   if (bundle.size > releases.MAX_BUNDLE_BYTES) return { error: "bundle too large", status: 413 as const };
@@ -407,6 +449,9 @@ async function reconcile() {
         await writeSite(fresh);
         if (!fresh.image || !fresh.port) return;
         const status = await dk.appStatus(fresh.slug);
+        // Reattach gateway/database after Compose recreates either container,
+        // and migrate old containers off the shared app bridge on upgrades.
+        await dk.ensureAppNetwork(fresh.slug);
 
         let image = fresh.image;
         let rebuilt = false;
@@ -479,7 +524,7 @@ app.get("/api/apps", async (c) => {
         protect: a.protect ?? [],
         warm: a.warm,
         idleTimeout: a.idle_timeout,
-        env: Object.fromEntries(envKeys.map((k) => [k, k in a.env ? "set" : "unset"])),
+        env: Object.fromEntries(envKeys.map((k) => [k, Object.hasOwn(a.env, k) ? "set" : "unset"])),
         envKeys,
         status,
         // only a running container has stats, and only then is the call worth
@@ -502,6 +547,9 @@ app.post("/api/apps/:slug/access", async (c) => {
     const { access, groups } = (await jsonBody<{ access?: string; groups?: string[] }>(c)) ?? {};
     if (access !== "public" && access !== "private" && access !== "groups") {
       return c.json({ error: "invalid access mode" }, 400);
+    }
+    if (groups !== undefined && (!Array.isArray(groups) || groups.some((g) => typeof g !== "string"))) {
+      return c.json({ error: "groups must be a list of strings" }, 400);
     }
     // group names become tokens of a generated Caddyfile, keep them tame
     const cleanGroups = (groups ?? [])
@@ -554,7 +602,7 @@ app.post("/api/apps/:slug/env", async (c) => {
     const patch = await jsonBody<Record<string, string>>(c);
     if (!patch || typeof patch !== "object") return c.json({ error: "invalid body" }, 400);
     const valid = Object.entries(patch).every(
-      ([k, v]) => ENV_KEY_RE.test(k) && typeof v === "string" && v.length <= 16_384,
+      ([k, v]) => ENV_KEY_RE.test(k) && !PLATFORM_ENV.has(k) && typeof v === "string" && !v.includes("\0") && v.length <= 16_384,
     );
     if (!valid) return c.json({ error: "invalid env key or value" }, 400);
     // only manifest-declared variables can be written (a key is writable even
@@ -565,22 +613,9 @@ app.post("/api/apps/:slug/env", async (c) => {
       return c.json({ error: "env key is not declared in the manifest" }, 400);
     }
     const env = { ...current.env, ...patch };
-    await store.upsertApp({ slug, env } as any);
-    if (current.image && current.port) {
-      analytics.quiet(slug);
-      await dk.runContainer({
-        slug,
-        image: current.image,
-        port: current.port,
-        idleTimeout: current.idle_timeout,
-        // before the fix, warm was dropped here and a warm app silently became
-        // scale-to-zero after any env change
-        warm: current.warm,
-        env,
-      });
-      // same rule as deploy: only a warm app stays awake after a recreate
-      if (!current.warm) await dk.stopContainer(slug);
-    }
+    if (!Object.keys(patch).length) return c.json({ ok: true });
+    try { await releases.replaceEnvironment(current, env); }
+    catch (err: any) { return c.json({ error: err?.message ?? "failed to update environment" }, 500); }
     return c.json({ ok: true });
   });
 });
@@ -595,6 +630,7 @@ async function removeApp(slug: string, dropDatabase: boolean): Promise<{ routeDr
   if (!appRow) return null;
   await dk.removeContainer(slug);
   await dk.removeDataVolume(slug);
+  await dk.removeAppNetwork(slug);
   if (dropDatabase) await store.dropAppDatabase(slug);
   await store.deleteApp(slug);
   // a forgotten key must not be able to bring a deleted app back
@@ -674,12 +710,14 @@ app.get("/api/apps/:slug/keys", async (c) => {
 app.post("/api/apps/:slug/keys", async (c) => {
   const slug = keySlug(c);
   if (!slug) return c.json({ error: "invalid app name" }, 400);
-  const body = await jsonBody<{ label?: unknown }>(c);
-  const label = String(body?.label ?? "").replace(/[\r\n]/g, " ").trim().slice(0, 60) || "deploy key";
-  if ((await store.listDeployKeys(slug)).length >= 20) {
-    return c.json({ error: "20 keys at most per app, revoke an old one first" }, 400);
-  }
-  return c.json(await store.createDeployKey(slug, label));
+  return runLocked(slug, async () => {
+    const body = await jsonBody<{ label?: unknown }>(c);
+    const label = String(body?.label ?? "").replace(/[\r\n]/g, " ").trim().slice(0, 60) || "deploy key";
+    if ((await store.listDeployKeys(slug)).length >= 20) {
+      return c.json({ error: "20 keys at most per app, revoke an old one first" }, 400);
+    }
+    return c.json(await store.createDeployKey(slug, label));
+  });
 });
 
 app.delete("/api/apps/:slug/keys/:id", async (c) => {
@@ -706,7 +744,10 @@ app.post("/api/people", async (c) => {
   // separate, explicit step (POST /api/people/:id/admin), so inviting someone is
   // safe and never hands out control of the machine.
   const { username, email, firstName } = (await jsonBody<Record<string, string>>(c)) ?? {};
-  if (!username?.trim()) return c.json({ error: "username is required" }, 400);
+  if (typeof username !== "string" || !username.trim()) return c.json({ error: "username is required" }, 400);
+  if ((email !== undefined && typeof email !== "string") || (firstName !== undefined && typeof firstName !== "string")) {
+    return c.json({ error: "email and firstName must be strings" }, 400);
+  }
   try {
     return c.json(await accounts.invite({ username, email: email ?? "", firstName }));
   } catch (err) {
@@ -731,6 +772,7 @@ app.post("/api/people/:id/groups", async (c) => {
   }
   const known = new Set((await accounts.listGroups()).map((g) => g.id));
   if (groupIds.some((g) => !known.has(g))) return c.json({ error: "unknown group" }, 400);
+  if (!(await accounts.findById(c.req.param("id")))) return c.json({ error: "no such account" }, 404);
   await accounts.setGroups(c.req.param("id"), groupIds);
   return c.json({ ok: true });
 });
@@ -739,10 +781,12 @@ app.delete("/api/people/:id", async (c) => {
   const id = c.req.param("id");
   if (id === c.req.header("remote-sub")) return c.json({ error: "you cannot remove your own account" }, 400);
   const target = await accounts.findById(id);
+  if (!target) return c.json({ error: "no such account" }, 404);
   if (target?.isAdmin && (await accounts.adminCount()) <= 1) {
     return c.json({ error: "this is the last administrator" }, 400);
   }
-  await accounts.removePerson(id);
+  try { await accounts.removePerson(id); }
+  catch (err) { return c.json({ error: errorOf(err) }, 400); }
   return c.json({ ok: true });
 });
 
@@ -772,9 +816,6 @@ app.post("/api/people/:id/admin", async (c) => {
     // with nobody able to manage it
     if (id === c.req.header("remote-sub")) {
       return c.json({ error: "you cannot remove your own console access" }, 400);
-    }
-    if ((await accounts.adminCount()) <= 1) {
-      return c.json({ error: "this is the last administrator" }, 400);
     }
   }
   try {
@@ -807,8 +848,10 @@ app.patch("/api/groups/:id", async (c) => {
   }
   for (const row of appsUsingGroup(await store.listApps(), old.name)) {
     await runLocked(row.slug, async () => {
-      const next = row.groups.map((g) => (g === old.name ? clean : g));
-      await store.setAccess(row.slug, row.access, next);
+      const fresh = await store.getApp(row.slug);
+      if (!fresh || fresh.access !== "groups" || !fresh.groups.includes(old.name)) return;
+      const next = fresh.groups.map((g) => (g === old.name ? clean : g));
+      await store.setAccess(row.slug, fresh.access, next);
     });
   }
   return c.json({ ok: true });
@@ -1049,20 +1092,31 @@ app.get("/api/git/builds/:id", async (c) => {
   return c.json({ ...b, log: b.log.split("\n") });
 });
 
-app.get("/", async (c) => c.html(await readFile("./public/index.html", "utf8")));
+app.get("/", async (c) => {
+  const html = await readFile("./public/index.html", "utf8");
+  c.header("Content-Security-Policy", consoleCsp(html, forges.GITHUB_WEB));
+  return c.html(html);
+});
 app.use("/*", serveStatic({ root: "./public" }));
 
-serve({ fetch: app.fetch, port: 8000 });
-analytics.start();
-await builds.init({
-  lock: runLocked,
-  removeApp: async (slug, dropDatabase) => {
-    await runLocked(slug, () => removeApp(slug, dropDatabase));
-  },
-});
-console.log("nanodeploy control plane on :8000");
+export async function start() {
+  await initialize();
+  await builds.init({
+    lock: runLocked,
+    removeApp: async (slug, dropDatabase) => {
+      await runLocked(slug, () => removeApp(slug, dropDatabase));
+    },
+  });
+  // No request is accepted until every schema and route dependency is ready.
+  const port = Number(process.env.PORT ?? 8000);
+  const server = serve({ fetch: app.fetch, port });
+  analytics.start();
+  console.log(`nanodeploy control plane on :${port}`);
+  setTimeout(() => {
+    reconcile().then((n) => console.log(`reconcile: checked ${n} app(s)`))
+      .catch((err) => console.error("reconcile failed", err));
+  }, 5000).unref();
+  return server;
+}
 
-// wait for caddy and the docker socket proxy to settle before healing
-setTimeout(() => {
-  reconcile().then((n) => console.log(`reconcile: checked ${n} app(s)`));
-}, 5000);
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) await start();

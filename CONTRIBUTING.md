@@ -9,7 +9,7 @@ Nanodeploy targets one specific machine class: a single small ARM box with about
   A change that adds a permanently running service needs to justify its RAM.
 - **Keep the stack fixed.** One gateway, one identity provider, one Postgres,
   one control plane. Swapping a component is a fork, not a pull request.
-- **Assume apps are hostile.** Anything reachable from `nanodeploy_apps` is
+- **Assume apps are hostile.** Anything reachable from an app's private bridge is
   reachable by arbitrary code. Read `SECURITY.md` before touching networking,
   the socket proxies, or the generated Caddy config.
 - **Assume the machine loses power.** Every state change must survive a hard
@@ -22,8 +22,34 @@ Nanodeploy targets one specific machine class: a single small ARM box with about
 cd control-plane
 npm ci
 npm run typecheck        # tsc --noEmit
+npm test                 # manifest, archive and HTTP/security regressions
 npm run build            # esbuild bundle, must stay a single file
 ```
+
+Database scenarios require a disposable PostgreSQL database named `*_audit`:
+set `NANODEPLOY_TEST_DATABASE_URL` before `npm test`. The suite starts a real
+gate instance and creates its own temporary test database. With gate's
+dependencies installed, these cases also run in CI. Docker sandbox tests are
+enabled separately with `NANODEPLOY_SECURITY_DOCKER=1`; they create and remove
+only their own containers and networks. To exercise database restoration, set
+`NANODEPLOY_TEST_POSTGRES_CONTAINER` to the disposable PostgreSQL container.
+Set `NANODEPLOY_TEST_CADDY_IMAGE` to an image containing the Sablier plugin
+to enable the Caddy routing tests.
+
+The complete security suite provisions its own PostgreSQL, Caddy, Sablier,
+builders and networks and cleans them up. It never reads `.env` or uses a live
+installation database. Run it from the repository root after installing both
+the control-plane and gate dependencies:
+
+```bash
+node scripts/security-check.mjs
+```
+
+It downloads test images and builds Caddy. To reuse a previously built test
+image, set `NANODEPLOY_TEST_CADDY_IMAGE`.
+Pull `node:24-bookworm-slim`, `postgres:16-alpine`,
+`tecnativa/docker-socket-proxy:0.3.0` and `sablierapp/sablier:1.17.0` before
+running the Docker security scenarios; the CI job does this automatically.
 
 ```bash
 bash -n install.sh e2e/smoke.sh

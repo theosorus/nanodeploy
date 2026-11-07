@@ -10,19 +10,24 @@ const key = /^[0-9a-f]{64}$/i.test(raw) ? Buffer.from(raw, "hex") : null;
 
 export const ready = () => key !== null;
 
-export function seal(plain: string): string {
+export function seal(plain: string, context?: string): string {
   if (!key) throw new Error("NANODEPLOY_SECRET_KEY is not set: run ./install.sh, then restart the control plane");
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
+  if (context) cipher.setAAD(Buffer.from(context));
   const body = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
   return `v1.${iv.toString("base64")}.${cipher.getAuthTag().toString("base64")}.${body.toString("base64")}`;
 }
 
-export function open(sealed: string): string {
+export function open(sealed: string, context?: string): string {
   if (!key) throw new Error("NANODEPLOY_SECRET_KEY is not set");
-  const [v, iv, tag, body] = sealed.split(".");
-  if (v !== "v1") throw new Error("unknown secret format");
+  const parts = sealed.split(".");
+  const [v, iv, tag, body] = parts;
+  if (v !== "v1" || parts.length !== 4 || Buffer.from(iv ?? "", "base64").length !== 12 || Buffer.from(tag ?? "", "base64").length !== 16) {
+    throw new Error("unknown or invalid secret format");
+  }
   const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(iv, "base64"));
+  if (context) decipher.setAAD(Buffer.from(context));
   decipher.setAuthTag(Buffer.from(tag, "base64"));
   return Buffer.concat([decipher.update(Buffer.from(body, "base64")), decipher.final()]).toString("utf8");
 }

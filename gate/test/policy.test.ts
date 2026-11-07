@@ -47,11 +47,13 @@ test("a grant for a role the app no longer declares is ignored", () => {
 });
 
 test("path tricks cannot dodge a protected prefix", () => {
-  for (const uri of ["/API/Admin/x", "/api/x/../admin/x", "/api/%61dmin/x", "/api/./admin/x?y=1", "/ADMIN"]) {
+  for (const uri of ["/API/Admin/x", "/api/x/../admin/x", "/api/%61dmin/x", "/api/./admin/x?y=1", "/ADMIN",
+    "/api%2fadmin/x", "/api/admin%2Fx", "//api/admin/x", "/api//admin/x", "/api\\admin\\x", "/api/%61dmin/x%ZZ"]) {
     const d = decide(guestbook, null, [], uri);
     assert.equal(d.ok, false, uri);
   }
   assert.equal(normalizePath("/a/b/../c?q=1"), "/a/c");
+  assert.equal(normalizePath("/api/%3F/admin"), "/api/?/admin");
 });
 
 test("an exact protected path does not cover its neighbours", () => {

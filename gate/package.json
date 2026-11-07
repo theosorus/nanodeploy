@@ -10,15 +10,15 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "@hono/node-server": "^1.13.7",
+    "@hono/node-server": "^2.1.6",
     "@simplewebauthn/server": "^13.3.3",
-    "hono": "^4.6.14",
+    "hono": "^4.13.17",
     "postgres": "^3.4.5"
   },
   "devDependencies": {
     "@simplewebauthn/browser": "^13.2.2",
-    "@types/node": "^22.10.2",
-    "esbuild": "^0.24.0",
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.28.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }

@@ -127,8 +127,18 @@ export async function setGroups(userId: string, groupIds: string[]) {
 }
 
 export async function setAdmin(userId: string, isAdmin: boolean) {
-  const r = await sql`update gate.users set role = ${isAdmin ? "admin" : "member"} where id = ${userId} returning id`;
-  if (!r.length) throw new Error("no such account");
+  await sql.begin(async (tx) => {
+    // Removal and demotion share a database lock: simultaneous requests must
+    // not both observe two administrators and then remove the last two.
+    await tx`select pg_advisory_xact_lock(18472, 1)`;
+    const [user] = await tx`select role, status from gate.users where id = ${userId}`;
+    if (!user) throw new Error("no such account");
+    if (!isAdmin && user.role === "admin" && user.status === "active") {
+      const [{ n }] = await tx`select count(*)::int as n from gate.users where role = 'admin' and status = 'active'`;
+      if (n <= 1) throw new Error("this is the last administrator");
+    }
+    await tx`update gate.users set role = ${isAdmin ? "admin" : "member"} where id = ${userId}`;
+  });
   await audit(null, isAdmin ? "admin_granted" : "admin_revoked", userId);
 }
 
@@ -153,8 +163,17 @@ export async function deleteGroup(groupId: string) {
 }
 
 export async function removePerson(userId: string) {
-  await sql`delete from gate.role_grants where subject_kind = 'user' and subject_id = ${userId}`;
-  await sql`delete from gate.users where id = ${userId}`;
+  await sql.begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(18472, 1)`;
+    const [user] = await tx`select role, status from gate.users where id = ${userId}`;
+    if (!user) throw new Error("no such account");
+    if (user.role === "admin" && user.status === "active") {
+      const [{ n }] = await tx`select count(*)::int as n from gate.users where role = 'admin' and status = 'active'`;
+      if (n <= 1) throw new Error("this is the last administrator");
+    }
+    await tx`delete from gate.role_grants where subject_kind = 'user' and subject_id = ${userId}`;
+    await tx`delete from gate.users where id = ${userId}`;
+  });
   await audit(null, "removed", userId);
 }
 

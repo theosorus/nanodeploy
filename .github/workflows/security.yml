@@ -1,0 +1,72 @@
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '17 6 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  egress:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node --check egress/proxy.mjs && node --check egress/policy.mjs
+  dependencies:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project: [control-plane, gate, templates/app-template]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --ignore-scripts
+        working-directory: ${{ matrix.project }}
+      - run: npm audit --audit-level=moderate
+        working-directory: ${{ matrix.project }}
+
+  template:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --ignore-scripts
+        working-directory: templates/app-template
+      - run: npm test
+        working-directory: templates/app-template
+      - run: npm run build
+        working-directory: templates/app-template
+
+  docker-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --ignore-scripts
+        working-directory: control-plane
+      - run: npm ci --ignore-scripts
+        working-directory: gate
+      - name: Run security and database integration tests in disposable containers
+        run: node scripts/security-check.mjs

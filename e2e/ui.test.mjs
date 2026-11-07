@@ -45,7 +45,7 @@ before(async () => {
     server.once("exit", (code) => reject(new Error(`Preview server exited: ${code}`)));
     server.stdout.on("data", (chunk) => { if (chunk.toString().includes("UI preview:")) { clearTimeout(timeout); resolve(); } });
   });
-  const result = await exec("npx", ["--yes", "agent-browser", "session", "id", "--scope", "worktree", "--prefix", "nanodeploy-ui-test"], { cwd, timeout: 30000 });
+  const result = await exec("npx", ["--yes", "agent-browser", "session", "id", "--scope", "worktree", "--prefix", `nanodeploy-ui-test-${process.pid}`], { cwd, timeout: 30000 });
   session = result.stdout.trim();
   work = await mkdtemp(join(tmpdir(), "nanodeploy-ui-test-"));
   await writeFile(join(work, "candidate.zip"), "UI fixture; the preview server supplies the release diff.");

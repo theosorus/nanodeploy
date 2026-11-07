@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Nanodeploy installer. Run once on the server, as a user in the docker group.
 set -euo pipefail
+umask 077
 
 say() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 warn() { printf '  \033[33m! %s\033[0m\n' "$1"; }
@@ -74,7 +75,18 @@ if ! grep -q '^NANODEPLOY_SECRET_KEY=.' .env; then
   ok "added NANODEPLOY_SECRET_KEY to .env"
 fi
 
+chmod 600 .env
 source_env
+
+# Old .env files otherwise keep pinning the vulnerable gateway on upgrades.
+if ! awk -v version="${CADDY_VERSION:-0}" 'BEGIN {
+  n=split(version,v,"."); exit !(n==3 && (v[1]>2 || (v[1]==2 && (v[2]>11 || (v[2]==11 && v[3]>=9)))))
+}'; then
+  grep -q '^CADDY_VERSION=' .env || printf '\nCADDY_VERSION=\n' >> .env
+  set_var CADDY_VERSION 2.11.9
+  export CADDY_VERSION=2.11.9
+  ok "upgraded Caddy to the security minimum 2.11.9"
+fi
 
 # every one of these has cost someone an evening of debugging
 [ -n "${APPS_DOMAIN:-}" ] || die "APPS_DOMAIN is empty in .env"
@@ -86,20 +98,41 @@ for secret in POSTGRES_PASSWORD DEPLOY_TOKEN GATE_DB_PASSWORD NANODEPLOY_SECRET_
   eval "value=\${$secret:-}"
   [ -n "$value" ] || die "$secret is empty in .env, delete .env and rerun to regenerate the secrets"
 done
+[[ "$NANODEPLOY_SECRET_KEY" =~ ^[0-9a-fA-F]{64}$ ]] || die "NANODEPLOY_SECRET_KEY must contain exactly 64 hexadecimal characters; preserve an existing encryption key"
 # an empty or short token would make the caddy CLI bypass match almost anything
 [ "${#DEPLOY_TOKEN}" -ge 24 ] || die "DEPLOY_TOKEN must be at least 24 characters"
 ok "configuration looks sane"
 
 mkdir -p "$APPS_DIR"
+chmod 755 "$APPS_DIR"
+mkdir -p "$APPS_DIR/.snapshots" "$APPS_DIR/.builds" "$APPS_DIR/.staging"
 docker network create nanodeploy_edge 2>/dev/null && ok "network nanodeploy_edge" || ok "network nanodeploy_edge exists"
 docker network create --internal nanodeploy_data 2>/dev/null && ok "network nanodeploy_data" || ok "network nanodeploy_data exists"
 docker network create nanodeploy_apps 2>/dev/null && ok "network nanodeploy_apps" || ok "network nanodeploy_apps exists"
 docker network create nanodeploy_build 2>/dev/null && ok "network nanodeploy_build" || ok "network nanodeploy_build exists"
+docker network create nanodeploy_egress 2>/dev/null && ok "network nanodeploy_egress" || ok "network nanodeploy_egress exists"
+if ! docker network inspect nanodeploy_build_secure >/dev/null 2>&1; then
+  docker network create --internal --opt com.docker.network.bridge.inhibit_ipv4=true nanodeploy_build_secure >/dev/null
+fi
+[ "$(docker network inspect -f '{{.Internal}}' nanodeploy_build_secure)" = true ] || die "nanodeploy_build_secure must be internal"
+[ "$(docker network inspect -f '{{index .Options "com.docker.network.bridge.inhibit_ipv4"}}' nanodeploy_build_secure)" = true ] || die "nanodeploy_build_secure must not expose a host gateway"
+# Pairwise platform networks: neither gate, Caddy nor Sablier can reach the
+# control plane's Docker proxy. Existing app containers migrate at reconcile.
+docker network create nanodeploy_console 2>/dev/null && ok "network nanodeploy_console" || ok "network nanodeploy_console exists"
+for net in wake docker sablier_control gate_data legacy; do
+  network="nanodeploy_$net"
+  if ! docker network inspect "$network" >/dev/null 2>&1; then
+    docker network create --internal "$network" >/dev/null
+  fi
+  [ "$(docker network inspect -f '{{.Internal}}' "$network")" = true ] || die "$network must be an internal Docker network"
+  ok "network $network"
+done
 ok "apps dir $APPS_DIR"
 
 say "3/5 building the caddy image with the sablier plugin"
+docker compose pull --ignore-buildable
 warn "this compiles caddy from source, ~10 min on a Jetson"
-docker compose build caddy
+docker compose build --pull caddy
 
 say "4/5 starting the platform"
 # Upgrading from Pocket ID: it must answer while the control plane imports the

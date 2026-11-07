@@ -1,4 +1,4 @@
-import { createHmac, createSign, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, createSign, timingSafeEqual } from "node:crypto";
 import * as secrets from "./secrets.js";
 
 // One interface over GitHub (a GitHub App, created from the dashboard with the
@@ -32,11 +32,17 @@ export interface Forge {
   parse(headers: Headers, payload: any): GitEvent | null;
   repos(): Promise<Repo[]>;
   head(repo: string, branch: string): Promise<Commit>;
+  pullRequest(repo: string, number: number): Promise<{ open: boolean; sha: string; base: string; fromFork: boolean }>;
   file(repo: string, ref: string, path: string): Promise<string | null>;
   archive(repo: string, sha: string): Promise<Buffer>;
   status(repo: string, sha: string, state: State, url: string, description: string): Promise<void>;
   comment(repo: string, pr: number, body: string, existing: string | null): Promise<string | null>;
 }
+
+// Delivery IDs are unsigned HTTP headers. An attacker replaying a captured
+// signature must not bypass deduplication by choosing a different ID.
+export const webhookFingerprint = (providerId: string, body: Buffer) =>
+  `${providerId}:body:${createHash("sha256").update(body).digest("hex")}`;
 
 const MAX_ARCHIVE = 200 * 1024 * 1024;
 
@@ -83,6 +89,7 @@ function github(p: ProviderRow): Forge {
   async function gh(path: string, init: RequestInit & { auth: string }) {
     const res = await fetch(`${GITHUB_API}${path}`, {
       ...init,
+      signal: init.signal ?? AbortSignal.timeout(60_000),
       headers: {
         accept: "application/vnd.github+json",
         "x-github-api-version": "2022-11-28",
@@ -171,6 +178,11 @@ function github(p: ProviderRow): Forge {
       const c = await json(`/repos/${enc(repo)}/commits/${encodeURIComponent(branch)}`, { auth: `token ${await tokenFor(repo)}` });
       return { sha: c.sha, message: c.commit?.message ?? "", author: c.author?.login ?? c.commit?.author?.name ?? "" };
     },
+    async pullRequest(repo, number) {
+      const pr = await json(`/repos/${enc(repo)}/pulls/${number}`, { auth: `token ${await tokenFor(repo)}` });
+      return { open: pr.state === "open", sha: pr.head?.sha ?? "", base: pr.base?.ref ?? "",
+        fromFork: !pr.head?.repo?.id || !pr.base?.repo?.id || String(pr.head.repo.id) !== String(pr.base.repo.id) };
+    },
     async file(repo, ref, path) {
       const res = await gh(`/repos/${enc(repo)}/contents/${enc(path)}?ref=${encodeURIComponent(ref)}`, {
         auth: `token ${await tokenFor(repo)}`,
@@ -225,6 +237,7 @@ export function githubManifest(name: string, consoleOrigin: string) {
 export async function githubConvert(code: string) {
   const res = await fetch(`${GITHUB_API}/app-manifests/${encodeURIComponent(code)}/conversions`, {
     method: "POST",
+    signal: AbortSignal.timeout(60_000),
     headers: { accept: "application/vnd.github+json", "user-agent": "nanodeploy" },
   });
   const text = await res.text();
@@ -238,7 +251,10 @@ export async function githubConvert(code: string) {
 async function glFetch(base: string, token: string, path: string, init: RequestInit = {}) {
   return fetch(`${base}/api/v4${path}`, {
     ...init,
-    headers: { "private-token": token, ...(init.body ? { "content-type": "application/json" } : {}), ...(init.headers ?? {}) },
+    signal: init.signal ?? AbortSignal.timeout(60_000),
+    // Fetch strips Authorization on cross-origin redirects. A custom
+    // PRIVATE-TOKEN header would leak to an archive redirect destination.
+    headers: { authorization: `Bearer ${token}`, ...(init.body ? { "content-type": "application/json" } : {}), ...(init.headers ?? {}) },
   });
 }
 
@@ -321,6 +337,11 @@ function gitlab(p: ProviderRow): Forge {
     async head(_repo, branch) {
       const b = await j(`/projects/${id}/repository/branches/${encodeURIComponent(branch)}`);
       return { sha: b.commit.id, message: b.commit.message ?? "", author: b.commit.author_name ?? "" };
+    },
+    async pullRequest(_repo, number) {
+      const mr = await j(`/projects/${id}/merge_requests/${number}`);
+      return { open: mr.state === "opened", sha: mr.sha ?? mr.diff_refs?.head_sha ?? "", base: mr.target_branch ?? "",
+        fromFork: !mr.source_project_id || !mr.target_project_id || String(mr.source_project_id) !== String(mr.target_project_id) };
     },
     async file(_repo, ref, path) {
       const res = await glFetch(GITLAB_URL, token(), `/projects/${id}/repository/files/${encodeURIComponent(path)}/raw?ref=${encodeURIComponent(ref)}`);

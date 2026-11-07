@@ -10,9 +10,6 @@ const DOMAIN = process.env.APPS_DOMAIN!;
 // braces, $, quotes, backslash and newlines would break the whole config at
 // reload. A single bad site file used to take every app down with it.
 const cleanName = (s: string) => s.replace(/[\r\n"{}$\\]/g, "").slice(0, 60);
-// protected paths were validated by the manifest parser; keep the same shape
-// here so a hand-edited row can never inject caddyfile syntax
-const cleanPaths = (paths: string[]) => paths.filter((p) => /^\/[A-Za-z0-9._~\/-]*\*?$/.test(p));
 
 // The routes of an app once access is settled: its API through sablier to the
 // container, everything else from dist/.
@@ -59,8 +56,8 @@ function appRoutes(app: AppRow, indent: string): string[] {
 // changing an app's access or a role grant never rewrites this file. The file
 // only says which requests gate must look at.
 //  - private and groups apps: every request.
-//  - public apps: the API (so the app learns who is signed in, if anyone) and
-//    the protected paths. Static files of a public app skip gate entirely.
+//  - public apps with protection rules: every request, including alternate path
+//    spellings; public apps without rules only need identity on API requests.
 export function renderSite(app: AppRow) {
   const host = `${app.slug}.${DOMAIN}`;
   const lines: string[] = [`http://${host} {`, `\timport nanodeploy_strip`];
@@ -74,9 +71,8 @@ export function renderSite(app: AppRow) {
   // every app host, before any access check
   lines.push(`\thandle /_nd/* {`, `\t\treverse_proxy gate:4000`, `\t}`);
 
-  if (app.access === "public") {
-    const gated = ["/api/*", ...cleanPaths((app.protect ?? []).map((r) => r.path))];
-    lines.push(`\t@gated path ${[...new Set(gated)].join(" ")}`);
+  if (app.access === "public" && !(app.protect ?? []).length) {
+    lines.push(`\t@gated path /api/*`);
     lines.push(`\thandle @gated {`);
     lines.push(`\t\timport nanodeploy_gate ${app.slug}`);
     lines.push(...appRoutes(app, "\t\t"));
@@ -85,6 +81,8 @@ export function renderSite(app: AppRow) {
     lines.push(...appRoutes(app, "\t\t"));
     lines.push(`\t}`);
   } else {
+    // A public app with protected paths must also send alternate path spellings
+    // to gate. Caddy's matcher and the backend may decode paths differently.
     lines.push(`\thandle {`);
     lines.push(`\t\timport nanodeploy_gate ${app.slug}`);
     lines.push(...appRoutes(app, "\t\t"));
@@ -109,7 +107,7 @@ export async function applySite(app: AppRow): Promise<boolean> {
   const path = sitePath(app.slug);
   const previous = await readFile(path, "utf8").catch(() => null);
   await writeFile(path, renderSite(app));
-  if (await reloadCaddy()) return true;
+  if (await reloadCaddy().catch(() => false)) return true;
 
   console.error(`caddy refused the new site for ${app.slug}, rolling back`);
   if (previous === null) await unlink(path).catch(() => {});
@@ -124,7 +122,7 @@ export async function dropSite(slug: string): Promise<boolean> {
   const path = sitePath(slug);
   const previous = await readFile(path, "utf8").catch(() => null);
   await unlink(path).catch(() => {});
-  if (await reloadCaddy()) return true;
+  if (await reloadCaddy().catch(() => false)) return true;
 
   if (previous !== null) await writeFile(path, previous);
   await reloadCaddy().catch(() => {});
