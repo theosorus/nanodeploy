@@ -1,6 +1,6 @@
 ---
 name: nanodeploy-app
-description: Builds and deploys web apps on Nanodeploy, a self-hosted platform (small ARM box, scale-to-zero, shared Postgres, gateway authentication). Use this skill AS SOON AS the user asks to create, code, scaffold, change or deploy an app, an internal tool, a dashboard, a tracker, a mini SaaS or "something that does X" meant for their own server, even without the word Nanodeploy. Also triggers on "deploy this", "put this on my server", "build me an app for...", "add a page to my app", "fais-moi une app pour...", "mets ça sur mon serveur", or any mention of app.yaml, the control plane, Sablier, or the Nanodeploy template. When in doubt about where a web app is meant to run, ask whether it is for Nanodeploy rather than scaffolding something generic.
+description: "Build, change, and deploy applications hosted on Nanodeploy, a self-hosted platform with scale-to-zero, shared Postgres, and gateway authentication. Use for web apps, internal tools, dashboards, trackers, and mini SaaS projects meant for Nanodeploy or the user's own server, including app.yaml, Sablier wake-up behavior, and the app template. If the hosting target is unclear, confirm it is Nanodeploy. For changes to the Nanodeploy platform itself, follow its platform deployment instructions."
 ---
 
 # Nanodeploy app

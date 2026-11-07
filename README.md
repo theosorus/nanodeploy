@@ -3,8 +3,8 @@
 </p>
 
 **Your own Vercel, on a 4 GB box in a cupboard.** Apps sleep when nobody uses
-them, wake in about a second, and share one login and one Postgres. Ships with a
-**Claude skill that writes and deploys new apps from a sentence** —
+them, wake in about a second, and share one login and one Postgres. Ships with an
+**agent skill that writes and deploys new apps from a sentence** —
 [jump to it](#build-apps-by-asking).
 
 <p align="center">
@@ -285,9 +285,12 @@ key; a code-only rollback to the old plaintext format is incompatible.
 
 "Build me an app" fails with a chatbot because there are a thousand ways to
 build it. Here there is one: fixed frontend, backend, database, auth, deploy.
-Nothing to get wrong. So Nanodeploy ships a Claude skill,
-[`skills/nanodeploy-app/`](skills/nanodeploy-app), with the whole contract built
-in. Install it and describe what you want:
+Nothing to get wrong. So Nanodeploy ships a skill in the open
+[Agent Skills](https://agentskills.io/specification) format,
+[`.agents/skills/nanodeploy-app/SKILL.md`](.agents/skills/nanodeploy-app/SKILL.md),
+with the whole contract built in. If your agent does not discover
+`.agents/skills/` automatically, point it at that file. Then describe what you
+want:
 
 > **You:** build me something to track shared expenses with my flatmates
 

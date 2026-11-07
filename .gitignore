@@ -12,3 +12,6 @@ caddy/conf.d/*.caddy
 # self-update state
 .update-failed
 .update.lock
+
+# Private deployment skill for this project and personal Jetson
+/.agents/skills/nanodeploy-jetson-deploy/
