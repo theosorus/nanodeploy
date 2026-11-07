@@ -13,15 +13,15 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.1.6",
-    "@simplewebauthn/server": "^13.3.3",
+    "@simplewebauthn/server": "^14.1.0",
     "hono": "^4.13.17",
-    "postgres": "^3.4.5"
+    "postgres": "^4.1.0"
   },
   "devDependencies": {
-    "@simplewebauthn/browser": "^13.2.2",
+    "@simplewebauthn/browser": "^14.0.0",
     "@types/node": "^24.0.0",
     "esbuild": "^0.28.2",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^7.0.2"
   }
 }

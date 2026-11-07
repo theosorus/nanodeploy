@@ -1,17 +1,33 @@
 version: 2
 updates:
+  # The runtime follows a Node LTS line (images and builds on Node 24). Its
+  # typings move with it, deliberately, not on every new major.
   - package-ecosystem: npm
     directory: /control-plane
     schedule: {interval: weekly}
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: npm
     directory: /gate
     schedule: {interval: weekly}
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: npm
     directory: /templates/app-template
     schedule: {interval: weekly}
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule: {interval: weekly}
+  # Odd Node majors are short-lived and never become LTS: move to the next LTS
+  # line by hand, together with the build target and @types/node.
   - package-ecosystem: docker
     directories: [/control-plane, /gate, /caddy, /egress, /docker-proxy]
     schedule: {interval: weekly}
+    ignore:
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]

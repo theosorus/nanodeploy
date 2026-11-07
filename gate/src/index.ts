@@ -12,7 +12,6 @@ import {
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
 } from "@simplewebauthn/server";
-import type { AuthenticatorTransportFuture } from "@simplewebauthn/server";
 import {
   AUTH_HOST,
   AUTH_ORIGIN,
@@ -455,7 +454,7 @@ app.post("/webauthn/login/verify", async (c) => {
         id: passkey.webauthn_id,
         publicKey: new Uint8Array(passkey.public_key),
         counter: Number(passkey.counter),
-        transports: passkey.transports as AuthenticatorTransportFuture[],
+        transports: passkey.transports,
       },
     });
     if (!result.verified) throw new Error("not verified");
@@ -497,7 +496,7 @@ app.post("/webauthn/register/options", async (c) => {
     userDisplayName: who.user.display_name,
     userID: new TextEncoder().encode(who.user.id),
     attestationType: "none",
-    excludeCredentials: existing.map((p) => ({ id: p.webauthn_id, transports: p.transports as AuthenticatorTransportFuture[] })),
+    excludeCredentials: existing.map((p) => ({ id: p.webauthn_id, transports: p.transports })),
     // discoverable: the login page asks for "a passkey", not for a username first
     authenticatorSelection: { residentKey: "required", userVerification: "required" },
   });
