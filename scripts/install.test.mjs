@@ -36,7 +36,8 @@ esac
 `, { mode: 0o755 });
     const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, NANODEPLOY_INSTALL_CALLS: join(work, 'calls') };
     for (const key of ['APPS_DIR', 'APPS_DOMAIN', 'POSTGRES_PASSWORD', 'DEPLOY_TOKEN', 'GATE_DB_PASSWORD', 'NANODEPLOY_SECRET_KEY',
-      'PUBLIC_SCHEME', 'PUBLIC_PORT', 'COOKIE_SECURE', 'CADDY_PORT', 'SUDO_USER', 'DOCKER_HOST', 'DOCKER_CONTEXT']) delete env[key];
+      'PUBLIC_SCHEME', 'PUBLIC_PORT', 'COOKIE_SECURE', 'CADDY_PORT', 'SUDO_USER', 'DOCKER_HOST', 'DOCKER_CONTEXT',
+      'NANODEPLOY_ALLOW_LEGACY_DOCKER']) delete env[key];
     const install = (args, extra = {}) => exec('bash', [join(checkout, 'install.sh'), ...args], { cwd: work, env: { ...env, ...extra } });
     const configure = () => exec('bash', [join(checkout, 'scripts/configure-systemd.sh')], { cwd: work, env });
     const config = () => readFile(join(checkout, '.env'), 'utf8');
@@ -118,9 +119,35 @@ test('obsolete Docker fails before any network or service change', async () => f
   assert.doesNotMatch(await readFile(join(f.work, 'calls'), 'utf8'), /network|build|pull|up -d/);
 }));
 
+test('an existing legacy host can explicitly opt in without changing its configuration', async () => fixture(async (f) => {
+  await f.install(['--init', '--local']);
+  await writeFile(join(f.checkout, '.env'), (await f.config()) + '\nNANODEPLOY_ALLOW_LEGACY_DOCKER=true\n');
+  const before = await f.config();
+  const result = await f.install(['--check'], { NANODEPLOY_FIXTURE_ENGINE: '20.10.21' });
+  assert.match(result.stdout, /legacy Docker 20\.10\.21 explicitly allowed/);
+  assert.equal(await f.config(), before);
+  assert.doesNotMatch(await readFile(join(f.work, 'calls'), 'utf8'), /network|build|pull|up -d/);
+}));
+
+for (const version of ['19.03.15', '20.9.0']) {
+  test(`legacy mode still rejects Docker ${version}`, async () => fixture(async (f) => {
+    await f.install(['--init', '--local']);
+    await assert.rejects(f.install(['--check'], { NANODEPLOY_FIXTURE_ENGINE: version, NANODEPLOY_ALLOW_LEGACY_DOCKER: 'true' }), /requires Docker Engine 20\.10 or newer/);
+    assert.doesNotMatch(await readFile(join(f.work, 'calls'), 'utf8'), /network|build|pull|up -d/);
+  }));
+}
+
+test('legacy mode requires an explicit boolean setting', async () => fixture(async (f) => {
+  await f.install(['--init', '--local']);
+  await assert.rejects(f.install(['--check'], { NANODEPLOY_ALLOW_LEGACY_DOCKER: 'yes' }), /must be true or false/);
+  assert.doesNotMatch(await readFile(join(f.work, 'calls'), 'utf8'), /network|build|pull|up -d/);
+}));
+
 for (const [description, env, expected] of [
   ['a remote Docker daemon', { DOCKER_HOST: 'ssh://fixture.invalid' }, /remote TCP\/SSH daemons are not supported/],
   ['rootless Docker', { NANODEPLOY_FIXTURE_SECURITY: '["name=rootless"]' }, /rootless Docker is not supported/],
+  ['rootless Docker with a legacy override', { NANODEPLOY_FIXTURE_SECURITY: '["name=rootless"]', NANODEPLOY_ALLOW_LEGACY_DOCKER: 'true' }, /rootless Docker is not supported/],
+  ['a remote Docker daemon with a legacy override', { DOCKER_HOST: 'ssh://fixture.invalid', NANODEPLOY_ALLOW_LEGACY_DOCKER: 'true' }, /remote TCP\/SSH daemons are not supported/],
 ]) {
   test(`${description} fails before creating networks`, async () => fixture(async (f) => {
     await f.install(['--init', '--local']);

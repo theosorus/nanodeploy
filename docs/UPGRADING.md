@@ -32,6 +32,24 @@ mechanism; use manual updates with a verified revision instead. For a manual
 update, back up, fast-forward to the revision you chose, run `./install.sh` and
 check sign-in, app data and wake-up before accepting it.
 
+### Existing hosts with an older Docker engine
+
+Docker Engine 28+ on a currently patched host remains the supported security
+baseline. Existing installations on a host whose OS pins an older engine can
+explicitly opt into compatibility mode in `.env`:
+
+```dotenv
+NANODEPLOY_ALLOW_LEGACY_DOCKER=true
+```
+
+This permits Docker 20.10–27 and prints a warning. It keeps the local, rootful
+Linux daemon requirement and all network/isolation checks. It does not upgrade
+the daemon or make an obsolete engine supported. Validate app isolation,
+database access and wake-up on that host, and retain a verified backup before
+updating. Automatic updates read the same `.env` setting. New installations
+keep the Docker 28+ default; plan an OS/engine upgrade to leave compatibility
+mode.
+
 ## Security upgrade: 7 November 2026
 
 Install this upgrade manually the first time. It changes the storage format of

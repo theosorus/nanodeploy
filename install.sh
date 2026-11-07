@@ -163,7 +163,21 @@ if docker info --format '{{json .SecurityOptions}}' | grep -q rootless; then
   die "rootless Docker is not supported; use a local rootful Docker engine"
 fi
 engine=$(docker version --format '{{.Server.Version}}')
-[[ "$engine" =~ ^([0-9]+)\. ]] && [ "${BASH_REMATCH[1]}" -ge 28 ] || die "Docker Engine 28 or newer is required; use a currently patched release"
+case "${NANODEPLOY_ALLOW_LEGACY_DOCKER:-false}" in
+  true|false) ;;
+  *) die "NANODEPLOY_ALLOW_LEGACY_DOCKER must be true or false" ;;
+esac
+[[ "$engine" =~ ^([0-9]+)\.([0-9]+)\. ]] || die "cannot parse Docker Engine version"
+engine_major=${BASH_REMATCH[1]}
+engine_minor=${BASH_REMATCH[2]}
+if [ "$engine_major" -lt 28 ]; then
+  [ "${NANODEPLOY_ALLOW_LEGACY_DOCKER:-false}" = true ] || \
+    die "Docker Engine 28 or newer is required; see docs/UPGRADING.md for existing legacy hosts"
+  if [ "$engine_major" -lt 20 ] || { [ "$engine_major" -eq 20 ] && [ "$engine_minor" -lt 10 ]; }; then
+    die "legacy compatibility requires Docker Engine 20.10 or newer"
+  fi
+  warn "legacy Docker $engine explicitly allowed; Docker Engine 28+ remains the supported security baseline"
+fi
 [ "$(docker info --format '{{.OSType}}')" = linux ] || die "Docker must run Linux containers"
 case "$(docker info --format '{{.Architecture}}')" in
   x86_64|amd64|aarch64|arm64) ;;
