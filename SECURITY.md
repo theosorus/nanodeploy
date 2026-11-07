@@ -1,10 +1,10 @@
 # Security
 
-Nanodeploy runs arbitrary code you wrote, on a machine in your home, behind an
-identity provider. This page says what it defends against, what it does not,
+Nanodeploy runs application code on your own Linux server, behind an identity
+service. This page says what it defends against, what it does not,
 and how to report a problem.
 
-Security review and regression evidence: [7 November 2026](docs/security-audit-2026-11-07.md).
+Reproducible security checks are described in [CONTRIBUTING.md](CONTRIBUTING.md#checks).
 Read the [security upgrade procedure](docs/UPGRADING.md#security-upgrade-7-november-2026)
 before installing this version over an existing deployment.
 
@@ -12,8 +12,10 @@ before installing this version over an existing deployment.
 
 Open a private security advisory on the GitHub repository ("Security" tab →
 "Report a vulnerability"). Please do not open a public issue for anything that
-would let someone reach a stranger's server. Expect a first answer within a few
-days; this is a hobby project, not a vendor.
+would let someone reach a stranger's server. If private reporting is unavailable,
+contact a repository maintainer privately before sharing exploit details. Fork
+maintainers should enable private vulnerability reporting on their own repository.
+This is a community project without a guaranteed response time.
 
 ## What the design assumes
 
@@ -115,8 +117,9 @@ These are real. Decide whether they matter for your setup before you deploy.
   files 0600, the last three kept). Caddy mounts `APPS_DIR` read-only and masks
   `.snapshots`, `.builds` and `.staging` with empty read-only mounts. Include the directory in your encrypted
   backups, or exclude it on purpose.
-- **No automatic backups.** A single shared Postgres is a single point of loss
-  for every app. See the README.
+- **No backup schedule by default.** A single shared Postgres is a single point
+  of loss for every app. Use `scripts/backup.sh`, keep an encrypted off-host copy,
+  and test [restoration](docs/OPERATIONS.md#restore-a-backup).
 
 ## Rotating secrets
 

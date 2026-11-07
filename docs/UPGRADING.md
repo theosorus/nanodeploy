@@ -2,23 +2,35 @@
 
 ## Every update, automatically
 
-Once `nanodeploy-update.timer` is installed, the server updates itself: every
+Automatic updates are optional and disabled by default. Once
+`nanodeploy-update.timer` is installed, the server updates itself: every
 five minutes it looks at `main` on GitHub, waits until every CI check of the new
 commit is green, backs up everything, updates, checks that the console answers
 with at least as many apps as before, and goes back to the previous commit if
 not. A red commit is never deployed.
 
 ```bash
-sudo cp nanodeploy-update.service nanodeploy-update.timer /etc/systemd/system/
+./scripts/configure-systemd.sh
+# Review the generated paths and User first.
+sudo cp var/systemd/nanodeploy-update.service var/systemd/nanodeploy-update.timer /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now nanodeploy-update.timer
 ```
 
-Edit `WorkingDirectory`, `ExecStart` and `User` in the service first (a user in
-the docker group that owns the checkout). Follow it with
+The generator uses the checkout owner/current user, app storage, Docker
+data-root and executable. The service account must own the checkout, write the
+data directory and access Docker. Follow it with
 `journalctl -u nanodeploy-update -f`. Backups land in a `backups` directory next
 to `APPS_DIR` (`BACKUP_DIR` in `.env` to change it); the last five are kept.
 
 By hand, the same thing: `./scripts/update.sh`.
+
+The updater uses the **public GitHub repository configured as `origin`**, not a
+fixed maintainer account. A fork can use its own Actions checks and
+`UPDATE_BRANCH` (default `main`). Install Python 3, curl and `flock` first.
+Private GitHub repositories or other forges need an authenticated update
+mechanism; use manual updates with a verified revision instead. For a manual
+update, back up, fast-forward to the revision you chose, run `./install.sh` and
+check sign-in, app data and wake-up before accepting it.
 
 ## Security upgrade: 7 November 2026
 

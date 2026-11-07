@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 // Packs dist/, server.js, app.yaml and migrations/ then posts them to nanodeploy.
-// Runs on the dev machine: the server never builds anything heavy.
+// ZIP deployments build on the development machine; Git deployments build on
+// the server in a disposable container.
 //   npm run deploy -- -m "what changed"
 // The message and, in a git checkout, the commit go into the app's version
 // history, which is what you read when choosing a version to go back to.
 import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { readFile, rm } from "node:fs/promises";
+import { request as httpRequest } from "node:http";
+import { Readable } from "node:stream";
 
 const url = process.env.NANODEPLOY_URL;
 const token = process.env.NANODEPLOY_TOKEN;
@@ -49,18 +52,35 @@ if (commitSha) {
 }
 
 try {
-  const res = await fetch(`${url}/api/deploy`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${token}` },
-    body: form,
-  });
+  const endpoint = new URL("/api/deploy", url);
+  const headers = { authorization: `Bearer ${token}` };
+  // Browsers resolve *.localhost themselves. Node may use ::1 first or ask a
+  // DNS resolver that does not know the reserved suffix. The local gateway
+  // binds IPv4 loopback, so connect there while preserving its virtual host.
+  const request = new Request(endpoint, { method: "POST", headers, body: form });
+  const res = endpoint.protocol === "http:" && endpoint.hostname.endsWith(".localhost")
+    ? await new Promise((resolve, reject) => {
+        const outgoing = httpRequest({ hostname: "127.0.0.1", port: endpoint.port || 80,
+          path: endpoint.pathname + endpoint.search, method: "POST", timeout: 600_000,
+          headers: { ...Object.fromEntries(request.headers), Host: endpoint.host },
+        }, (incoming) => resolve(new Response(Readable.toWeb(incoming), {
+          status: incoming.statusCode,
+          headers: Object.fromEntries(Object.entries(incoming.headers)
+            .filter(([, value]) => value !== undefined)
+            .map(([key, value]) => [key, Array.isArray(value) ? value.join(", ") : value])),
+        })));
+        outgoing.once("error", reject);
+        outgoing.once("timeout", () => outgoing.destroy(new Error("deployment timed out")));
+        Readable.fromWeb(request.body).once("error", reject).pipe(outgoing);
+      })
+    : await fetch(request);
 
   let data;
+  const text = await res.text();
   try {
-    data = await res.json();
+    data = JSON.parse(text);
   } catch {
-    // e.g. tinyauth's login page when the token does not match the gateway
-    const text = await res.text().catch(() => "");
+    // A proxy can return an HTML sign-in or error page instead of API JSON.
     throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
   }
   if (!res.ok) {

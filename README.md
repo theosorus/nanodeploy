@@ -2,8 +2,9 @@
   <img src="docs/brand2/wordmark-C.png" alt="Nanodeploy" width="440">
 </p>
 
-**Your own Vercel, on a 4 GB box in a cupboard.** Apps sleep when nobody uses
-them, wake in about a second, and share one login and one Postgres. Ships with an
+**Deploy apps on your own server. Let them sleep when nobody uses them.**
+Nanodeploy is an open-source app platform for a 64-bit Linux server or VPS,
+on x86-64 or ARM64. Apps share one login and one Postgres. Ships with an
 **agent skill that writes and deploys new apps from a sentence** —
 [jump to it](#build-apps-by-asking).
 
@@ -11,7 +12,28 @@ them, wake in about a second, and share one login and one Postgres. Ships with a
   <img src="docs/dashboard.png" alt="The Nanodeploy dashboard: searchable applications, clear states and server memory" width="660">
 </p>
 
-![MIT](https://img.shields.io/badge/license-MIT-1f4b8f) ![idle footprint](https://img.shields.io/badge/idle-~180%20MB-1f8f60) ![built for](https://img.shields.io/badge/built%20for-4%20GB%20ARM-7a5610)
+[![MIT](https://img.shields.io/badge/license-MIT-1f4b8f)](LICENSE)
+![architectures](https://img.shields.io/badge/Linux-x86--64%20%7C%20ARM64-1f8f60)
+
+**[Installation guide](docs/INSTALL.md) · [Guide d'installation en français](docs/INSTALL.fr.md) · [Contributing](CONTRIBUTING.md)**
+
+## Try it locally
+
+With Docker and Compose installed, try the complete platform without a domain:
+
+```bash
+git clone https://github.com/theosorus/nanodeploy.git
+cd nanodeploy
+./install.sh --local
+docker compose logs control-plane | grep -A1 SETUP
+```
+
+Open the one-time setup link, create your account, then open
+**http://deploy.apps.localhost:8080**. The first build can take several minutes.
+No cloud account, paid service, GPU or Node installation is required for this
+trial. [Requirements, local hostname help and HTTPS server setup →](docs/INSTALL.md)
+
+Screenshots use fictional accounts and applications from the local UI preview.
 
 ---
 
@@ -23,8 +45,8 @@ the sixth.
 
 So Nanodeploy stops them. An app with no traffic is a stopped container — zero
 RAM, zero CPU — and the next request starts it back up before the page finishes
-loading. A Jetson Nano with five apps deployed sits at **1.4 GB of 4 GB**,
-Postgres, identity provider and gateway included.
+loading. It is designed for small servers; plan for 4 GB of RAM, with more room
+for Git builds or larger apps. No particular board or hosting provider is required.
 
 You still get what makes hosting worth it: a domain per app, HTTPS, one account
 across everything, a database per app, and a deploy that is one command or one
@@ -41,6 +63,9 @@ drag of a `.zip`.
 | control plane | uploads, provisioning, routes | ~50 MB |
 | two socket proxies | least-privilege Docker access | ~10 MB |
 
+Memory figures are indicative, not a capacity guarantee; measure your own
+workload. Builds temporarily use additional memory.
+
 A woken app costs ~40 MB, capped at 256 MB. One that must answer instantly can
 opt out of sleeping for that same 40 MB, permanently. In the app's **Settings**,
 check **Always on** to wake it immediately and keep it running. Unchecking it
@@ -51,14 +76,17 @@ Static websites are already always available.
 ## Deploying
 
 ```bash
-cp -r templates/app-template my-app && cd my-app
-npm install
+cp -R templates/app-template ../my-app && cd ../my-app
+npm ci
+# Set name/slug in app.yaml, then generate the sample database schema:
+npm run db:generate
 export NANODEPLOY_URL=https://deploy.apps.example.com NANODEPLOY_TOKEN=ndd_...
 npm run deploy
 ```
 
-Your machine builds; the server compiles nothing. It gets a zip, builds a small
-image, runs migrations once, and puts the container back to sleep. No terminal?
+For ZIP deployments, your machine compiles the app. The server receives the
+archive, builds a small runtime image, runs migrations once and puts the
+container back to sleep. No terminal?
 Choose **New application → ZIP archive** and drop your zip there.
 
 The token is a **deploy key**: made in an application's **Settings**, or under
@@ -127,8 +155,9 @@ building twice:
 4. the commit gets a green or red status, linking to the app or to the build log.
 
 Each pull request gets a **preview** at `<app>--pr-<n>.apps.example.com`, for
-accounts of your server only, with its own empty database and the production
-app's variables. It sleeps like any app (zero memory at rest), is updated by each
+accounts of your server only, with its own empty database and separate
+environment variables. Set preview credentials explicitly. It sleeps like any
+app (zero memory at rest), is updated by each
 push to the branch, and goes away when the pull request is closed. Pull requests
 from forks are never built.
 
@@ -136,7 +165,7 @@ Change how a repository builds in `app.yaml`:
 
 ```yaml
 build:
-  image: node:20-bookworm-slim   # default
+  image: node:24-bookworm-slim   # default
   install: npm ci                # default: npm ci with a lockfile, npm install without
   command: npm run build         # must leave dist/ (and server.js if there is a backend)
 ```
@@ -156,8 +185,9 @@ for apps that are not public, which accounts used them on which days.
 No cookie, no third-party script, no extra service. A visitor is counted with a
 hash of a salt that changes every midnight, the app, the address and the browser:
 countable within a day, never followable from one day or one app to the next.
-Addresses are not stored. Behind Cloudflare, the country comes from its header for
-free. A single-page app reports its client-side navigations with one call,
+Analytics aggregates do not store raw addresses; the gateway access log retains
+them briefly (see [SECURITY.md](SECURITY.md)). Behind Cloudflare, the country can
+come from its header. A single-page app reports its client-side navigations with one call,
 `trackPage()` in the template's `src/analytics.ts`. Set `TIMEZONE` in `.env` so
 "today" starts at your midnight.
 
@@ -235,41 +265,34 @@ and no host files or production secrets.
 
 ## Install
 
-You need Docker + Compose v2 (on storage that isn't an SD card), a domain with a
-**wildcard** `*.apps.example.com` pointing at the machine (a
-[Cloudflare tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
-is easiest behind a home router), and Node 24 on your laptop.
+For a public installation, use a 64-bit Linux server, Docker Engine 28+ with
+Compose v2, your domain with wildcard DNS, and an HTTPS reverse proxy or tunnel.
+Choose any hosting/DNS provider; Node is required only for app development.
 
 ```bash
-git clone https://github.com/theosorus/nanodeploy && cd nanodeploy
-./install.sh          # writes .env with fresh secrets, then stops
-$EDITOR .env          # set APPS_DOMAIN and APPS_DIR
-./install.sh          # builds and starts everything
+git clone https://github.com/theosorus/nanodeploy.git
+cd nanodeploy
+./install.sh --init   # generates .env; defaults to checkout-owned app storage
+# Edit .env: set your APPS_DOMAIN and review the other settings.
+./install.sh --check
+./install.sh
 ```
 
-Then point your tunnel at `http://localhost:8080` and open the one-time link the
-control plane prints in its logs (`docker compose logs control-plane | grep -A1
-SETUP`) to create your administrator account. The installer prints each step
-with your domain filled in. Upgrading from a version that used Pocket ID? Start
-it once with `docker compose --profile legacy up -d pocket-id` and restart the
-control plane: accounts and groups are imported with their ids, so no app loses
-its data, and everyone gets a link to set a password or a new passkey.
+The [complete installation guide](docs/INSTALL.md) walks through DNS, HTTPS,
+proxy examples, your first account and app, reboot recovery, backups and common
+errors. A [French version](docs/INSTALL.fr.md) is included. Configuration and
+generated files stay outside Git.
 
-> **The wildcard is not optional.** The tunnel rule says where a request goes
-> once it arrives; the `*` DNS record is what makes it arrive. With the first but
-> not the second, every app deploys and runs while the browser says "server not
-> found".
-
-After a power cut the machine comes back on its own, if you install the unit
-once (`sudo cp nanodeploy.service /etc/systemd/system/ && sudo systemctl enable
-nanodeploy`): the control plane rebuilds any missing container, image or route
-from the bundles on disk. Back up with `pg_dumpall`, and stop with `docker
-compose stop`, never `down` — `down` deletes the networks and the app containers
-become unstartable.
+Generate systemd units for your own paths/user with
+`./scripts/configure-systemd.sh`; see [start on boot](docs/INSTALL.md#start-on-boot)
+before installing them. Use `./scripts/backup.sh` for full backups and
+`docker compose stop` for normal shutdown. [Operations and recovery](docs/OPERATIONS.md)
+explain what to preserve.
 
 ## Keeping it up to date
 
-`./scripts/update.sh`, run every five minutes by `nanodeploy-update.timer`,
+Automatic updates are optional and disabled by default.
+`./scripts/update.sh`, run every five minutes if you install `nanodeploy-update.timer`,
 deploys each new commit of `main` once its CI is green: it backs up first
 (`scripts/backup.sh`), checks the console still lists every app afterwards, and
 goes back to the previous commit if not. [docs/UPGRADING.md](docs/UPGRADING.md)
@@ -331,4 +354,6 @@ is deliberately not.
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE) and [CONTRIBUTING.md](CONTRIBUTING.md).
+MIT. Use, modify and redistribute it, including for commercial projects, while
+keeping the license notice. See [LICENSE](LICENSE),
+[third-party notices](THIRD_PARTY_NOTICES.md) and [CONTRIBUTING.md](CONTRIBUTING.md).

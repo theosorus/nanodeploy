@@ -1,0 +1,34 @@
+name: Bug report
+description: Report a reproducible problem with Nanodeploy.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please redact logs. Never include .env, tokens, setup links, real accounts or backups.
+        For a security vulnerability, follow SECURITY.md instead of opening a public issue.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Include what you expected to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide a minimal example, commands or configuration with placeholder values.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, CPU architecture, Docker/Compose versions, Nanodeploy commit, local or HTTPS installation, proxy type.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted logs
+      render: text

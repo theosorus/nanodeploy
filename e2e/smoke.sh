@@ -134,7 +134,7 @@ check "$(docker inspect -f '{{.State.Status}}' app-smoke)" "running" "container 
 echo "== gate: public app with a protected back office =="
 check "$(code -H "Host: smoke.$DOM" "$BASE"/api/admin/anything)" "401" "protected path asks an anonymous visitor to sign in"
 L=$(curl -s -o /dev/null -w '%{redirect_url}' -H "Host: smoke.$DOM" -H 'Accept: text/html' "$BASE"/api/admin/anything)
-echo "$L" | grep -q "auth.$DOM/login?to=" && ok "a browser is sent to the sign-in page" || bad "no sign-in redirect: $L"
+echo "$L" | grep -Eq "auth[.]$DOM(:[0-9]+)?/login[?]to=" && ok "a browser is sent to the sign-in page" || bad "no sign-in redirect: $L"
 json -H "Host: smoke.$DOM" "$BASE"/_nd/me | grep -q '"anonymous":true' && ok "/_nd/me on an app host" || bad "/_nd/me"
 check "$(code -H "Host: smoke.$DOM" -H 'Cookie: nd_s=forged; __Host-nd_s=forged' "$BASE"/api/admin/x)" "401" "forged session cookie -> 401"
 check "$(code -H "Host: smoke.$DOM" -H "Authorization: Bearer ndk_$(printf 'A%.0s' $(seq 43))" "$BASE"/api/admin/x)" \
@@ -182,9 +182,9 @@ setaccess public
 
 echo "== deploy keys =="
 K=$(json -X POST -H "Host: deploy.$DOM" -H "$AUTH" -H 'content-type: application/json' \
-  -d '{"label":"smoke"}' "$BASE"/api/apps/smoke/keys | grep -o 'ndd_[A-Za-z0-9_-]*')
+  -d '{"label":"smoke"}' "$BASE"/api/apps/smoke/keys | grep -Eo '"key":"ndd_[A-Za-z0-9_-]{43}"' | cut -d'"' -f4)
 KEY="Authorization: Bearer $K"
-[ ${#K} -eq 47 ] && ok "key created" || bad "no key: $K"
+[ ${#K} -eq 47 ] && ok "key created" || bad "deploy key missing or malformed"
 R=$(json -X POST -H "Host: deploy.$DOM" -H "$KEY" -F bundle=@"$WORK"/smoke.zip "$BASE"/api/deploy)
 echo "$R" | grep -q '"ok":true' && ok "key deploys its own app, without a session" || bad "key deploy: $R"
 check "$(code -H "Host: deploy.$DOM" -H "$KEY" "$BASE"/api/apps)" "403" "key cannot list apps"

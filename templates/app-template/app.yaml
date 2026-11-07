@@ -21,6 +21,6 @@ idle:
 env: []                  # names only, values are set in the dashboard
 # Only for deploys from a Git repository (the server builds it); a zip ignores it.
 # build:
-#   image: node:20-bookworm-slim
+#   image: node:24-bookworm-slim
 #   install: npm ci
 #   command: npm run build

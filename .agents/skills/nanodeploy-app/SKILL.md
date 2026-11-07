@@ -5,7 +5,8 @@ description: "Build, change, and deploy applications hosted on Nanodeploy, a sel
 
 # Nanodeploy app
 
-Nanodeploy deploys apps on a small home server, typically 4 GB of RAM. The
+Nanodeploy deploys apps on a self-hosted Linux server or VPS (x86-64 or ARM64),
+typically starting with 4 GB of RAM. The
 platform imposes one stack and a few hard constraints. An app that ignores them
 deploys fine, then breaks silently after its first sleep.
 
@@ -111,7 +112,7 @@ keyboard.
 | Layer | Choice |
 |---|---|
 | Frontend | Vite + React + TypeScript, built to static files in `dist/` |
-| Backend | Hono on Node 20, bundled by esbuild into a single `server.js` |
+| Backend | Hono on Node 24, bundled by esbuild into a single `server.js` |
 | Database | shared Postgres, accessed through Drizzle ORM |
 | Auth | not a single line in the app, the gateway injects the identity |
 | API routes | everything under `/api/*`, the rest is served statically by Caddy |
@@ -289,7 +290,7 @@ env: [OPENAI_API_KEY]   # names only, values are typed in the dashboard
 ## Procedure
 
 1. **Frame it.** The questions above, in one round.
-2. **Copy the template.** `cp -r templates/app-template <slug>` from the Nanodeploy
+2. **Copy the template.** `cp -R templates/app-template ../<slug>` from the Nanodeploy
    repo, or reproduce its exact structure if the repo is not around.
 3. **Write `app.yaml` first**, it frames everything else.
 4. **Write `theme.css`**, the chosen art direction, before any component. Design
@@ -309,6 +310,12 @@ env: [OPENAI_API_KEY]   # names only, values are typed in the dashboard
    `DEPLOY_TOKEN`: it controls the whole machine, a deploy key only this app. A
    `403` saying the key "is for" another app means `app.yaml` and the key
    disagree on the slug.
+
+The instance URL comes from the user or their project environment, never from
+the maintainer's deployment. If no instance exists yet, use the repository's
+`docs/INSTALL.md` (or `docs/INSTALL.fr.md`); `./install.sh --local` provides a
+local trial. Platform changes and platform deployments are a separate task:
+do not infer an SSH host, user or server path from this skill.
 
 After a successful deploy, give the URL and list the environment variables still
 waiting for a value, if any.

@@ -221,6 +221,7 @@ services:
       # what the browser sees, in front of the tunnel or reverse proxy
       PUBLIC_SCHEME: ${PUBLIC_SCHEME:-https}
       PUBLIC_PORT: ${PUBLIC_PORT:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
     # edge for caddy, data for postgres; never apps
     networks: [edge, gate_data]
     read_only: true
@@ -266,6 +267,7 @@ services:
       GATE_DB_PASSWORD: ${GATE_DB_PASSWORD}
       PUBLIC_SCHEME: ${PUBLIC_SCHEME:-https}
       PUBLIC_PORT: ${PUBLIC_PORT:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
       # analytics: where a day starts, for "today" and the daily visitor count
       TIMEZONE: ${TIMEZONE:-UTC}
       # encrypts forge credentials (GitHub App key, GitLab tokens) at rest

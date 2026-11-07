@@ -76,8 +76,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: bash -n install.sh e2e/smoke.sh
-      - run: node --test scripts/update-security.test.mjs
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: bash -n install.sh scripts/*.sh e2e/smoke.sh
+      - run: node --test scripts/install.test.mjs scripts/update-security.test.mjs
       # pinned: an action on @master can change under you between two runs
       - uses: ludeeus/action-shellcheck@2.0.0
         with:
@@ -93,3 +96,42 @@ jobs:
           sed -i 's/^APPS_DOMAIN=.*/APPS_DOMAIN=apps.ci.test/' .env
           sed -i 's/^DEPLOY_TOKEN=.*/DEPLOY_TOKEN=ci/' .env
           docker compose config -q
+
+  public-files:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/check-public.mjs
+
+  installation:
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install a fresh localhost instance
+        run: ./install.sh --local
+      - name: Sign in, deploy the app template and keep data across sleep
+        run: node --test e2e/onboarding.test.mjs
+        env:
+          NANODEPLOY_TEST_FRESH_INSTALL: '1'
+      - name: Deploy, wake, roll back and delete a sample app
+        run: |
+          set -a
+          source .env
+          set +a
+          NANODEPLOY_TOKEN="$DEPLOY_TOKEN" ./e2e/smoke.sh
+      - name: Inspect platform state on failure
+        if: failure()
+        run: docker compose ps -a

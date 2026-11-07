@@ -1,6 +1,8 @@
 {
   "name": "nanodeploy-gate",
   "private": true,
+  "license": "MIT",
+  "engines": { "node": ">=24" },
   "type": "module",
   "scripts": {
     "build": "node build.mjs",

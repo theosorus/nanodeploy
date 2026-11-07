@@ -1,5 +1,5 @@
 {
-	# cloudflared terminates TLS, caddy only serves plain http internally
+	# An outer reverse proxy or tunnel terminates TLS; Caddy serves internal HTTP.
 	auto_https off
 	# The proxy in front terminates TLS and says so with X-Forwarded-Proto.
 	# Caddy overwrites that header with its own scheme unless the client is a

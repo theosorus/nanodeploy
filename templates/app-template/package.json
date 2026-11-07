@@ -1,10 +1,13 @@
 {
   "name": "nanodeploy-app",
   "private": true,
+  "license": "MIT",
+  "engines": { "node": ">=24" },
   "type": "module",
   "scripts": {
     "dev": "concurrently \"vite\" \"tsx watch server/index.ts\"",
     "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
     "build": "vite build && esbuild server/index.ts --bundle --platform=node --target=node24 --format=esm --outfile=server.js --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\"",
     "db:generate": "drizzle-kit generate",
     "deploy": "npm run build && node scripts/deploy.mjs"

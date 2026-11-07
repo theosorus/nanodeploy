@@ -1,9 +1,18 @@
 .env
+.env.*
+!.env.example
+.local/
+.ssh/
 node_modules
 dist
 *.zip
 server.js
 var/
+backups/
+*.sql.gz
+*.tgz
+*.pem
+*.key
 .DS_Store
 
 # site files the control plane writes at runtime
@@ -13,5 +22,5 @@ caddy/conf.d/*.caddy
 .update-failed
 .update.lock
 
-# Private deployment skill for this project and personal Jetson
-/.agents/skills/nanodeploy-jetson-deploy/
+# Local deployment runbooks; the shared app-building skill remains tracked.
+/.agents/skills/*-deploy/

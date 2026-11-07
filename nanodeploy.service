@@ -1,14 +1,12 @@
 # Boot unit for Nanodeploy.
-# Install:
-#   sudo cp nanodeploy.service /etc/systemd/system/
-#   sudo systemctl daemon-reload && sudo systemctl enable nanodeploy
-# Edit WorkingDirectory and RequiresMountsFor to match your setup.
+# Example paths only. Run scripts/configure-systemd.sh to render your actual
+# checkout, data directory and user; see docs/INSTALL.md#start-on-boot.
 [Unit]
 Description=Nanodeploy platform
 Requires=docker.service
 After=docker.service network-online.target
-# do not start before the external storage holding docker data-root is mounted
-RequiresMountsFor=/mnt/ssd
+# Also add Docker's data-root here if you moved it to another mount.
+RequiresMountsFor=/opt/nanodeploy /srv/nanodeploy/apps
 
 [Service]
 Type=oneshot

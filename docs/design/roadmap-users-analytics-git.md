@@ -1,5 +1,10 @@
 # Nanodeploy : utilisateurs, analytics, versions et Git
 
+> Notes de conception historiques, conservées pour expliquer les choix du
+> projet. Les propositions et estimations ci-dessous ne constituent pas le
+> contrat actuel de la plateforme. Pour installer une instance, suivre
+> [le guide à jour](../INSTALL.fr.md) et [SECURITY.md](../../SECURITY.md).
+
 *Document de conception. Novembre 2026. Rédigé à partir d'une lecture complète du
 control plane (`control-plane/src`), du Caddyfile, du compose, du template et du
 skill, plus des recherches sur les briques existantes (tinyauth, Pocket ID, Caddy,
@@ -11,11 +16,11 @@ le problème tel qu'il se pose dans le code actuel, les options étudiées, une
 recommandation argumentée, le modèle de données, les extraits de configuration
 qui comptent, l'UX, les risques et le coût sur une machine de 4 Go.
 
-Les choix de cadrage (réponses à mes questions) :
+Les objectifs de conception retenus :
 
 | Question | Réponse |
 |---|---|
-| Qui modère une app publique ? | Moi et quelques proches, avec un vrai compte |
+| Qui modère une app publique ? | Les comptes auxquels un administrateur attribue un rôle |
 | Où tourne le build d'un dépôt Git ? | Sur le serveur (mode Vercel) |
 | Quelles forges ? | GitHub et GitLab.com |
 | Analytics anonymes ou nominatives ? | Les deux : anonyme pour le public, nominatif pour les comptes |
@@ -266,7 +271,7 @@ statut (actif, suspendu, invité). Il peut avoir **plusieurs facteurs** :
 
 | Méthode | Usage | Notes |
 |---|---|---|
-| Mot de passe | défaut pour les proches | hash `scrypt` natif Node (aucune dépendance native à compiler sur ARM), paramètres calibrés pour ~100 ms sur le Jetson |
+| Mot de passe | connexion accessible à tous les utilisateurs | hash `scrypt` natif Node, sans dépendance native ; paramètres à calibrer sur le serveur cible |
 | Passkey (WebAuthn) | recommandé, obligatoire pour les admins à terme | `@simplewebauthn/server` (pur JS). RP ID = `apps.example.com` pour que la passkey serve sur tous les sous-domaines |
 | TOTP | second facteur optionnel du mot de passe | appli d'authentification classique |
 | Code par email | plus tard, seulement si SMTP configuré | utile pour "mot de passe oublié" |
@@ -1312,7 +1317,7 @@ commit de chaque branche est gardé (les intermédiaires sont marqués `skipped`
 Garde mémoire : si la mémoire disponible de l'hôte est sous 1,2 Go, la build
 attend que des apps se rendorment, avec un message dans le journal.
 
-**Temps attendus sur un Jetson Nano** (ordres de grandeur, à mesurer) : téléchargement
+**Temps attendus sur un petit serveur ARM** (ordres de grandeur, à mesurer) : téléchargement
 de l'archive quelques secondes, `npm ci` 40 s à 2 min la première fois puis 10 à
 30 s avec le cache, `vite build` + `esbuild` 20 s à 1 min. Donc **1 à 3 minutes du
 push à la mise en ligne**. Recommandation forte : **activer un swap** de 2 à 4 Go
@@ -1575,19 +1580,18 @@ le cas "public + modérateur" et le remplacement à chaud.
 Elles ne bloquent pas la phase 0 ni le début de la phase 1, mais il faudra les
 trancher en route.
 
-1. **Pocket ID** : on le retire complètement à la fin de la migration (plus
-   simple, recommandé), ou tu veux le garder comme fournisseur de passkeys
-   branché en OIDC sur `gate` ?
-2. **SMTP** : as-tu un serveur d'envoi d'email (ou un compte type Resend,
-   Brevo) ? Ça débloque "mot de passe oublié" en libre-service et les codes par
-   email. Sans, tout passe par des liens que tu transmets toi-même.
+1. **Pocket ID** : retrait après migration ou fournisseur OIDC optionnel pour
+   `gate`. La plateforme actuelle conserve uniquement le chemin d'import.
+2. **SMTP** : un fournisseur optionnel permettrait la récupération autonome des
+   mots de passe et les codes par email. Sans lui, les administrateurs
+   transmettent les liens de connexion.
 3. **2FA pour la console** : obligatoire dès la v1, ou d'abord recommandée ?
-4. **Tunnel** : es-tu bien derrière Cloudflare Tunnel ? (Ça décide de
-   `CF-Connecting-IP` et donne le pays gratuitement pour les analytics.)
-5. **Rétention des analytics** : les durées de 3.4 te conviennent ?
+4. **Proxy ou tunnel** : détection de l'IP à adapter au proxy réellement utilisé ;
+   les en-têtes Cloudflare sont une possibilité, sans obligation de fournisseur.
+5. **Rétention des analytics** : rendre les durées configurables selon les usages.
 6. **Previews** : uniquement les PR (recommandé), ou aussi chaque branche poussée ?
-7. **Swap** : le Jetson a-t-il un SSD où mettre 2 à 4 Go de swap ? C'est ce qui
-   rend la build sur le serveur confortable.
+7. **Mémoire des builds** : dimensionner la RAM et éventuellement le swap sur
+   stockage persistant selon les applications et le serveur choisi.
 8. **Données de prod dans les previews** : jamais (recommandé), ou en option ?
 
 ---

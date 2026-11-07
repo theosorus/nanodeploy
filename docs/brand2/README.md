@@ -2,7 +2,7 @@
 
 The Nanodeploy logo, built as **true vector pixels**: every block is an SVG
 `<rect>`, so it stays crisp at any size instead of blurring when scaled. Colour
-is OpenAI dark blue `#03224c` on cream `#F4ECD8`. The letterforms come from
+is dark blue `#03224c` on cream `#F4ECD8`. The letterforms come from
 [Departure Mono](https://departuremono.com), sampled onto a coarse grid.
 
 | Format | File | Use |

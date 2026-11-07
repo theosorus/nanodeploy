@@ -1,0 +1,15 @@
+name: Feature request
+description: Suggest an improvement or discuss a design change.
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What problem would this solve?
+      description: Describe the use case and who would benefit.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Suggested approach
+      description: Include alternatives and any effects on resource use or installation complexity.
