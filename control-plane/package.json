@@ -17,7 +17,7 @@
     "hono": "^4.13.17",
     "postgres": "^3.4.5",
     "tar-fs": "^3.1.1",
-    "tar-stream": "^3.1.7",
+    "tar-stream": "^3.2.2",
     "yaml": "^2.6.1"
   },
   "devDependencies": {
