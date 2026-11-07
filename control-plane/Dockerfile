@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim AS build
+FROM node:25-bookworm-slim AS build
 WORKDIR /app
 # The lockfile keeps the image reproducible. dockerode drags in ssh2, which
 # compiles native bindings (cpu-features, sshcrypto) that esbuild cannot bundle;
@@ -10,7 +10,7 @@ COPY tsconfig.json build.mjs ./
 COPY src ./src
 RUN npm run build
 
-FROM node:24-bookworm-slim
+FROM node:25-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/dist ./dist
