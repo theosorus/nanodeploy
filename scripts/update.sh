@@ -26,9 +26,27 @@ HEALTH_TRIES=${UPDATE_HEALTH_TRIES:-60}
 FAILED_MARK=.update-failed
 say() { printf '[update] %s\n' "$1"; }
 apps_count() {
-  curl -fsS --max-time 20 -H "Host: deploy.$APPS_DOMAIN" -H "Authorization: Bearer $DEPLOY_TOKEN" \
-    "http://127.0.0.1:${CADDY_PORT:-8080}/api/apps" |
-    python3 -c 'import json,sys; print(len(json.load(sys.stdin)["apps"]))'
+  # Keep the deployment token in the child environment, outside process args.
+  python3 - <<'PY'
+import json, os
+from http.client import HTTPConnection
+
+connection = HTTPConnection("127.0.0.1", int(os.environ.get("CADDY_PORT") or "8080"), timeout=20)
+try:
+    connection.request("GET", "/api/apps", headers={
+        "Host": "deploy." + os.environ["APPS_DOMAIN"],
+        "Authorization": "Bearer " + os.environ["DEPLOY_TOKEN"],
+    })
+    response = connection.getresponse()
+    if response.status != 200:
+        raise RuntimeError("console returned HTTP " + str(response.status))
+    apps = json.load(response)["apps"]
+finally:
+    connection.close()
+if not isinstance(apps, list):
+    raise ValueError("invalid application list")
+print(len(apps))
+PY
 }
 
 git fetch -q origin "$BRANCH"
@@ -68,7 +86,10 @@ case "$verdict" in
     ;;
 esac
 
-before=$(apps_count || echo 0)
+before=$(apps_count) || {
+  say "the console baseline is unavailable, trying again later"
+  exit 1
+}
 say "${current:0:7} -> ${next:0:7}, $before app(s) before"
 ./scripts/backup.sh
 
