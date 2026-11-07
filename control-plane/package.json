@@ -17,7 +17,7 @@
     "adm-zip": "^0.6.1",
     "dockerode": "^5.0.1",
     "hono": "^4.13.17",
-    "postgres": "^3.4.5",
+    "postgres": "^4.0.0",
     "tar-fs": "^3.1.1",
     "tar-stream": "^3.2.2",
     "yaml": "^2.9.1"
