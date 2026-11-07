@@ -25,6 +25,7 @@ const networks: Docker.Network[] = [];
 const apps: string[] = [];
 const buildNetwork = `${prefix}-build`;
 let builtImage: string | undefined;
+let egressImage: string | undefined;
 
 async function command(container: Docker.Container, cmd: string[], env: string[] = []) {
   const operation = await container.exec({ Cmd: cmd, Env: env, AttachStdout: true, AttachStderr: true });
@@ -71,10 +72,17 @@ before(async () => {
   });
   containers.push(gateway); await gateway.start();
   const egressDirectory = new URL("../../egress/", import.meta.url).pathname;
-  const egress = await engine.createContainer({ name: process.env.EGRESS_CONTAINER, Image: image, User: "1000:1000",
-    Cmd: ["node", "/opt/egress/proxy.mjs"],
-    HostConfig: { NetworkMode: `${prefix}-control`, ReadonlyRootfs: true, CapDrop: ["ALL"], Memory: 128 * 1024 * 1024,
-      Binds: [`${egressDirectory}:/opt/egress:ro`] },
+  const egressSource = join(work, "egress-image");
+  await mkdir(egressSource);
+  // A private build checkout must still yield an image its non-root user can
+  // read. This reproduces deployment from a restrictive host umask.
+  for (const file of ["Dockerfile", "policy.mjs", "proxy.mjs"]) {
+    await writeFile(join(egressSource, file), await readFile(join(egressDirectory, file)), { mode: 0o600 });
+  }
+  egressImage = `${prefix}:egress`;
+  await exec("docker", ["build", "--tag", egressImage, egressSource]);
+  const egress = await engine.createContainer({ name: process.env.EGRESS_CONTAINER, Image: egressImage, User: "1000:1000",
+    HostConfig: { NetworkMode: `${prefix}-control`, ReadonlyRootfs: true, CapDrop: ["ALL"], Memory: 128 * 1024 * 1024 },
   });
   containers.push(egress); await egress.start();
   await engine.getNetwork(buildNetwork).connect({ Container: process.env.EGRESS_CONTAINER, EndpointConfig: { Aliases: ["egress"] } });
@@ -106,6 +114,7 @@ after(async () => {
   for (const container of containers.reverse()) await container.remove({ force: true, v: true }).catch(() => {});
   for (const network of networks.reverse()) await network.remove().catch(() => {});
   if (builtImage) await engine.getImage(builtImage).remove().catch(() => {});
+  if (egressImage) await engine.getImage(egressImage).remove().catch(() => {});
   if (work) await rm(work, { recursive: true, force: true });
 });
 
@@ -150,7 +159,7 @@ test("isolated builds retain public HTTPS access through the filtered egress pro
 test("independent app bridges block direct backend access and preserve gateway/database access", options, async () => {
   const source = join(work, "app-source");
   await mkdir(source);
-  await writeFile(join(source, "server.js"), "require('http').createServer((q,s)=>s.end('app')).listen(3000,'0.0.0.0')");
+  await writeFile(join(source, "server.js"), "require('http').createServer((q,s)=>s.end('app')).listen(3000,'0.0.0.0')", { mode: 0o600 });
   builtImage = `${prefix}:app`;
   await dk.buildImage(source, builtImage, "server.js", 3000);
   assert.equal(await dk.imageExists(image), false, "an existing image without the current runtime baseline must be rebuilt");

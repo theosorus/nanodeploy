@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { execFile, execFileSync, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { promisify } from 'node:util';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -79,14 +79,17 @@ for (const mode of ['green', 'pending', 'red', 'absent', 'unreachable', 'baselin
       await writeFile(join(work, '.env'), `APPS_DOMAIN=apps.fixture.invalid\nDEPLOY_TOKEN=${token}\nCADDY_PORT=${server.address().port}\nUPDATE_HEALTH_TRIES=1\nUPDATE_BRANCH=main\nGITHUB_API_URL=https://github.fixture.invalid\n`);
       const scripts = {
         'bin/flock': '#!/bin/sh\nexit 0\n',
-        'scripts/backup.sh': '#!/bin/sh\nprintf "backup\\n" >> "$NANODEPLOY_UPDATE_FIXTURE/actions"\n',
-        'install.sh': '#!/bin/sh\nprintf "install\\n" >> "$NANODEPLOY_UPDATE_FIXTURE/actions"\n',
+        'scripts/backup.sh': '#!/bin/sh\nprintf "backup\\n" >> "$NANODEPLOY_UPDATE_FIXTURE/actions"\nprintf private > "$NANODEPLOY_UPDATE_FIXTURE/backup-private"\n',
+        'install.sh': '#!/bin/sh\nprintf "install\\n" >> "$NANODEPLOY_UPDATE_FIXTURE/actions"\nprintf private > "$NANODEPLOY_UPDATE_FIXTURE/installer-secret"\n',
         'bin/git': `#!/usr/bin/env node
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, writeFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 if (args[0] === 'rev-parse') console.log((args[1] === 'HEAD' ? 'a' : 'b').repeat(40));
 else if (args[0] === 'remote') console.log('https://github.com/fixture/platform.git');
-else if (args[0] === 'merge') appendFileSync(process.env.NANODEPLOY_UPDATE_FIXTURE + '/actions', 'merge\\n');
+else if (args[0] === 'merge') {
+  appendFileSync(process.env.NANODEPLOY_UPDATE_FIXTURE + '/actions', 'merge\\n');
+  writeFileSync(process.env.NANODEPLOY_UPDATE_FIXTURE + '/checkout-source', 'public source');
+}
 `,
         'bin/curl': `#!/usr/bin/env node
 import { appendFileSync } from 'node:fs';
@@ -113,6 +116,10 @@ console.log(JSON.stringify({ check_runs: checks }));
         throw error;
       });
       assert.deepEqual(actions.trim().split('\n').filter(Boolean), mode === 'green' ? ['backup', 'merge', 'install'] : []);
+      if (mode === 'green') {
+        assert.equal((await stat(join(work, 'checkout-source'))).mode & 0o777, 0o644);
+        for (const path of ['backup-private', 'installer-secret']) assert.equal((await stat(join(work, path))).mode & 0o777, 0o600);
+      }
       const curlArgs = await readFile(join(work, 'curl-args'), 'utf8');
       assert.equal(curlArgs.includes(token), false, 'the deployment token must not appear in command arguments');
       assert.equal(requests.length, mode === 'green' ? 2 : mode.startsWith('baseline-') ? 1 : 0);
