@@ -3,8 +3,10 @@
 // back to English rather than showing its name.
 const en = {
   signIn: "Sign in",
-  signInTo: "to open {app}",
-  signInConsole: "The console can deploy code on this server: confirm it is you.",
+  signInTo: "Sign in to open {app}.",
+  signInConsole: "Confirm your identity to securely access your server’s administration.",
+  signInWelcome: "Your applications, all in one place.",
+  passkeyHint: "Use your fingerprint, face, or device PIN.",
   login: "Username or email",
   password: "Password",
   submitSignIn: "Sign in",
@@ -76,12 +78,14 @@ const en = {
 
 const fr: typeof en = {
   signIn: "Connexion",
-  signInTo: "pour ouvrir {app}",
-  signInConsole: "La console peut déployer du code sur ce serveur : confirmez que c'est bien vous.",
+  signInTo: "Connectez-vous pour ouvrir {app}.",
+  signInConsole: "Confirmez votre identité pour accéder à l’administration de votre serveur en toute sécurité.",
+  signInWelcome: "Vos applications, au même endroit. Tout simplement.",
+  passkeyHint: "Utilisez votre empreinte, votre visage ou le code de votre appareil.",
   login: "Nom d'utilisateur ou email",
   password: "Mot de passe",
   submitSignIn: "Se connecter",
-  usePasskey: "Se connecter avec une passkey",
+  usePasskey: "Utiliser une clé d’accès",
   or: "ou",
   wrongCredentials: "Nom d'utilisateur ou mot de passe incorrect.",
   tooMany: "Trop de tentatives. Réessayez dans {s} secondes.",

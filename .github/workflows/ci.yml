@@ -45,10 +45,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # the dashboard has no build step, so its only guards are that the script
-      # parses and that both translation tables carry the same keys
+      # The dashboard has no build step; validate the merged language catalogues
+      # and exercise the guard against broken scripts and missing translations.
       - name: parse and check translations
-        run: node scripts/check-dashboard.mjs
+        run: |
+          node --test scripts/check-dashboard.test.mjs
+          node scripts/check-dashboard.mjs
 
   shell:
     runs-on: ubuntu-latest

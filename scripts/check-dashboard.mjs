@@ -1,65 +1,77 @@
 #!/usr/bin/env node
-// The dashboard is one self-contained HTML file with no build step, so nothing
-// would otherwise catch a syntax error or a translation key that exists in one
-// language only. Both are shipping bugs the moment someone switches language.
+// Validate the merged catalogues used by the browser, including declarative
+// labels and mapped keys. Browser code is parsed but never executed.
 import { readFileSync } from "node:fs";
 import { Script } from "node:vm";
 
-const path = "control-plane/public/index.html";
+const path = process.argv[2] ?? "control-plane/public/index.html";
 const html = readFileSync(path, "utf8");
-const script = html.substring(html.indexOf("<script>") + "<script>".length, html.lastIndexOf("</script>"));
-
+const first = html.indexOf("<script>");
+const last = html.lastIndexOf("</script>");
+if (first < 0 || last < first) {
+  console.error("  x could not find the dashboard script");
+  process.exit(1);
+}
+const script = html.slice(first + "<script>".length, last);
 let failed = 0;
-const fail = (msg) => {
-  console.error(`  x ${msg}`);
-  failed++;
-};
+const fail = (message) => { console.error("  x " + message); failed++; };
 
 try {
   new Script(script, { filename: path });
   console.log("  ok dashboard script parses");
 } catch (err) {
-  fail(`dashboard script does not parse: ${err.message}`);
+  fail("dashboard script does not parse: " + err.message);
   process.exit(1);
 }
 
-const block = html.match(/const I18N = \{[\s\S]*?\n\};/);
-if (!block) {
-  fail("could not find the I18N table");
+const catalogueStart = script.indexOf("const I18N = {");
+const catalogueEnd = script.indexOf("const SUPPORTED =");
+if (catalogueStart < 0 || catalogueEnd <= catalogueStart) {
+  fail("could not find the translation catalogue boundaries");
   process.exit(1);
 }
-const I18N = new Script(`(${block[0].replace("const I18N = ", "").replace(/;$/, "")})`).runInNewContext();
-
-const languages = Object.keys(I18N);
-const reference = Object.keys(I18N[languages[0]]).sort();
-for (const lang of languages.slice(1)) {
-  const keys = Object.keys(I18N[lang]).sort();
-  for (const key of reference) if (!keys.includes(key)) fail(`${lang} is missing the key "${key}"`);
-  for (const key of keys) if (!reference.includes(key)) fail(`${languages[0]} is missing the key "${key}"`);
+let I18N, LANGS;
+try {
+  ({ I18N, LANGS } = new Script(script.slice(catalogueStart, catalogueEnd) + ";({ I18N, LANGS });")
+    .runInNewContext({}, { timeout: 1000 }));
+} catch (err) {
+  fail("could not load the translation catalogues: " + err.message);
+  process.exit(1);
 }
-if (!failed) console.log(`  ok ${languages.join(" and ")} share ${reference.length} keys`);
+if (!I18N?.en || !Array.isArray(LANGS) || !LANGS.length) {
+  fail("English translations and supported languages are required");
+  process.exit(1);
+}
 
-// Later features add their strings in separate tables merged into I18N
-// (I18N_PEOPLE, I18N_KEYS...). Each must cover every language with the same keys,
-// or a language silently falls back to English for that feature.
-for (const extra of html.matchAll(/const (I18N_[A-Z]+) = \{[\s\S]*?\n\};/g)) {
-  const table = new Script(`(${extra[0].replace(`const ${extra[1]} = `, "").replace(/;$/, "")})`).runInNewContext();
-  const missingLangs = languages.filter((l) => !table[l]);
-  if (missingLangs.length) fail(`${extra[1]} has no ${missingLangs.join(", ")} block`);
-  const ref = Object.keys(table.en ?? {}).sort();
-  for (const lang of Object.keys(table)) {
-    const keys = Object.keys(table[lang]);
-    for (const key of ref) if (!keys.includes(key)) fail(`${extra[1]}.${lang} is missing the key "${key}"`);
-    for (const key of keys) if (!ref.includes(key)) fail(`${extra[1]}.en is missing the key "${key}"`);
-    for (const key of keys) reference.includes(key) || reference.push(key);
+const languages = LANGS.map(([code]) => code);
+const reference = Object.keys(I18N.en).sort();
+if (new Set(languages).size !== languages.length) fail("supported languages contain duplicates");
+for (const lang of languages) {
+  if (!I18N[lang]) { fail("no " + lang + " catalogue"); continue; }
+  const keys = Object.keys(I18N[lang]);
+  for (const key of reference) if (!keys.includes(key)) fail(lang + ' is missing the key "' + key + '"');
+  for (const key of keys) {
+    if (!reference.includes(key)) fail('en is missing the key "' + key + '"');
+    if (typeof I18N[lang][key] !== "string") fail(lang + "." + key + " is not a string");
   }
-  if (!failed) console.log(`  ok ${extra[1]} covers ${Object.keys(table).length} languages with ${ref.length} keys`);
 }
+for (const lang of Object.keys(I18N)) if (!languages.includes(lang)) fail(lang + " is not in the supported languages");
+if (!failed) console.log("  ok " + languages.length + " merged catalogues share " + reference.length + " keys");
 
-// a key nobody reads is dead weight that drifts out of date
-const dynamic = new Set(["navApps", "navPeople"]);
+const runtime = script.slice(0, catalogueStart) + script.slice(catalogueEnd);
+const markup = html.slice(0, first) + html.slice(last + "</script>".length);
+const labels = [...(markup + runtime).matchAll(/\bdata-i18n\s*=\s*["']([^"']+)["']/g)]
+  .map((match) => match[1]).filter((key) => !key.includes("$" + "{"));
+const directCalls = [...runtime.matchAll(/\bt\(\s*["']([^"']+)["']/g)].map((match) => match[1]);
+for (const key of new Set([...labels, ...directCalls])) {
+  if (!reference.includes(key)) fail('unknown translation key "' + key + '"');
+}
+// Mapped keys appear as literals outside the catalogue. Declarative labels
+// live in markup; concatenated translation keys should use a map as well.
 for (const key of reference) {
-  if (!dynamic.has(key) && !script.includes(`t("${key}"`)) fail(`key "${key}" is never used`);
+  if (!labels.includes(key) && !runtime.includes(JSON.stringify(key)) && !runtime.includes("'" + key + "'")) {
+    fail('key "' + key + '" is never used');
+  }
 }
-
+if (!failed) console.log("  ok direct, mapped and declarative translation references");
 process.exit(failed ? 1 : 0);

@@ -8,7 +8,7 @@ them, wake in about a second, and share one login and one Postgres. Ships with a
 [jump to it](#build-apps-by-asking).
 
 <p align="center">
-  <img src="docs/dashboard.png" alt="The Nanodeploy dashboard: memory meter and the list of deployed apps" width="660">
+  <img src="docs/dashboard.png" alt="The Nanodeploy dashboard: searchable applications, clear states and server memory" width="660">
 </p>
 
 ![MIT](https://img.shields.io/badge/license-MIT-1f4b8f) ![idle footprint](https://img.shields.io/badge/idle-~180%20MB-1f8f60) ![built for](https://img.shields.io/badge/built%20for-4%20GB%20ARM-7a5610)
@@ -55,11 +55,11 @@ npm run deploy
 
 Your machine builds; the server compiles nothing. It gets a zip, builds a small
 image, runs migrations once, and puts the container back to sleep. No terminal?
-Drag the zip onto the dashboard.
+Choose **New application → ZIP archive** and drop your zip there.
 
-The token is a **deploy key**: made in the dashboard (an app's panel, or "deploy
-key for a new app" before its first deploy), it deploys that one app and reads
-its logs, nothing else. Give one to each CI job or AI agent; the server's own
+The token is a **deploy key**: made in an application's **Settings**, or under
+**New application → Terminal & agents** before its first deploy, it deploys that
+one app and reads its logs, nothing else. Give one to each CI job or AI agent; the server's own
 `DEPLOY_TOKEN` can do everything and should stay on the server.
 
 **Every deploy is a version.** It is prepared next to the running one and
@@ -90,18 +90,23 @@ env: [OPENAI_API_KEY]   # names only, values are typed in the dashboard
 
 ## Running it
 
-<img src="docs/app-detail.png" alt="An app's detail panel: access mode, environment variables, recent logs" width="560">
+<img src="docs/app-detail.png" alt="An application's overview: status, current version, resources and recent deployments" width="660">
 
-Click an app for its access mode, environment variables, logs and live memory.
-Access is a dropdown, not a redeploy, and a redeploy never changes it back:
+Open an application for its overview and recent activity. **Deployments** holds
+its version history, **Access** controls who can open it, **Settings** contains
+environment variables and deploy keys, and **Logs** shows its recent output.
+You can search and filter applications, switch between cards and a list, or open
+an application directly from its card. The console also adapts to your phone.
+
+Access changes take effect immediately, and a redeploy never changes them back:
 `access` in `app.yaml` only applies when the app is created. **private** (accounts you created),
 **groups** (people you pick), or **public** (the whole internet — the dashboard
 warns you). Env values are write-only: you can replace a secret, not read it back.
 
 ## Push to deploy, from GitHub or GitLab
 
-Connect a forge in the Git tab, pick a repository and a branch, and every push to
-it deploys. **GitHub**: one click creates a private GitHub App for your server
+Connect a forge in **Git deployments**, pick a repository and a branch, and every
+push to it deploys. **GitHub**: one click creates a private GitHub App for your server
 (GitHub's manifest flow), you choose which repositories it may read. **GitLab**:
 paste a project access token, the webhook is installed for you.
 

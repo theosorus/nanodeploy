@@ -9,65 +9,76 @@ import { AUTH_ORIGIN } from "./config.js";
 export const esc = (s: unknown) =>
   String(s ?? "").replace(/[<>&"']/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-// Same ground as the dashboard: cream paper, dark-blue ink, ochre for the one
-// thing that matters on the page. No webfont, no script from anywhere else.
+// Shared palette and controls with the console; all assets are served locally.
 const CSS = `
   :root {
-    --paper: #f4ecd8; --surface: #fbf4e4; --ink: #03224c; --soft: #6f6a58; --rule: #ddd0af;
-    --live: #7a5610; --live-fill: #c9a227; --danger: #8c2f24; --radius: 2px;
+    --paper: #f7f8fa; --surface: #fff; --ink: #142942; --soft: #5e6d82; --rule: #e5e9ef;
+    --live: #19724e; --live-fill: #36a477; --danger: #bc4149; --radius: 9px;
     --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px;
-    --ui: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
   }
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
-  body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.5 var(--ui); }
-  .wrap { max-width: 440px; margin: 0 auto; padding: var(--s7) var(--s4); }
-  .wrap.wide { max-width: 620px; }
-  header { margin-bottom: var(--s6); display: flex; justify-content: space-between; align-items: center; gap: var(--s3); }
-  header img { display: block; height: 22px; width: auto; }
-  h1 { font-size: 22px; font-weight: 600; margin: 0 0 var(--s2); letter-spacing: -0.01em; }
-  h2 { font-family: var(--mono); font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase;
-       color: var(--soft); font-weight: 500; margin: var(--s6) 0 var(--s3); }
-  p { margin: 0 0 var(--s4); }
-  .soft { color: var(--soft); font-size: 14px; }
-  .num { font-family: var(--mono); font-size: 13px; }
-  label { display: block; font-size: 13px; color: var(--soft); margin: var(--s4) 0 6px; }
-  input, select {
-    width: 100%; font: inherit; color: var(--ink); background: var(--surface);
-    border: 1px solid var(--rule); border-radius: var(--radius); padding: 10px 12px; min-height: 44px;
-  }
-  input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible {
-    outline: 2px solid var(--live); outline-offset: 2px;
-  }
-  button, .btn {
-    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    font: inherit; font-size: 15px; min-height: 44px; padding: 10px 18px; cursor: pointer;
-    border-radius: var(--radius); border: 1px solid var(--rule); background: none; color: var(--ink);
-    text-decoration: none;
-  }
-  button:hover, .btn:hover { border-color: var(--live); }
-  .primary { background: var(--ink); border-color: var(--ink); color: var(--surface); width: 100%; margin-top: var(--s5); }
-  .primary:hover { background: #0b3266; }
-  .wide-btn { width: 100%; }
-  .danger:hover { border-color: var(--danger); color: var(--danger); }
-  .or { display: flex; align-items: center; gap: var(--s3); color: var(--soft); font-size: 13px; margin: var(--s5) 0; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 14px/1.6 var(--ui); }
+  .wrap { max-width: 490px; margin: 0 auto; padding: 65px 20px 45px; }
+  .wrap.wide { max-width: 940px; padding-top: 40px; }
+  header { margin-bottom: 31px; display: flex; justify-content: center; align-items: center; }
+  header img { display: block; height: auto; width: 174px; }
+  .wide header { justify-content: flex-start; margin-left: 3px; }
+  .auth-card { border: 1px solid var(--rule); background: #fff; border-radius: 15px; padding: 35px; box-shadow: 0 5px 24px #14294204; }
+  .wide .auth-card { padding: 36px; }
+  h1 { font-size: 26px; line-height: 1.25; font-weight: 650; margin: 0 0 11px; letter-spacing: -.035em; }
+  h2 { font-size: 16px; color: var(--ink); font-weight: 600; margin: 30px 0 14px; padding-top: 25px; border-top: 1px solid var(--rule); letter-spacing: -.015em; }
+  p { margin: 0 0 18px; }
+  .soft { color: var(--soft); font-size: 13px; }
+  .num { font-family: var(--mono); font-size: 12px; }
+  label { display: block; font-size: 12px; font-weight: 550; margin: 18px 0 7px; }
+  input, select { width: 100%; font: inherit; font-size: 14px; color: var(--ink); background: #fff; border: 1px solid #d8e0eb; border-radius: 8px; padding: 11px 13px; min-height: 46px; }
+  input:hover, select:hover { border-color: #b9c6d8; }
+  input:focus { border-color: #91abe0; }
+  :focus-visible { outline: 3px solid #7699ed; outline-offset: 3px; }
+  button, .btn { display: inline-flex; align-items: center; justify-content: center; gap: 9px; font: inherit; font-size: 13px; font-weight: 550; min-height: 43px; padding: 10px 16px; cursor: pointer; border-radius: 8px; border: 1px solid #d8e0eb; background: #fff; color: var(--ink); text-decoration: none; }
+  button:hover, .btn:hover { border-color: #aebed2; background: #fafbfd; }
+  button:disabled { cursor: wait; opacity: .55; }
+  .primary { background: var(--ink); border-color: var(--ink); color: #fff; width: 100%; margin-top: 25px; min-height: 45px; }
+  .primary:hover { background: #233e60; border-color: #233e60; }
+  .wide-btn { width: 100%; margin-top: 10px; min-height: 45px; }
+  .wide-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
+  .passkey-hint { text-align: center; margin: 9px 0 0; font-size: 11px; color: var(--soft); }
+  .danger { color: var(--danger); }
+  .danger:hover { border-color: #e3b5ba; background: #fff6f6; }
+  .or { display: flex; align-items: center; gap: 13px; color: var(--soft); font-size: 11px; margin: 24px 0 22px; }
   .or::before, .or::after { content: ""; flex: 1; border-top: 1px solid var(--rule); }
-  .error { border-left: 3px solid var(--danger); padding: 6px 12px; color: var(--danger); margin: var(--s4) 0; font-size: 14px; }
-  .ok { border-left: 3px solid var(--live-fill); padding: 6px 12px; margin: var(--s4) 0; font-size: 14px; }
-  .row { display: flex; align-items: center; justify-content: space-between; gap: var(--s3);
-         border-top: 1px solid var(--rule); padding: var(--s3) 0; }
+  .error { border: 1px solid #edc8cb; background: #fff5f5; border-radius: 8px; padding: 11px 13px; color: #a3303b; margin: 18px 0; font-size: 13px; }
+  .ok { border: 1px solid #c3dfcf; background: #f1f8f4; color: var(--live); border-radius: 8px; padding: 11px 13px; margin: 18px 0; font-size: 13px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 14px; border-top: 1px solid var(--rule); padding: 15px 0; }
   .row:last-of-type { border-bottom: 1px solid var(--rule); }
-  .row form { margin: 0; }
-  .badge { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
-           color: var(--live); border: 1px solid var(--live-fill); border-radius: 99px; padding: 1px 8px; }
-  .keybox { border: 1px solid var(--live); border-radius: var(--radius); padding: var(--s3); margin: var(--s3) 0; }
-  .keybox code { display: block; font-family: var(--mono); font-size: 13px; word-break: break-all; user-select: all; margin-top: 6px; }
-  .inline { display: flex; gap: var(--s2); align-items: flex-end; flex-wrap: wrap; }
+  .row > span { min-width: 0; overflow-wrap: anywhere; }
+  .row .soft { font-size: 12px; }
+  .row form { margin: 0; flex: none; }
+  .row button { min-height: 35px; padding: 6px 11px; font-size: 11px; }
+  .badge { display: inline-block; font-size: 10px; font-weight: 550; color: #466ba6; background: #edf2fb; border: 1px solid #dce6f5; border-radius: 5px; padding: 1px 7px; }
+  .keybox { background: #f1f6ff; border: 1px solid #cfdef5; border-radius: 9px; padding: 17px; margin: 14px 0; }
+  .keybox code { display: block; font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; user-select: all; margin-top: 9px; }
+  .inline { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
   .inline > div { flex: 1; min-width: 160px; }
-  .inline label { margin-top: var(--s3); }
-  a { color: var(--ink); }
+  .inline label { margin-top: 12px; }
+  a { color: #4167c1; text-underline-offset: 3px; }
+  .row a { color: var(--ink); font-weight: 550; text-decoration: none; }
+  .row a:hover { color: #4167c1; }
   [hidden] { display: none !important; }
+  @media (max-width: 600px) {
+    .wrap, .wrap.wide { padding: 34px 18px; }
+    .auth-card, .wide .auth-card { padding: 27px 23px; border-radius: 13px; }
+    .wide header { justify-content: center; }
+    h1 { font-size: 24px; }
+    .inline { flex-direction: column; align-items: stretch; }
+    .inline > div { min-width: 0; width: 100%; }
+    .row { flex-wrap: wrap; }
+    .row > span { flex: 1 1 200px; }
+    input, select { font-size: 16px; }
+  }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 `;
 
@@ -84,10 +95,10 @@ export function layout(lang: Lang, title: string, body: string, opts: { wide?: b
 <style>${CSS}</style>
 </head>
 <body>
-<main class="wrap${opts.wide ? " wide" : ""}">
-<header><img src="${AUTH_ORIGIN}/static/wordmark.svg" alt="Nanodeploy"></header>
-${body}
-</main>
+<div class="wrap${opts.wide ? " wide" : ""}">
+<header><img src="${AUTH_ORIGIN}/static/wordmark.svg" alt="Nanodeploy" width="174" height="37"></header>
+<main class="auth-card">${body}</main>
+</div>
 ${opts.script ? `<script src="${AUTH_ORIGIN}/static/gate.js" defer></script>` : ""}
 </body>
 </html>`;
@@ -98,12 +109,13 @@ export function loginPage(t: T, lang: Lang, o: { to: string; appName?: string | 
     ? `<p class="soft">${esc(t("signInConsole"))}</p>`
     : o.appName
       ? `<p class="soft">${esc(t("signInTo", { app: o.appName }))}</p>`
-      : "";
+      : `<p class="soft">${esc(t("signInWelcome"))}</p>`;
   return layout(lang, t("signIn"), `
     <h1>${esc(t("signIn"))}</h1>
     ${sub}
     ${o.error ? `<p class="error" role="alert">${esc(o.error)}</p>` : ""}
-    <button type="button" class="wide-btn" data-passkey-login data-to="${esc(o.to)}">${esc(t("usePasskey"))}</button>
+    <button type="button" class="wide-btn" data-passkey-login data-to="${esc(o.to)}" aria-describedby="passkey-hint"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="9" r="5"/><path d="m12 13 8 8m-4-4 3-3m-6 0 3-3"/></svg>${esc(t("usePasskey"))}</button>
+    <p class="passkey-hint" id="passkey-hint">${esc(t("passkeyHint"))}</p>
     <p class="error" id="wa-error" role="alert" hidden data-failed="${esc(t("passkeyFailed"))}" data-unsupported="${esc(t("noPasskeySupport"))}"></p>
     <div class="or">${esc(t("or"))}</div>
     <form method="post" action="/login">

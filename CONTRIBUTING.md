@@ -42,6 +42,26 @@ APPS_DOMAIN=apps.example.com \
 It deploys a throwaway app named `smoke`, exercises sleep, wake, prune,
 reconcile and delete, then cleans up after itself.
 
+For interface work, start a local preview with in-memory fixtures:
+
+```bash
+node scripts/preview-ui.mjs   # http://127.0.0.1:4173
+```
+
+This preview does not connect to Docker, Postgres, identity providers or a live
+installation. Its data resets when the process restarts. Override the port with
+`UI_PREVIEW_PORT` if needed.
+
+The browser regression tests start their own fixture server and isolated browser
+session. They require Node.js and the `agent-browser` CLI, resolved through `npx`:
+
+```bash
+node --test e2e/ui.test.mjs
+```
+
+They cover search and filters, app navigation, unsaved settings, deployment review,
+permissions, invitations, Git setup, error states, mobile layouts and accessibility.
+
 ## Style
 
 - Comments in English, explaining a platform constraint or a non-obvious
