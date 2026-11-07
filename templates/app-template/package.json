@@ -18,7 +18,7 @@
     "hono": "^4.13.17",
     "postgres": "^4.1.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^19.3.1"
   },
   "overrides": {
     "esbuild": "$esbuild"
@@ -26,7 +26,7 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/react": "^18.3.17",
-    "@types/react-dom": "^18.3.5",
+    "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.2.1",
     "concurrently": "^10.0.7",
     "drizzle-kit": "^0.31.11",
