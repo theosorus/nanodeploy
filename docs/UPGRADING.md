@@ -20,6 +20,47 @@ to `APPS_DIR` (`BACKUP_DIR` in `.env` to change it); the last five are kept.
 
 By hand, the same thing: `./scripts/update.sh`.
 
+## Security upgrade: 7 November 2026
+
+Install this upgrade manually the first time. It changes the storage format of
+application secrets and the network/runtime security baseline. An updater from
+an older checkout only knows how to roll code back and cannot safely reverse
+the encryption migration.
+
+1. Suspend `nanodeploy-update.timer` for this first upgrade and run
+   `./scripts/backup.sh` before updating the checkout. Verify the backup includes
+   `postgres.sql.gz`, `apps.tar.gz`, app data volumes, `env` and `commit`. Store a
+   protected copy outside the host; full backups contain the encryption key.
+2. Preserve the existing `NANODEPLOY_SECRET_KEY` exactly. The installer generates
+   one only for installations that never had one. Do not replace a key already
+   used for forge credentials.
+3. Update the checkout and run `./install.sh`. It creates the pairwise platform
+   networks and the internal build network without a host gateway, builds Caddy
+   2.11.9 or newer, and recreates the services. The control plane encrypts legacy
+   environment/password rows, rebuilds older backend images with Node 24 and
+   moves each app to its own internal bridge. Plan for application restarts;
+   old, insufficiently isolated containers are removed even if rebuilding fails.
+4. Set `TRUSTED_PROXY_CIDRS` in `.env` to the actual tunnel/reverse proxy source
+   addresses seen by Caddy. Do not trust every private network. Recreate Caddy
+   after editing it. Incorrect addresses collapse visitor rate limits onto the
+   proxy's address.
+5. Check console login, an existing backend/database, a sleeping app waking and
+   an outgoing public API call. Apps/builders now reach public HTTP/S through
+   `http://egress:3128`; other HTTP libraries must honour the proxy variables.
+   Private APIs, SMTP and arbitrary TCP have no default route. Previews have
+   their own environment; supply preview-specific credentials explicitly.
+6. Check startup logs for failed app reconciliation, verify backend containers
+   carry `nanodeploy.security=2026-11-isolation-egress-v1`, use only their own
+   `nanodeploy_app_<slug>` network, and carry a `nanodeploy.runtime=node24-2026-11`
+   image label. Resume the update timer after these checks.
+
+If the upgrade fails, prefer fixing forward. **Returning to a pre-encryption
+binary requires restoring the matching pre-upgrade database, app files and
+`.env` together.** A code-only rollback cannot read the migrated environment
+values or passwords. The updated updater refuses this incompatible rollback,
+keeps the new checkout, and stops the control plane for recovery. Normal app
+release rollbacks remain available and keep the encryption format.
+
 ## From a version with tinyauth and Pocket ID, once
 
 This upgrade replaces tinyauth and Pocket ID with gate, and moves every app to
@@ -66,7 +107,7 @@ files, every volume (Pocket ID and tinyauth included), and `.env`.
 ```
 
 It adds the new secrets to `.env` (`GATE_DB_PASSWORD`, `NANODEPLOY_SECRET_KEY`),
-creates the `nanodeploy_build` network, starts Pocket ID for the import, builds
+creates the isolated platform/build networks, starts Pocket ID for the import, builds
 and restarts everything. Set `TIMEZONE` in `.env` (e.g. `Europe/Paris`) for the
 analytics, then `docker compose up -d control-plane` if you changed it.
 
@@ -118,7 +159,9 @@ See the top of this page.
 
 ### Going back
 
-Everything this upgrade adds to the database is additive, and each app's old
-`dist` path still works through a link. To return to the previous version
-completely, check out the commit recorded in the backup (`commit`) and restore
-`postgres.sql.gz` and `apps.tar.gz` from it.
+Each app's old `dist` path still works through a link. The security upgrade
+also encrypts existing secret values, so returning to an older binary requires
+restoring the matching database and `.env`. Check out the commit recorded in
+the backup (`commit`) and restore `postgres.sql.gz`, `apps.tar.gz` and the saved
+environment together. Restore the app data volumes too when recovering the
+entire installation from that backup.

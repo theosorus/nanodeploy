@@ -276,8 +276,8 @@ goes back to the previous commit if not. [docs/UPGRADING.md](docs/UPGRADING.md)
 has the setup, and the one-time steps from a version that used tinyauth and
 Pocket ID.
 
-The November 2026 security upgrade requires a backup and a manual first
-installation: it encrypts stored app
+The [November 2026 security upgrade](docs/UPGRADING.md#security-upgrade-7-november-2026)
+requires a backup and a manual first installation: it encrypts stored app
 secrets and recreates legacy containers/networks. Keep the existing encryption
 key; a code-only rollback to the old plaintext format is incompatible.
 
