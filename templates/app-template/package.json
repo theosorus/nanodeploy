@@ -16,7 +16,7 @@
     "@hono/node-server": "^2.1.6",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.17",
-    "postgres": "^3.4.5",
+    "postgres": "^4.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -27,12 +27,12 @@
     "@types/node": "^24.0.0",
     "@types/react": "^18.3.17",
     "@types/react-dom": "^18.3.5",
-    "@vitejs/plugin-react": "^4.3.4",
-    "concurrently": "^9.1.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "concurrently": "^10.0.7",
     "drizzle-kit": "^0.31.11",
     "esbuild": "^0.28.2",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.2",
-    "vite": "^6.0.3"
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.6"
   }
 }
