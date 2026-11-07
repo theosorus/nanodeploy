@@ -1,4 +1,5 @@
 import { build } from "esbuild";
+import { execFileSync } from "node:child_process";
 
 // dockerode pulls in ssh2, which loads two optional native bindings
 // (cpu-features and sshcrypto). esbuild cannot pack a .node binary, and which
@@ -25,13 +26,17 @@ await build({
   banner: {
     // esm has no require/__dirname; ssh2 uses both, so provide them
     js: [
-      "import{createRequire}from'module';",
-      "import{fileURLToPath}from'url';",
-      "import{dirname}from'path';",
-      "const require=createRequire(import.meta.url);",
-      "const __filename=fileURLToPath(import.meta.url);",
-      "const __dirname=dirname(__filename);",
+      "import{createRequire as __ndCreateRequire}from'node:module';",
+      "import{fileURLToPath as __ndFileURLToPath}from'node:url';",
+      "import{dirname as __ndDirname}from'node:path';",
+      "const require=__ndCreateRequire(import.meta.url);",
+      "const __filename=__ndFileURLToPath(import.meta.url);",
+      "const __dirname=__ndDirname(__filename);",
     ].join(""),
   },
   plugins: [nativeExternal],
 }).catch(() => process.exit(1));
+
+// The banner is appended after bundling: parse the emitted module too, where
+// a banner binding could otherwise collide with an entry point import.
+execFileSync(process.execPath, ["--check", "dist/index.js"], { stdio: "inherit" });

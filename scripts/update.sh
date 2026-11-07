@@ -106,12 +106,18 @@ rollback() {
     exit 1
   fi
   say "rolling back to ${current:0:7}"
+  umask 022
   git reset -q --hard "$current"
+  umask 077
   ./install.sh || say "the rollback did not start cleanly either: see 'docker compose ps' and the latest backup"
   exit 1
 }
 
+# Git tracks executable bits, not read permissions. Files shared read-only
+# with unprivileged services must retain ordinary source permissions.
+umask 022
 git merge -q --ff-only "$next"
+umask 077
 ./install.sh || rollback
 
 # the control plane reconciles every app at start: give it time
