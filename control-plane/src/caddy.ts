@@ -23,6 +23,9 @@ function appRoutes(app: AppRow, indent: string): string[] {
     // visitor anywhere else. gate's cookies are host-bound since phase 1; the
     // tinyauth ones are kept in the list for installs that still run it.
     out.push(`\timport nanodeploy_hide_session`);
+    // A running container can still be binding its listening socket. Hold the
+    // request briefly instead of returning a 502 during a cold start.
+    const proxy = [`reverse_proxy app-${app.slug}:${app.port} {`, `\tlb_try_duration 5s`, `}`];
     if (!app.warm) {
       // sablier is an unordered directive: it must live inside a route block or
       // the whole site fails to parse (caddy then keeps its previous config and
@@ -36,10 +39,10 @@ function appRoutes(app: AppRow, indent: string): string[] {
       out.push(`\t\t\t\ttheme ghost`);
       out.push(`\t\t\t}`);
       out.push(`\t\t}`);
-      out.push(`\t\treverse_proxy app-${app.slug}:${app.port}`);
+      out.push(...proxy.map((line) => `\t\t${line}`));
       out.push(`\t}`);
     } else {
-      out.push(`\treverse_proxy app-${app.slug}:${app.port}`);
+      out.push(...proxy.map((line) => `\t${line}`));
     }
     out.push(`}`);
   }

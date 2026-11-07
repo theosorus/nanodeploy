@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { execFile } from "node:child_process";
-import { get } from "node:http";
+import { get, request as httpRequest } from "node:http";
 import { promisify } from "node:util";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -110,6 +110,95 @@ test("a real Caddy routes alternate protected paths through authentication", { s
     assert.equal((await request("/api/test", "public")).status, 401);
   } finally {
     if (started) await exec("docker", ["rm", "--force", name]);
+    await rm(work, { recursive: true, force: true });
+  }
+});
+
+test("a backend starting after the first request receives its POST exactly once", { skip: !image, timeout: 30000 }, async () => {
+  const work = await mkdtemp(join(tmpdir(), "nanodeploy-caddy-startup-"));
+  const prefix = `nanodeploy-audit-startup-${process.pid}`;
+  const network = `${prefix}-network`;
+  const started: string[] = [];
+  let networkCreated = false;
+  process.env.APPS_DOMAIN = "apps.audit.invalid";
+  const { renderSite } = await import("../src/caddy.ts");
+  try {
+    const frontend = join(work, "apps", "startup", "current", "dist");
+    await mkdir(frontend, { recursive: true });
+    await writeFile(join(frontend, "index.html"), "frontend ready");
+    const config = `{
+      auto_https off
+      admin off
+      order request_header before forward_auth
+    }
+    (nanodeploy_strip) {
+      request_header -Remote-Sub
+    }
+    (nanodeploy_hide_session) {
+      request_header -Cookie
+    }
+    (nanodeploy_gate) {
+      forward_auth 127.0.0.1:4000 {
+        uri /verify
+      }
+    }
+    :4000 {
+      respond 204
+    }
+    ` + renderSite({ ...app("startup"), port: 3000, warm: true } as any);
+    await writeFile(join(work, "Caddyfile"), config);
+    await exec("docker", ["network", "create", network]);
+    networkCreated = true;
+    const backend = `${prefix}-backend`;
+    const server = `const http=require('node:http'); let count=0;
+      const server=http.createServer(async(req,res)=>{
+        const chunks=[]; for await(const chunk of req)chunks.push(chunk);
+        res.end(JSON.stringify({method:req.method,body:Buffer.concat(chunks).toString(),count:++count}));
+      });
+      process.on('SIGUSR2',()=>server.listen(3000,'0.0.0.0'));
+      setInterval(()=>{},1000); console.log('waiting');`;
+    await exec("docker", ["run", "--detach", "--rm", "--name", backend, "--network", network, "--network-alias", "app-startup",
+      "--read-only", "--user", "1000:1000", "--cap-drop", "ALL", "--memory", "96m", "node:24-bookworm-slim", "node", "-e", server]);
+    started.push(backend);
+    let waiting = false;
+    for (let i = 0; i < 50; i++) {
+      if ((await exec("docker", ["logs", backend])).stdout.includes("waiting")) { waiting = true; break; }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.equal(waiting, true, "backend must wait for its startup signal");
+    const gateway = `${prefix}-gateway`;
+    await exec("docker", ["run", "--detach", "--rm", "--name", gateway, "--network", network, "--memory", "128m",
+      "--publish", "127.0.0.1::80", "--volume", `${work}/Caddyfile:/etc/caddy/Caddyfile:ro`, "--volume", `${work}/apps:/srv/apps:ro`, image!]);
+    started.push(gateway);
+    const port = (await exec("docker", ["port", gateway, "80/tcp"])).stdout.trim().split(":").at(-1);
+    const request = (path: string, method = "GET", body?: string): Promise<{ status: number; body: string }> => new Promise((resolve, reject) => {
+      const req = httpRequest({ hostname: "127.0.0.1", port, path, method, headers: { Host: "startup.apps.audit.invalid" } }, (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk) => chunks.push(chunk));
+        res.once("error", reject);
+        res.once("end", () => resolve({ status: res.statusCode!, body: Buffer.concat(chunks).toString() }));
+      });
+      req.once("error", reject);
+      req.setTimeout(10000, () => req.destroy(new Error("fixture request timed out")));
+      req.end(body);
+    });
+    let ready = false;
+    for (let i = 0; i < 50; i++) {
+      try { const res = await request("/"); if (res.status === 200 && res.body === "frontend ready") { ready = true; break; } } catch {}
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.equal(ready, true, "Caddy must serve the frontend before the backend starts");
+    let completed = false;
+    const pending = request("/api/startup", "POST", "first request").then((result) => { completed = true; return result; });
+    await new Promise((r) => setTimeout(r, 500));
+    assert.equal(completed, false, "Caddy must wait while the backend port is still closed");
+    await exec("docker", ["kill", "--signal", "USR2", backend]);
+    const result = await pending;
+    assert.equal(result.status, 200);
+    assert.deepEqual(JSON.parse(result.body), { method: "POST", body: "first request", count: 1 });
+  } finally {
+    for (const container of started.reverse()) await exec("docker", ["rm", "--force", container]).catch(() => {});
+    if (networkCreated) await exec("docker", ["network", "rm", network]).catch(() => {});
     await rm(work, { recursive: true, force: true });
   }
 });
