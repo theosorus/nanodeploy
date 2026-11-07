@@ -31,13 +31,18 @@ docker compose exec -T postgres pg_dumpall -U postgres | gzip >"$dest/postgres.s
 [ "$(gzip -dc "$dest/postgres.sql.gz" | head -c 100 | wc -c)" -gt 0 ] || { say "pg_dumpall produced nothing"; exit 1; }
 
 say "app files"
-apps_parent=$(dirname "$APPS_DIR")
 apps_name=$(basename "$APPS_DIR")
-tar -C "$apps_parent" --exclude="$apps_name/.builds" --exclude="$apps_name/.staging" -czf "$dest/apps.tar.gz" "$apps_name"
+# Release directories and database snapshots can belong to the control-plane
+# container. Read them through the same local image used for volume backups,
+# without changing their permissions or granting the container write access.
+image="postgres:${POSTGRES_VERSION:-16-alpine}"
+docker run --rm --network none --read-only --user 0:0 \
+  -v "$APPS_DIR:/source/$apps_name:ro" "$image" \
+  tar --exclude="$apps_name/.builds" --exclude="$apps_name/.staging" \
+    -C /source -czf - "$apps_name" >"$dest/apps.tar.gz"
 
 say "volumes"
 # tar from an image already on the machine: nothing is pulled during a backup
-image="postgres:${POSTGRES_VERSION:-16-alpine}"
 for v in $(docker volume ls -q | grep -E '^nanodeploy_(data_.+|pocketid_data|tinyauth_data|caddy_data|caddy_config)$' || true); do
   docker run --rm -v "$v":/v:ro -v "$dest":/b "$image" tar czf "/b/volume-$v.tgz" -C /v .
 done
