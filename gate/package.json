@@ -17,7 +17,7 @@
   },
   "devDependencies": {
     "@simplewebauthn/browser": "^13.2.2",
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.6.6",
     "esbuild": "^0.28.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
