@@ -102,6 +102,20 @@ test("gate sign-in pages and state changes enforce their host and origin", optio
   assert.equal((await request("/login", { form: { login: "member", password }, headers: { origin: "https://evil.invalid" } })).status, 403);
 });
 
+test("public fonts load from the auth host on access-denied pages", options, async () => {
+  const font = await request("/static/fonts/SpaceGrotesk.woff2", { headers: { origin: `https://${appHost}` } });
+  assert.equal(font.status, 200);
+  assert.match(String(font.headers["content-type"]), /font\/woff2/);
+  assert.equal(font.headers["access-control-allow-origin"], "*");
+  assert.ok(font.body.startsWith("wOF2"));
+  assert.equal(font.headers["set-cookie"], undefined);
+  const page = await request("/_nd/unknown", { host: appHost });
+  const policy = String(page.headers["content-security-policy"]);
+  assert.ok(policy.includes(`font-src 'self' ${origin};`));
+  assert.ok(policy.includes(`img-src 'self' ${origin};`));
+  assert.equal((await request("/static/fonts/SpaceGrotesk.woff2", { host: appHost })).status, 404);
+});
+
 test("an invitation sets a password and cannot be replayed", options, async () => {
   const res = await request("/welcome/audit-welcome", { form: { password, confirm: password } });
   assert.equal(res.status, 303);

@@ -4,8 +4,8 @@
   "description": "Self-hosted apps that sleep when nobody is using them",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f7f8fa",
-  "theme_color": "#f7f8fa",
+  "background_color": "#f6f0e1",
+  "theme_color": "#f6f0e1",
   "icons": [
     {
       "src": "/icon-192.png",

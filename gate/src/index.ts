@@ -59,7 +59,7 @@ app.use("*", async (c, next) => {
   c.header("X-Content-Type-Options", "nosniff");
   c.header("X-Frame-Options", "DENY");
   c.header("Referrer-Policy", "no-referrer");
-  c.header("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; script-src 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'");
+  c.header("Content-Security-Policy", `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' ${AUTH_ORIGIN}; font-src 'self' ${AUTH_ORIGIN}; script-src 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'`);
   await next();
 });
 app.use("*", bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.json({ error: "payload too large" }, 413) }));
@@ -168,7 +168,7 @@ app.use("*", async (c, next) => {
     c.header("Referrer-Policy", "no-referrer");
     c.header(
       "Content-Security-Policy",
-      "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; script-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'",
+      "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; script-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'",
     );
     if (!path.startsWith("/static/")) c.header("Cache-Control", "no-store");
   }
@@ -726,6 +726,12 @@ app.post("/account/keys/:id/delete", async (c) => {
 
 /* ---------- static files and startup ---------- */
 
+// Access-denied pages are also rendered on app hosts; these public fonts
+// must load from the auth host without sharing credentials.
+app.use("/static/fonts/*", async (c, next) => {
+  c.header("Access-Control-Allow-Origin", "*");
+  await next();
+});
 app.use("/static/*", serveStatic({ root: "./public", rewriteRequestPath: (p) => p.replace(/^\/static/, "") }));
 
 setInterval(() => db.sweep().catch((err) => console.error("sweep failed", err)), 3_600_000).unref();

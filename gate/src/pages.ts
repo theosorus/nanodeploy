@@ -11,11 +11,18 @@ export const esc = (s: unknown) =>
 
 // Shared palette and controls with the console; all assets are served locally.
 const CSS = `
+  @font-face {
+    font-family: "Space Grotesk";
+    src: url("${AUTH_ORIGIN}/static/fonts/SpaceGrotesk.woff2") format("woff2");
+    font-weight: 300 700;
+    font-style: normal;
+    font-display: swap;
+  }
   :root {
-    --paper: #f7f8fa; --surface: #fff; --ink: #142942; --soft: #5e6d82; --rule: #e5e9ef;
-    --live: #19724e; --live-fill: #36a477; --danger: #bc4149; --radius: 9px;
+    --paper: #f6f0e1; --surface: #fffdf6; --ink: #252c50; --soft: #625f72; --rule: #d6cfbf;
+    --blue: #4247c9; --blue-soft: #ecebff; --live: #37634b; --live-fill: #628966; --danger: #b33c43; --radius: 9px;
     --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px;
-    --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --ui: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
   }
   * { box-sizing: border-box; }
@@ -26,23 +33,25 @@ const CSS = `
   header { margin-bottom: 31px; display: flex; justify-content: center; align-items: center; }
   header img { display: block; height: auto; width: 174px; }
   .wide header { justify-content: flex-start; margin-left: 3px; }
-  .auth-card { border: 1px solid var(--rule); background: #fff; border-radius: 15px; padding: 35px; box-shadow: 0 5px 24px #14294204; }
+  .auth-card { border: 1px solid #cbc5b9; background: var(--surface); border-radius: 17px; padding: 35px; box-shadow: 0 5px 0 #dcd4c2; }
   .wide .auth-card { padding: 36px; }
-  h1 { font-size: 26px; line-height: 1.25; font-weight: 650; margin: 0 0 11px; letter-spacing: -.035em; }
+  h1 { font-size: 34px; line-height: 1.2; font-weight: 700; margin: 0 0 11px; letter-spacing: -.06em; }
   h2 { font-size: 16px; color: var(--ink); font-weight: 600; margin: 30px 0 14px; padding-top: 25px; border-top: 1px solid var(--rule); letter-spacing: -.015em; }
   p { margin: 0 0 18px; }
   .soft { color: var(--soft); font-size: 13px; }
   .num { font-family: var(--mono); font-size: 12px; }
   label { display: block; font-size: 12px; font-weight: 550; margin: 18px 0 7px; }
-  input, select { width: 100%; font: inherit; font-size: 14px; color: var(--ink); background: #fff; border: 1px solid #d8e0eb; border-radius: 8px; padding: 11px 13px; min-height: 46px; }
-  input:hover, select:hover { border-color: #b9c6d8; }
-  input:focus { border-color: #91abe0; }
-  :focus-visible { outline: 3px solid #7699ed; outline-offset: 3px; }
-  button, .btn { display: inline-flex; align-items: center; justify-content: center; gap: 9px; font: inherit; font-size: 13px; font-weight: 550; min-height: 43px; padding: 10px 16px; cursor: pointer; border-radius: 8px; border: 1px solid #d8e0eb; background: #fff; color: var(--ink); text-decoration: none; }
-  button:hover, .btn:hover { border-color: #aebed2; background: #fafbfd; }
+  input, select { width: 100%; font: inherit; font-size: 14px; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 9px; padding: 11px 13px; min-height: 46px; }
+  input:hover, select:hover { border-color: #aaa4c2; }
+  input:focus { border-color: var(--blue); }
+  :focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
+  ::selection { background: #dfdbff; color: var(--ink); }
+  button, .btn { display: inline-flex; align-items: center; justify-content: center; gap: 9px; font: inherit; font-size: 13px; font-weight: 600; min-height: 43px; padding: 10px 16px; cursor: pointer; border-radius: 9px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); text-decoration: none; }
+  button:hover, .btn:hover { border-color: #aaa4c2; background: var(--paper); }
   button:disabled { cursor: wait; opacity: .55; }
-  .primary { background: var(--ink); border-color: var(--ink); color: #fff; width: 100%; margin-top: 25px; min-height: 45px; }
-  .primary:hover { background: #233e60; border-color: #233e60; }
+  .primary { background: var(--blue); border-color: var(--blue); color: var(--surface); width: 100%; margin-top: 25px; min-height: 45px; box-shadow: 0 4px 0 #c4bce6; }
+  .primary:hover { background: #3339ac; border-color: #3339ac; }
+  .primary:active { transform: translateY(2px); box-shadow: 0 2px 0 #c4bce6; }
   .wide-btn { width: 100%; margin-top: 10px; min-height: 45px; }
   .wide-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
   .passkey-hint { text-align: center; margin: 9px 0 0; font-size: 11px; color: var(--soft); }
@@ -58,21 +67,21 @@ const CSS = `
   .row .soft { font-size: 12px; }
   .row form { margin: 0; flex: none; }
   .row button { min-height: 35px; padding: 6px 11px; font-size: 11px; }
-  .badge { display: inline-block; font-size: 10px; font-weight: 550; color: #466ba6; background: #edf2fb; border: 1px solid #dce6f5; border-radius: 5px; padding: 1px 7px; }
-  .keybox { background: #f1f6ff; border: 1px solid #cfdef5; border-radius: 9px; padding: 17px; margin: 14px 0; }
+  .badge { display: inline-block; font-size: 10px; font-weight: 550; color: var(--blue); background: var(--blue-soft); border: 1px solid #d4cfee; border-radius: 5px; padding: 1px 7px; }
+  .keybox { background: var(--blue-soft); border: 1px solid #c7c5e6; border-radius: 10px; padding: 17px; margin: 14px 0; }
   .keybox code { display: block; font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; user-select: all; margin-top: 9px; }
   .inline { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
   .inline > div { flex: 1; min-width: 160px; }
   .inline label { margin-top: 12px; }
-  a { color: #4167c1; text-underline-offset: 3px; }
+  a { color: var(--blue); text-underline-offset: 3px; }
   .row a { color: var(--ink); font-weight: 550; text-decoration: none; }
-  .row a:hover { color: #4167c1; }
+  .row a:hover { color: var(--blue); }
   [hidden] { display: none !important; }
   @media (max-width: 600px) {
     .wrap, .wrap.wide { padding: 34px 18px; }
-    .auth-card, .wide .auth-card { padding: 27px 23px; border-radius: 13px; }
+    .auth-card, .wide .auth-card { padding: 27px 23px; }
     .wide header { justify-content: center; }
-    h1 { font-size: 24px; }
+    h1 { font-size: 30px; }
     .inline { flex-direction: column; align-items: stretch; }
     .inline > div { min-width: 0; width: 100%; }
     .row { flex-wrap: wrap; }
@@ -89,9 +98,11 @@ export function layout(lang: Lang, title: string, body: string, opts: { wide?: b
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
+<meta name="theme-color" content="#f6f0e1">
 <meta name="referrer" content="same-origin">
 <title>${esc(title)} · Nanodeploy</title>
 <link rel="icon" href="${AUTH_ORIGIN}/static/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="${AUTH_ORIGIN}/static/fonts/SpaceGrotesk.woff2" as="font" type="font/woff2" crossorigin>
 <style>${CSS}</style>
 </head>
 <body>

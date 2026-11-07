@@ -181,7 +181,7 @@ const server = createServer(async (req, res) => {
     const filename = resolve(root, `.${url.pathname === "/" ? "/index.html" : url.pathname}`);
     if (!filename.startsWith(root + sep) && filename !== resolve(root, "index.html")) { res.writeHead(403).end(); return; }
     const file = await readFile(filename);
-    res.setHeader("Content-Type", ({ ".html": "text/html; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".webmanifest": "application/manifest+json" })[extname(filename)] || "application/octet-stream");
+    res.setHeader("Content-Type", ({ ".html": "text/html; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2", ".webmanifest": "application/manifest+json" })[extname(filename)] || "application/octet-stream");
     res.end(file);
   } catch (err) {
     res.writeHead(url.pathname.startsWith("/api/") ? 400 : 404, { "Content-Type": "application/json" });
