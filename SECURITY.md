@@ -56,6 +56,10 @@ days; this is a hobby project, not a vendor.
 | Sablier cannot drive Docker arbitrarily or inspect platform secrets | its proxy accepts only managed-app listing/events and named `app-...` inspection/start/stop/wait. It refuses platform names, opaque container IDs, create, exec, archives and deletion. Queries are overwritten to filter managed-app labels and lifecycle events. Caddy, gate and Sablier have no network path to the control plane's privileged socket proxy. |
 | Requests and logs are bounded | Caddy caps headers and request time; the control plane bounds bodies and applies per-client request budgets (240 API/minute, 60 hooks/minute). Container memory, pids and logs are bounded. Caddy trusts forwarded IP headers only from configured `TRUSTED_PROXY_CIDRS`. |
 
+Both Docker proxies use the maintained HAProxy 3.2 LTS image with static,
+repository-owned ACLs. They start with a read-only root filesystem and no
+capabilities; no configuration-generation script needs a writable image layer.
+
 ## Known limits, accepted on purpose
 
 These are real. Decide whether they matter for your setup before you deploy.
@@ -76,6 +80,11 @@ These are real. Decide whether they matter for your setup before you deploy.
 - **The control plane is root-equivalent.** It can build images and exec into
   containers through its socket proxy. Compromising it compromises the host.
   Every administrator has that power.
+- **Gate is trusted to authenticate administrators.** Its session store can
+  issue administrator sessions. Full compromise of gate or that store can
+  therefore lead to console authority through Caddy even though gate cannot
+  directly reach a Docker proxy. Independent cookie checks reject forged
+  headers; they do not make a compromised identity service trustworthy.
 - **Availability is not guaranteed against a determined denial of service.**
   Rate limits are local to one process. App data volumes have no disk quota,
   and Postgres resources remain shared. Use host storage monitoring, connection

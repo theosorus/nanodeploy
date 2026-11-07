@@ -110,7 +110,7 @@ services:
       options: {max-size: "10m", max-file: "3"}
 
   sablier:
-    image: sablierapp/sablier:${SABLIER_VERSION:-1.17.0}
+    image: sablierapp/sablier:${SABLIER_VERSION:-1.18.0}
     restart: unless-stopped
     command:
       - start
@@ -132,11 +132,16 @@ services:
 
   # least privilege for sablier: list, inspect, start, stop, watch events
   sablier-socket:
-    image: tecnativa/docker-socket-proxy:${SOCKET_PROXY_VERSION:-0.3.0}
+    build:
+      context: ./docker-proxy
+      args:
+        HAPROXY_VERSION: ${HAPROXY_VERSION:-3.2.26-alpine}
+    image: nanodeploy/docker-proxy:latest
     restart: unless-stopped
     # CONTAINERS=1 + POST=1 in the stock proxy also permits create and exec.
     # This explicit ACL allows read operations and start/stop only.
     entrypoint: [haproxy, -W, -db, -f, /etc/nanodeploy/sablier.cfg]
+    command: []
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./docker-proxy/sablier.cfg:/etc/nanodeploy/sablier.cfg:ro
@@ -153,25 +158,15 @@ services:
   # Nothing on nanodeploy_apps can reach it, which is the whole point of the
   # network split: reaching :2375 is equivalent to root on the host.
   socket-proxy:
-    image: tecnativa/docker-socket-proxy:${SOCKET_PROXY_VERSION:-0.3.0}
+    build:
+      context: ./docker-proxy
+      args:
+        HAPROXY_VERSION: ${HAPROXY_VERSION:-3.2.26-alpine}
+    image: nanodeploy/docker-proxy:latest
     restart: unless-stopped
-    environment:
-      # least privilege: only what the control plane actually needs
-      CONTAINERS: 1
-      IMAGES: 1
-      NETWORKS: 1
-      INFO: 1
-      BUILD: 1
-      EXEC: 1
-      VOLUMES: 1
-      # analytics follow app containers waking up, sleeping and crashing
-      EVENTS: 1
-      POST: 1
-      ALLOW_START: 1
-      ALLOW_STOP: 1
-      ALLOW_RESTARTS: 1
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./docker-proxy/control-plane.cfg:/etc/nanodeploy/control-plane.cfg:ro
     networks: [docker]
     read_only: true
     tmpfs: ["/tmp:rw,noexec,nosuid,nodev,size=8m", "/run:rw,noexec,nosuid,nodev,size=1m"]

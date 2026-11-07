@@ -40,6 +40,9 @@ the encryption migration.
    environment/password rows, rebuilds older backend images with Node 24 and
    moves each app to its own internal bridge. Plan for application restarts;
    old, insufficiently isolated containers are removed even if rebuilding fails.
+   The old `SOCKET_PROXY_VERSION` setting is replaced by `HAPROXY_VERSION`
+   (default `3.2.26-alpine`); both proxies use local static ACLs. New installations
+   use Sablier 1.18.0; update an older `SABLIER_VERSION` pin in the existing `.env`.
 4. Set `TRUSTED_PROXY_CIDRS` in `.env` to the actual tunnel/reverse proxy source
    addresses seen by Caddy. Do not trust every private network. Recreate Caddy
    after editing it. Incorrect addresses collapse visitor rate limits onto the

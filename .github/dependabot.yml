@@ -13,5 +13,5 @@ updates:
     directory: /
     schedule: {interval: weekly}
   - package-ecosystem: docker
-    directories: [/control-plane, /gate, /caddy, /egress]
+    directories: [/control-plane, /gate, /caddy, /egress, /docker-proxy]
     schedule: {interval: weekly}

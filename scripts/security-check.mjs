@@ -24,7 +24,7 @@ function run(command, args, options = {}) {
 
 try {
   const context = await capture('docker', ['context', 'inspect', '--format', '{{.Endpoints.docker.Host}}']);
-  for (const image of ['node:24-bookworm-slim', 'postgres:16-alpine', 'tecnativa/docker-socket-proxy:0.3.0', 'sablierapp/sablier:1.17.0']) {
+  for (const image of ['node:24-bookworm-slim', 'postgres:16-alpine', 'haproxy:3.2.26-alpine', 'sablierapp/sablier:1.18.0']) {
     await run('docker', ['pull', image]);
   }
   if (!process.env.NANODEPLOY_TEST_CADDY_IMAGE) {

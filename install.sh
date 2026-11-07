@@ -129,10 +129,10 @@ for net in wake docker sablier_control gate_data legacy; do
 done
 ok "apps dir $APPS_DIR"
 
-say "3/5 building the caddy image with the sablier plugin"
+say "3/5 building the gateway and platform images"
 docker compose pull --ignore-buildable
 warn "this compiles caddy from source, ~10 min on a Jetson"
-docker compose build --pull caddy
+docker compose build --pull
 
 say "4/5 starting the platform"
 # Upgrading from Pocket ID: it must answer while the control plane imports the

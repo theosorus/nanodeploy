@@ -17,6 +17,7 @@ const exec = promisify(execFile);
 const prefix = `nanodeploy-audit-cyber-${process.pid}`;
 const password = "disposable-cyber-test-password";
 const image = "node:24-bookworm-slim";
+const proxyImage = "haproxy:3.2.26-alpine";
 let engine: Docker, work: string, pg: Docker.Container, gateway: Docker.Container;
 let dk: typeof import("../src/docker.ts"), store: typeof import("../src/db.ts");
 const containers: Docker.Container[] = [];
@@ -178,9 +179,45 @@ test("independent app bridges block direct backend access and preserve gateway/d
   assert.equal(await dk.containerMatchesConfig(slugs[1], false), false, "reconcile must repair an interrupted availability change");
 });
 
+test("the control-plane socket proxy starts with a read-only root and bounded writable tmpfs", options, async () => {
+  const config = new URL("../../docker-proxy/control-plane.cfg", import.meta.url).pathname;
+  const proxy = await engine.createContainer({ name: `${prefix}-control-guard`, Image: proxyImage, User: "0:0",
+    Entrypoint: ["haproxy", "-W", "-db", "-f", "/etc/nanodeploy/control-plane.cfg"], Cmd: [],
+    ExposedPorts: { "2375/tcp": {} },
+    HostConfig: { NetworkMode: `${prefix}-control`, ReadonlyRootfs: true, CapDrop: ["ALL"],
+      SecurityOpt: ["no-new-privileges:true"],
+      Tmpfs: { "/tmp": "rw,noexec,nosuid,nodev,size=8m", "/run": "rw,noexec,nosuid,nodev,size=1m" },
+      Binds: [`${config}:/etc/nanodeploy/control-plane.cfg:ro`],
+      PortBindings: { "2375/tcp": [{ HostIp: "127.0.0.1", HostPort: "" }] } },
+  });
+  containers.push(proxy); await proxy.start();
+  const port = (await proxy.inspect()).NetworkSettings.Ports["2375/tcp"]![0].HostPort;
+  let response: Response | undefined;
+  for (let attempt = 0; attempt < 50; attempt++) {
+    try { response = await fetch(`http://127.0.0.1:${port}/_ping`); break; }
+    catch (err) { if (attempt === 49) throw err; await new Promise((r) => setTimeout(r, 50)); }
+  }
+  assert.equal(response?.status, 503, "the proxy is running; no Docker socket is deliberately mounted");
+  await response?.text();
+  const request = async (method: string, path: string) => {
+    const res = await fetch(`http://127.0.0.1:${port}${path}`, { method });
+    await res.text();
+    return res.status;
+  };
+  for (const [method, path] of [["GET", "/v1.47/containers/json"], ["POST", "/containers/create"],
+    ["PUT", "/containers/postgres/archive?path=/tmp"], ["POST", `/exec/${"a".repeat(64)}/start`],
+    ["POST", "/build"], ["POST", "/networks/create"], ["DELETE", "/images/nanodeploy/fixture:r1"]]) {
+    assert.equal(await request(method, path), 503, `required control-plane operation passes the ACL: ${method} ${path}`);
+  }
+  for (const [method, path] of [["POST", "/auth"], ["GET", "/secrets"], ["POST", "/swarm/init"], ["POST", "/plugins/create"]]) {
+    assert.equal(await request(method, path), 403, `${method} ${path}`);
+  }
+  assert.equal((await proxy.inspect()).State.Running, true);
+});
+
 test("the Sablier ACL refuses create, exec, archive reads and delete without exposing a Docker socket", options, async () => {
   const config = new URL("../../docker-proxy/sablier.cfg", import.meta.url).pathname;
-  const proxy = await engine.createContainer({ name: `${prefix}-acl`, Image: "tecnativa/docker-socket-proxy:0.3.0",
+  const proxy = await engine.createContainer({ name: `${prefix}-acl`, Image: proxyImage, User: "0:0",
     Entrypoint: ["haproxy", "-W", "-db", "-f", "/etc/nanodeploy/sablier.cfg"], Cmd: [],
     ExposedPorts: { "2375/tcp": {} },
     HostConfig: { NetworkMode: `${prefix}-control`, ReadonlyRootfs: true, CapDrop: ["ALL"],
@@ -217,13 +254,13 @@ test("Sablier can wake and stop a managed app without inspecting platform contai
   assert.equal(policy.split('"nanodeploy.slug"').length - 1, 2);
   await writeFile(config, policy.replaceAll('"nanodeploy.slug"', `"nanodeploy.slug=${slug}"`));
   const proxyName = `${prefix}-live-guard`;
-  const proxy = await engine.createContainer({ name: proxyName, Image: "tecnativa/docker-socket-proxy:0.3.0",
+  const proxy = await engine.createContainer({ name: proxyName, Image: proxyImage, User: "0:0",
     Entrypoint: ["haproxy", "-W", "-db", "-f", "/etc/nanodeploy/sablier.cfg"], Cmd: [],
     HostConfig: { NetworkMode: `${prefix}-control`, ReadonlyRootfs: true, CapDrop: ["ALL"],
       Binds: [`${config}:/etc/nanodeploy/sablier.cfg:ro`, "/var/run/docker.sock:/var/run/docker.sock:ro"] },
   });
   containers.push(proxy); await proxy.start();
-  const sablier = await engine.createContainer({ name: `${prefix}-sablier`, Image: "sablierapp/sablier:1.17.0",
+  const sablier = await engine.createContainer({ name: `${prefix}-sablier`, Image: "sablierapp/sablier:1.18.0",
     Cmd: ["start", "--provider.name=docker", "--sessions.expiration-interval=500ms"],
     Env: [`DOCKER_HOST=tcp://${proxyName}:2375`], ExposedPorts: { "10000/tcp": {} },
     HostConfig: { NetworkMode: `${prefix}-control`, ReadonlyRootfs: true, CapDrop: ["ALL"],
