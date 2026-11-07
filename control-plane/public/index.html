@@ -231,6 +231,11 @@
   .env-field:first-of-type { border: 0; padding-top: 0; }
   .env-field input { width: 100%; margin-top: 9px; }
   .env-field label { font-size: 12px; }
+  .availability-toggle { display: flex; align-items: flex-start; gap: 12px; min-height: 44px; cursor: pointer; }
+  .availability-toggle input { flex: none; min-height: 0; margin: 3px 0 0; padding: 0; }
+  .availability-toggle strong { display: block; font-size: 13px; font-weight: 600; }
+  .availability-toggle span span { display: block; margin-top: 4px; color: var(--soft); font-size: 12px; }
+  .availability-note { margin: 16px 0 0; font-size: 12px; }
   .value-status { font-size: 10px; color: var(--live); }
   .value-status.unset { color: #a4722a; }
   .danger-zone { border: 1px solid #ecd6d8; background: #fff; border-radius: 10px; color: var(--danger); margin-top: 28px; font-size: 12px; }
@@ -3289,6 +3294,80 @@ const I18N_UI_EXTRA = {
 
 for (const [lang, strings] of Object.entries(I18N_UI_EXTRA)) Object.assign(I18N[lang], strings);
 
+const I18N_AVAILABILITY = {
+  en: {
+    availabilityTitle: "Availability", alwaysOnLabel: "Always on",
+    alwaysOnNote: "Keep this application active even without visits. Uses memory continuously.",
+    availabilityChangeNote: "Changing this setting restarts the application. Unchecking it puts it to sleep until the next visit. Your choice is kept across deployments.",
+    staticAvailabilityNote: "Static websites are already always available.", availabilitySaving: "Saving availability…",
+    alwaysOnEnabled: "Always on enabled. This application will stay active.", alwaysOnDisabled: "Automatic sleep enabled. This application will wake on the next visit.",
+  },
+  fr: {
+    availabilityTitle: "Disponibilité", alwaysOnLabel: "Toujours allumée",
+    alwaysOnNote: "Garde cette application active même sans visite. Utilise de la mémoire en continu.",
+    availabilityChangeNote: "Modifier ce réglage redémarre l’application. En décochant, elle se met en veille jusqu’à la prochaine visite. Votre choix est conservé lors des déploiements.",
+    staticAvailabilityNote: "Les sites statiques sont déjà toujours disponibles.", availabilitySaving: "Enregistrement de la disponibilité…",
+    alwaysOnEnabled: "Mode permanent activé. Cette application restera allumée.", alwaysOnDisabled: "Mise en veille automatique activée. Cette application se réveillera à la prochaine visite.",
+  },
+  es: {
+    availabilityTitle: "Disponibilidad", alwaysOnLabel: "Siempre encendida",
+    alwaysOnNote: "Mantiene esta aplicación activa incluso sin visitas. Utiliza memoria continuamente.",
+    availabilityChangeNote: "Cambiar este ajuste reinicia la aplicación. Al desmarcarlo, entra en reposo hasta la próxima visita. Tu elección se conserva en los despliegues.",
+    staticAvailabilityNote: "Los sitios estáticos ya están siempre disponibles.", availabilitySaving: "Guardando disponibilidad…",
+    alwaysOnEnabled: "Modo permanente activado. Esta aplicación permanecerá activa.", alwaysOnDisabled: "Reposo automático activado. Esta aplicación se activará en la próxima visita.",
+  },
+  de: {
+    availabilityTitle: "Verfügbarkeit", alwaysOnLabel: "Immer eingeschaltet",
+    alwaysOnNote: "Hält diese Anwendung auch ohne Besuche aktiv. Verbraucht dauerhaft Arbeitsspeicher.",
+    availabilityChangeNote: "Eine Änderung startet die Anwendung neu. Ohne Häkchen ruht sie bis zum nächsten Besuch. Deine Wahl bleibt bei Deployments erhalten.",
+    staticAvailabilityNote: "Statische Websites sind bereits immer verfügbar.", availabilitySaving: "Verfügbarkeit wird gespeichert…",
+    alwaysOnEnabled: "Dauerbetrieb aktiviert. Diese Anwendung bleibt aktiv.", alwaysOnDisabled: "Automatischer Ruhezustand aktiviert. Diese Anwendung wacht beim nächsten Besuch auf.",
+  },
+  it: {
+    availabilityTitle: "Disponibilità", alwaysOnLabel: "Sempre accesa",
+    alwaysOnNote: "Mantiene questa applicazione attiva anche senza visite. Utilizza memoria continuamente.",
+    availabilityChangeNote: "Cambiare questa impostazione riavvia l’applicazione. Deselezionandola, resta in riposo fino alla prossima visita. La scelta viene conservata nei deployment.",
+    staticAvailabilityNote: "I siti statici sono già sempre disponibili.", availabilitySaving: "Salvataggio della disponibilità…",
+    alwaysOnEnabled: "Modalità permanente attivata. Questa applicazione resterà attiva.", alwaysOnDisabled: "Riposo automatico attivato. Questa applicazione si riattiverà alla prossima visita.",
+  },
+  pt: {
+    availabilityTitle: "Disponibilidade", alwaysOnLabel: "Sempre ligada",
+    alwaysOnNote: "Mantém esta aplicação ativa mesmo sem visitas. Utiliza memória continuamente.",
+    availabilityChangeNote: "Alterar esta opção reinicia a aplicação. Ao desmarcar, fica em repouso até à próxima visita. A escolha é mantida nos deployments.",
+    staticAvailabilityNote: "Os sites estáticos já estão sempre disponíveis.", availabilitySaving: "A guardar disponibilidade…",
+    alwaysOnEnabled: "Modo permanente ativado. Esta aplicação permanecerá ativa.", alwaysOnDisabled: "Repouso automático ativado. Esta aplicação acordará na próxima visita.",
+  },
+  nl: {
+    availabilityTitle: "Beschikbaarheid", alwaysOnLabel: "Altijd aan",
+    alwaysOnNote: "Houdt deze applicatie actief, ook zonder bezoeken. Gebruikt continu geheugen.",
+    availabilityChangeNote: "Deze instelling wijzigen herstart de applicatie. Zonder vinkje slaapt ze tot het volgende bezoek. Je keuze blijft behouden bij deployments.",
+    staticAvailabilityNote: "Statische websites zijn al altijd beschikbaar.", availabilitySaving: "Beschikbaarheid opslaan…",
+    alwaysOnEnabled: "Altijd aan ingeschakeld. Deze applicatie blijft actief.", alwaysOnDisabled: "Automatische slaapstand ingeschakeld. Deze applicatie wordt wakker bij het volgende bezoek.",
+  },
+  ru: {
+    availabilityTitle: "Доступность", alwaysOnLabel: "Всегда включено",
+    alwaysOnNote: "Приложение остаётся активным даже без посещений. Постоянно использует память.",
+    availabilityChangeNote: "Изменение настройки перезапускает приложение. Без галочки оно спит до следующего посещения. Выбор сохраняется при развёртывании.",
+    staticAvailabilityNote: "Статические сайты уже доступны постоянно.", availabilitySaving: "Сохранение доступности…",
+    alwaysOnEnabled: "Постоянный режим включён. Приложение останется активным.", alwaysOnDisabled: "Автоматический сон включён. Приложение проснётся при следующем посещении.",
+  },
+  zh: {
+    availabilityTitle: "可用性", alwaysOnLabel: "始终运行",
+    alwaysOnNote: "即使无人访问也保持应用运行，会持续占用内存。",
+    availabilityChangeNote: "更改此设置会重启应用。取消勾选后，应用将休眠至下次访问。此选择在部署后仍会保留。",
+    staticAvailabilityNote: "静态网站本身就始终可用。", availabilitySaving: "正在保存可用性设置…",
+    alwaysOnEnabled: "已启用始终运行，此应用将保持运行。", alwaysOnDisabled: "已启用自动休眠，此应用将在下次访问时唤醒。",
+  },
+  ja: {
+    availabilityTitle: "可用性", alwaysOnLabel: "常に起動",
+    alwaysOnNote: "アクセスがなくてもアプリを起動したままにします。メモリを常時使用します。",
+    availabilityChangeNote: "設定を変更するとアプリが再起動します。チェックを外すと次のアクセスまで休止します。この設定はデプロイ後も保持されます。",
+    staticAvailabilityNote: "静的サイトはすでに常時利用できます。", availabilitySaving: "可用性の設定を保存中…",
+    alwaysOnEnabled: "常時起動を有効にしました。このアプリは起動したままになります。", alwaysOnDisabled: "自動休止を有効にしました。次のアクセスでアプリが起動します。",
+  },
+};
+for (const [lang, strings] of Object.entries(I18N_AVAILABILITY)) Object.assign(I18N[lang], strings);
+
 const SUPPORTED = new Set(LANGS.map(([c]) => c));
 const savedLang = (() => { try { return localStorage.getItem("nanodeploy.lang"); } catch { return null; } })();
 const browserLang = (navigator.language || "en").split("-")[0];
@@ -3352,7 +3431,7 @@ const state = {
   layout: (() => { try { return localStorage.getItem("nanodeploy.layout") === "list" ? "list" : "grid"; } catch { return "grid"; } })(),
   appsLoaded: false, appsError: null, connected: null, uploading: false,
   // Unsaved values live only in memory and survive polling and tab changes.
-  drafts: {}, keyLabels: {}, newAppKey: null,
+  drafts: {}, keyLabels: {}, newAppKey: null, warmSaving: {},
   peopleReady: false, peopleError: null,
   host: null, me: null,
   // last fetched logs per slug: the panel is re-rendered on every refresh and
@@ -3660,7 +3739,7 @@ function renderDetail(a, host) {
       </section>${a.roles?.length ? `<section class="section-card">${renderRoles(a)}</section>` : ""}`;
   } else if (state.detailTab === "config") {
     const drafts = state.drafts[a.slug] || {};
-    content = `<section class="section-card"><h2>${esc(t("envTitle"))}</h2><p class="note">${esc(t("envDescription"))}</p>
+    content = `${renderAvailability(a)}<section class="section-card"><h2>${esc(t("envTitle"))}</h2><p class="note">${esc(t("envDescription"))}</p>
       ${a.envKeys.length ? a.envKeys.map((key, i) => `<div class="env-field"><div class="spread"><label class="num" for="env-${i}">${esc(key)}</label><span class="value-status${a.env?.[key] === "set" ? "" : " unset"}">${esc(t(a.env?.[key] === "set" ? "envSet" : "envUnset"))}</span></div><input id="env-${i}" type="password" autocomplete="new-password" data-env="${esc(a.slug)}" data-key="${esc(key)}" placeholder="${esc(t("envPlaceholder"))}" value="${esc(drafts[key] || "")}"></div>`).join("") + `<div class="actions"><button class="act primary" data-saveenv="${esc(a.slug)}">${icon("check")}${esc(t("envSave"))}</button></div>` : `<p class="note">${esc(t("envEmpty"))}</p>`}
       </section>
       <section class="section-card"><h2>${esc(t("keysTitle"))}</h2><p class="note">${esc(t("keysNote"))}</p>${renderKeys(a.slug)}
@@ -3679,6 +3758,19 @@ function renderDetail(a, host) {
     <div class="detail-tabs" role="tablist" aria-label="${esc(t("appTabsLabel"))}">${DETAIL_TABS.map(([key, label]) => `<button role="tab" id="detail-tab-${key}" data-detailtab="${key}" aria-controls="app-tabpanel" aria-selected="${state.detailTab === key}" tabindex="${state.detailTab === key ? 0 : -1}">${esc(t(label))}</button>`).join("")}</div>
     <div id="app-tabpanel" role="tabpanel" aria-labelledby="detail-tab-${state.detailTab}">${content}</div>
   </div>`;
+}
+
+function renderAvailability(a) {
+  const saving = Object.hasOwn(state.warmSaving, a.slug);
+  const warm = state.warmSaving[a.slug] ?? a.warm;
+  return `<section class="section-card" aria-busy="${saving}"><h2>${esc(t("availabilityTitle"))}</h2>
+    ${a.hasBackend ? `<label class="availability-toggle" for="app-warm">
+      <input id="app-warm" type="checkbox" data-warm="${esc(a.slug)}" ${warm ? "checked" : ""} ${saving ? "disabled" : ""} aria-labelledby="app-warm-label" aria-describedby="app-warm-note app-warm-change">
+      <span><strong id="app-warm-label">${esc(t("alwaysOnLabel"))}</strong><span id="app-warm-note">${esc(t("alwaysOnNote"))}</span></span>
+      </label><p id="app-warm-change" class="note availability-note">${esc(t("availabilityChangeNote"))}</p>
+      <p class="note availability-note" role="status" ${saving ? "" : "hidden"}>${saving ? esc(t("availabilitySaving")) : ""}</p>`
+      : `<p class="note">${esc(t("staticAvailabilityNote"))}</p>`}
+  </section>`;
 }
 
 function renderAppOverview(a, host) {
@@ -3993,6 +4085,28 @@ function bindApps() {
 
   document.querySelectorAll("[data-env]").forEach((el) => {
     el.oninput = () => { (state.drafts[el.dataset.env] ||= {})[el.dataset.key] = el.value; };
+  });
+
+  document.querySelectorAll("[data-warm]").forEach((el) => {
+    el.onchange = fail(async () => {
+      const slug = el.dataset.warm;
+      if (Object.hasOwn(state.warmSaving, slug)) return;
+      const warm = el.checked;
+      const restoreFocus = document.activeElement === el;
+      state.warmSaving[slug] = warm;
+      renderApps();
+      try {
+        await api(`/api/apps/${slug}/warm`, { method: "POST", body: JSON.stringify({ warm }) });
+        const app = state.apps.find((a) => a.slug === slug);
+        if (app) Object.assign(app, { warm, status: warm ? "awake" : "sleeping", memory: null });
+        toast(t(warm ? "alwaysOnEnabled" : "alwaysOnDisabled"));
+      } finally {
+        await loadApps();
+        delete state.warmSaving[slug];
+        renderApps();
+        if (restoreFocus && state.open === slug && state.detailTab === "config" && document.activeElement === document.body) $("app-warm")?.focus();
+      }
+    });
   });
 
   document.querySelectorAll("[data-saveenv]").forEach((el) => {

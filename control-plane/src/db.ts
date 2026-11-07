@@ -16,6 +16,7 @@ export async function initState() {
       port int,
       idle_timeout text not null default '10m',
       warm boolean not null default false,
+      warm_override boolean,
       db_user text,
       db_password text,
       env jsonb not null default '{}',
@@ -54,6 +55,8 @@ export type AppRow = {
   port: number | null;
   idle_timeout: string;
   warm: boolean;
+  // null follows app.yaml; a dashboard choice survives deploys and rollbacks.
+  warm_override: boolean | null;
   db_user: string | null;
   db_password: string | null;
   env: Record<string, string>;
@@ -70,6 +73,7 @@ export type AppRow = {
 export async function migrateState() {
   try {
     await admin`alter table apps add column if not exists warm boolean not null default false`;
+    await admin`alter table apps add column if not exists warm_override boolean`;
     await admin`alter table apps add column if not exists declared_env text[] not null default '{}'`;
     await admin`alter table apps add column if not exists roles text[] not null default '{}'`;
     await admin`alter table apps add column if not exists protect jsonb not null default '[]'`;

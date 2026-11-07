@@ -49,6 +49,17 @@ export async function buildImage(dir: string, tag: string, entry: string, port: 
   return tag;
 }
 
+export async function containerMatchesConfig(slug: string, warm: boolean) {
+  try {
+    const info = await docker.getContainer(containerName(slug)).inspect();
+    return info.Config.Labels?.["sablier.enable"] === (warm ? "false" : "true") &&
+      info.Config.Labels?.["sablier.group"] === slug &&
+      info.HostConfig.RestartPolicy?.Name === (warm ? "unless-stopped" : "no");
+  } catch {
+    return false;
+  }
+}
+
 export async function imageExists(image: string) {
   try {
     await docker.getImage(image).inspect();

@@ -153,6 +153,13 @@ async function api(req, url) {
     if (action === "analytics") return analytics(a, url.searchParams.get("range") || "24h");
     if (action === "access") { a.access = data.access; a.groups = data.groups; }
     if (action === "env") for (const k of Object.keys(data)) a.env[k] = "set";
+    if (action === "warm" && req.method === "POST") {
+      if (typeof data.warm !== "boolean") throw new Error("warm must be a boolean");
+      if (!a.hasBackend) throw new Error("static apps are already always available");
+      a.warm = data.warm;
+      a.status = data.warm ? "awake" : "sleeping";
+      a.memory = data.warm ? 41e6 : null;
+    }
     if (action === "wake") { a.status = "awake"; a.memory = 41e6; }
     if (action?.startsWith("keys/") && req.method === "DELETE") keys[slug] = (keys[slug] || []).filter((k) => k.id !== action.split("/")[1]);
     if (!action && req.method === "DELETE") apps.splice(apps.indexOf(a), 1);

@@ -257,7 +257,8 @@ export async function diff(r: Release): Promise<Diff> {
     protectChanged: Boolean(app) && JSON.stringify(app!.protect ?? []) !== JSON.stringify(m.protect),
     databaseCreated: m.database.enabled && !app?.db_user,
     backend: lm && !lm.backend && m.backend ? "added" : lm?.backend && !m.backend ? "removed" : null,
-    warm: lm && lm.idle.warm !== m.idle.warm ? { from: lm.idle.warm, to: m.idle.warm } : null,
+    warm: app && m.backend && app.warm !== (app.warm_override ?? m.idle.warm)
+      ? { from: app.warm, to: app.warm_override ?? m.idle.warm } : null,
   };
 }
 
@@ -300,6 +301,48 @@ async function restore(slug: string, db: string, file: string, restart: boolean)
 
 export type Outcome = { ok: true; url: string; log: string[]; release: number };
 
+// Labels cannot be changed on a Docker container. Replace it and the route
+// together, then commit the override; reconcile heals an interrupted change
+// from the database, including mismatched labels and restart policies.
+export async function replaceWarm(current: store.AppRow, warm: boolean) {
+  if (!current.image || !current.port) throw new Error("static apps are already always available");
+  if (current.warm === warm) {
+    await store.upsertApp({ slug: current.slug, warm_override: warm });
+    return;
+  }
+  const next = { ...current, warm, warm_override: warm };
+  const run = async (app: store.AppRow) => {
+    await dk.runContainer({ slug: app.slug, image: app.image!, port: app.port!,
+      idleTimeout: app.idle_timeout, warm: app.warm, env: app.env });
+    if (!app.warm) {
+      // Sablier only stops containers it woke itself: a replacement must sleep
+      // until the next request creates a new session.
+      await dk.stopContainer(app.slug);
+      if (await dk.appStatus(app.slug) !== "sleeping") throw new Error("failed to put app to sleep");
+    }
+  };
+  let routeTouched = false;
+  analytics.quiet(current.slug);
+  try {
+    await run(next);
+    routeTouched = true;
+    if (!(await applySite(next))) throw new Error("caddy refused the new availability setting");
+    await store.upsertApp({ slug: current.slug, warm, warm_override: warm });
+  } catch (err) {
+    try { await run(current); }
+    catch (recoveryError) { console.error(`availability backend recovery failed for ${current.slug}`, recoveryError); }
+    if (routeTouched) {
+      try {
+        if (!(await applySite(current))) throw new Error("caddy refused recovery");
+      } catch (recoveryError) { console.error(`availability route recovery failed for ${current.slug}`, recoveryError); }
+    }
+    throw err;
+  }
+  // The intentional restart was muted above; keep the awake timeline correct.
+  await analytics.recordEvent(current.slug, warm ? "wake" : "sleep", { source: "settings" })
+    .catch((err) => console.error("availability event failed", err));
+}
+
 // Builds, migrates and switches to a staged release. Must run under the app's
 // lock. Until the "current" link moves, the live version is untouched: a build
 // that fails or a migration that fails leaves the app as it was, and a failed
@@ -313,6 +356,7 @@ export async function promote(id: string): Promise<Outcome> {
   const log: string[] = [];
   await sql`update releases set status = 'building' where id = ${id}`;
   const previous = await store.getApp(slug);
+  const warm = previous?.warm_override ?? m.idle.warm;
   let swapped = false;
   let snapshotFile: string | null = null;
   let applied: string[] = [];
@@ -378,10 +422,10 @@ export async function promote(id: string): Promise<Outcome> {
 
     if (m.backend && image) {
       analytics.quiet(slug);
-      await dk.runContainer({ slug, image, port: m.backend.port, idleTimeout: m.idle.timeout, warm: m.idle.warm, env });
+      await dk.runContainer({ slug, image, port: m.backend.port, idleTimeout: m.idle.timeout, warm, env });
       // a cold app goes straight back to sleep: a running container sablier did
       // not start would have no session and never scale back down on its own
-      if (!m.idle.warm) await dk.stopContainer(slug);
+      if (!warm) await dk.stopContainer(slug);
       log.push(`backend container ${dk.containerName(slug)} created`);
     } else if (previous?.port) {
       // the backend was dropped from the manifest
@@ -398,7 +442,7 @@ export async function promote(id: string): Promise<Outcome> {
       groups,
       port: m.backend?.port ?? null,
       idle_timeout: m.idle.timeout,
-      warm: m.idle.warm,
+      warm,
       db_user: dbUser,
       db_password: dbPassword,
       env,
@@ -421,7 +465,7 @@ export async function promote(id: string): Promise<Outcome> {
     }
     log.push(`release ${r.number} is live`);
     await finish(id, "live", log, { image, migrations_applied: applied, db_snapshot: snapshotFile });
-    await analytics.markDeploy(slug, r.number, Boolean(m.backend && m.idle.warm));
+    await analytics.markDeploy(slug, r.number, Boolean(m.backend && warm));
     await prune(slug);
     return { ok: true, url: `https://${host}`, log, release: r.number };
   } catch (err: any) {
@@ -480,6 +524,7 @@ export async function rollback(slug: string, targetId: string, withDatabase: boo
   const m = target.manifest;
   const app = await store.getApp(slug);
   if (!app) throw new Error("unknown app");
+  const warm = app.warm_override ?? m.idle.warm;
   const dir = releaseDir(slug, target.dir);
   const log: string[] = [`restoring release ${target.number}`];
 
@@ -504,8 +549,8 @@ export async function rollback(slug: string, targetId: string, withDatabase: boo
 
   if (m.backend && image) {
     analytics.quiet(slug);
-    await dk.runContainer({ slug, image, port: m.backend.port, idleTimeout: m.idle.timeout, warm: m.idle.warm, env });
-    if (!m.idle.warm) await dk.stopContainer(slug);
+    await dk.runContainer({ slug, image, port: m.backend.port, idleTimeout: m.idle.timeout, warm, env });
+    if (!warm) await dk.stopContainer(slug);
   } else {
     await dk.removeContainer(slug);
   }
@@ -525,7 +570,7 @@ export async function rollback(slug: string, targetId: string, withDatabase: boo
     name: m.name,
     port: m.backend?.port ?? null,
     idle_timeout: m.idle.timeout,
-    warm: m.idle.warm,
+    warm,
     env,
     image,
     declared_env: m.env,
@@ -538,7 +583,7 @@ export async function rollback(slug: string, targetId: string, withDatabase: boo
   if (!routed) log.push("WARNING: caddy refused the route, the previous config was kept");
   log.push(`release ${number} is live (files of release ${target.number})`);
   await finish(row.id, "live", log, { image });
-  await analytics.markDeploy(slug, number, Boolean(m.backend && m.idle.warm));
+  await analytics.markDeploy(slug, number, Boolean(m.backend && warm));
   await prune(slug);
   return { ok: true, url: `https://${slug}.${process.env.APPS_DOMAIN}`, log, release: number };
 }

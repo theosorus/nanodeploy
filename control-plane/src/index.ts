@@ -171,7 +171,7 @@ app.use("/api/*", async (c: Context<Env>, next: Next) => {
 
 /* ---------- per-slug serialization ---------- */
 
-// deploy / env / access / delete / wake and reconcile all rebuild containers
+// deploy / env / warm / access / delete / wake and reconcile all rebuild containers
 // and rows for the same slug; without a lock, two concurrent deploys can leave
 // a container from one bundle and a row pointing at another.
 const tails = new Map<string, Promise<void>>();
@@ -420,7 +420,7 @@ async function reconcile() {
           console.log(`reconcile: rebuilt image for ${fresh.slug}`);
         }
         const needsRecreate =
-          rebuilt || status === "missing" || (fresh.warm && status === "sleeping");
+          rebuilt || status === "missing" || !(await dk.containerMatchesConfig(fresh.slug, fresh.warm)) || (fresh.warm && status === "sleeping");
         if (!needsRecreate) return;
 
         analytics.quiet(fresh.slug);
@@ -526,6 +526,21 @@ app.post("/api/apps/:slug/access", async (c) => {
       await store.setAccess(slug, rollback.access, rollback.groups);
       return c.json({ error: "caddy refused the new access rule, nothing changed" }, 502);
     }
+    return c.json({ ok: true });
+  });
+});
+
+app.post("/api/apps/:slug/warm", async (c) => {
+  const slug = slugParam(c);
+  if (!slug) return c.json({ error: "unknown app" }, 404);
+  return runLocked(slug, async () => {
+    const current = await store.getApp(slug);
+    if (!current) return c.json({ error: "unknown app" }, 404);
+    const body = await jsonBody<{ warm?: unknown }>(c);
+    if (typeof body?.warm !== "boolean") return c.json({ error: "warm must be a boolean" }, 400);
+    if (!current.port || !current.image) return c.json({ error: "static apps are already always available" }, 400);
+    try { await releases.replaceWarm(current, body.warm); }
+    catch (err: any) { return c.json({ error: err?.message ?? "failed to update availability" }, 500); }
     return c.json({ ok: true });
   });
 });

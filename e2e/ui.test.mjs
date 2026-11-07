@@ -108,6 +108,50 @@ test("application routes, browser history and unsaved secrets survive tab change
   assert.match(await text("#toast-message"), /Variables saved/);
 });
 
+test("always on is saved per application, survives refresh and recovers from errors", { timeout: 60000 }, async () => {
+  await openRoute("apps/carnet/config");
+  await waitFor("!!document.querySelector('#app-warm')");
+  assert.equal(await evaluate("document.querySelector('#app-warm').checked"), false);
+  await evaluate(`window.__warmRefreshes = 0; const original = window.fetch;
+    window.fetch = (input, options) => {
+      if (input === '/api/apps') window.__warmRefreshes++;
+      if (input === '/api/apps/carnet/warm') return new Promise(resolve => {
+        window.__finishWarm = () => { window.fetch = original; resolve(original(input, options)); };
+      });
+      return original(input, options);
+    };`);
+  await browser("find", "role", "checkbox", "check", "--name", "Always on", "--exact");
+  await waitFor("document.querySelector('#app-warm')?.disabled && window.__warmRefreshes > 0");
+  assert.equal(await evaluate("document.querySelector('#app-warm').checked"), true);
+  await findClick("tab", "Overview");
+  await findClick("tab", "Settings");
+  assert.equal(await evaluate("document.querySelector('#app-warm').disabled && document.querySelector('#app-warm').checked"), true);
+  await evaluate("window.__finishWarm()");
+  await waitFor("document.querySelector('#app-warm')?.checked && !document.querySelector('#app-warm').disabled");
+  assert.match(await text("#toast-message"), /Always on enabled/);
+  assert.equal(await text(".detail-heading .status"), "Active");
+  await browser("reload");
+  await waitFor("document.querySelector('#app-warm')?.checked");
+  await browser("network", "route", `${base}/api/apps/carnet/warm`, "--abort");
+  await browser("uncheck", "#app-warm");
+  await waitFor("document.querySelector('#app-warm')?.checked && !document.querySelector('#app-warm').disabled && document.querySelector('#toast-message').textContent.includes('Failed')");
+  await browser("network", "unroute", `${base}/api/apps/carnet/warm`);
+  await browser("uncheck", "#app-warm");
+  await waitFor("!document.querySelector('#app-warm')?.checked && !document.querySelector('#app-warm')?.disabled && document.querySelector('.detail-heading .status')?.textContent === 'Sleeping'");
+  await browser("reload");
+  await waitFor("!!document.querySelector('#app-warm')");
+  assert.equal(await evaluate("document.querySelector('#app-warm').checked"), false);
+  await openRoute("apps/pulse/config");
+  await waitFor("document.querySelector('#app-warm')?.checked");
+  await openRoute("apps/finances/config");
+  await waitFor("document.querySelector('#detail-title')?.textContent === 'Finances'");
+  assert.equal(await evaluate("document.querySelector('#app-warm').checked"), false);
+  await openRoute("apps/portfolio/config");
+  await waitFor("document.querySelector('#detail-title')?.textContent === 'Portfolio'");
+  assert.equal(await evaluate("document.querySelector('#app-warm')"), null);
+  assert.match(await text("#app-tabpanel"), /Static websites are already always available/);
+});
+
 test("archive updates show a review and only go live after explicit confirmation", async () => {
   await openRoute("apps");
   await waitFor("document.querySelectorAll('.app-card').length === 6");

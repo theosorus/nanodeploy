@@ -42,7 +42,11 @@ drag of a `.zip`.
 | two socket proxies | least-privilege Docker access | ~10 MB |
 
 A woken app costs ~40 MB, capped at 256 MB. One that must answer instantly can
-opt out of sleeping for that same 40 MB, permanently.
+opt out of sleeping for that same 40 MB, permanently. In the app's **Settings**,
+check **Always on** to wake it immediately and keep it running. Unchecking it
+puts it back to sleep until the next visit. Changing this setting restarts the
+backend; the choice survives deployments, rollbacks and server restarts.
+Static websites are already always available.
 
 ## Deploying
 
