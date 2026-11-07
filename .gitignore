@@ -8,6 +8,8 @@ dist
 *.zip
 server.js
 var/
+# app storage inside the checkout, as older installs configured APPS_DIR
+/apps/
 backups/
 *.sql.gz
 *.tgz
