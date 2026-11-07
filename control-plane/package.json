@@ -23,7 +23,7 @@
     "yaml": "^2.9.1"
   },
   "devDependencies": {
-    "@types/adm-zip": "^0.5.8",
+    "@types/adm-zip": "^0.6.0",
     "@types/dockerode": "^4.0.2",
     "@types/node": "^24.0.0",
     "@types/tar-fs": "^2.0.4",
