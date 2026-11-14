@@ -37,6 +37,11 @@ export async function initState() {
   const dbName = new URL(process.env.POSTGRES_URL!).pathname.replace(/^\//, "");
   await admin.unsafe(`revoke connect on database "${dbName}" from public`);
   await admin.unsafe(`revoke connect on database "postgres" from public`).catch(() => {});
+  // template1 is what every new database is copied from, and postgres refuses
+  // to copy it while anyone else is connected to it. Left open, one idle
+  // connection from a hostile app blocks the database of every new app and
+  // every restore (which goes through a fresh database). Superusers keep access.
+  await admin.unsafe(`revoke connect on database "template1" from public`).catch(() => {});
 }
 
 export const getSetting = (key: string) =>

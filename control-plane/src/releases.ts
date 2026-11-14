@@ -10,6 +10,7 @@ import * as dk from "./docker.js";
 import { applySite, dropSite } from "./caddy.js";
 import * as analytics from "./analytics.js";
 import { readBundle, extractBundle } from "./bundle.js";
+import { emptyWorkDir } from "./workdir.js";
 export { readBundle, MAX_BUNDLE_BYTES, MAX_BUNDLE_UNPACKED, MAX_BUNDLE_ENTRIES } from "./bundle.js";
 
 // Layout of an app on disk:
@@ -66,8 +67,7 @@ export type Meta = {
 const sql = store.sql;
 
 export async function init() {
-  await rm(STAGING_DIR, { recursive: true, force: true });
-  await mkdir(STAGING_DIR, { recursive: true });
+  await emptyWorkDir(STAGING_DIR);
   await mkdir(SNAPSHOT_DIR, { recursive: true, mode: 0o700 });
   // A power cut may have happened after replacing the container or current
   // link, before the database committed the release. Heal from committed state.

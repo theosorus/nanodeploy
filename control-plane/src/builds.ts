@@ -14,6 +14,7 @@ import type { Manifest } from "./manifest.js";
 import * as releases from "./releases.js";
 import * as secrets from "./secrets.js";
 import { extractTar, packArtifacts } from "./artifacts.js";
+import { emptyWorkDir } from "./workdir.js";
 
 // Deploys from GitHub and GitLab. A push to the connected branch, or a pull
 // request against it, queues a build. One build runs at a time on the whole
@@ -108,8 +109,7 @@ export async function init(h: Hooks) {
   await sql`update builds set status = 'failed', finished_at = now(),
     log = log || ${"\ninterrupted: the control plane restarted during this build"} where status = 'running'`;
   await dk.removeOrphanBuilders();
-  await rm(BUILD_DIR, { recursive: true, force: true });
-  await mkdir(BUILD_DIR, { recursive: true });
+  await emptyWorkDir(BUILD_DIR);
   setInterval(() => sweep().catch((err) => console.error("preview sweep failed", err)), 6 * 3_600_000).unref();
   setTimeout(() => void kick(), 3000);
 }

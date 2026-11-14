@@ -43,13 +43,14 @@
 # Platform credentials never reach an app backend: gate has read them by the
 # time this runs (inside an app's handle, after forward_auth). The host session
 # cookie (__Host-nd_s, or nd_s on a plain-http test stack) is bound to this one
-# host already; it is removed anyway, the app has no use for it. tinyauth's
-# cookies are on the list for installs upgrading from it. A personal access key
-# (ndk_...) is removed too: with it, the app could act as its visitor on every
-# other app. The "; " left at the front when the first cookie went is dropped;
-# an app's own cookies are kept.
+# host already; it is removed anyway, the app has no use for it, and neither
+# for the short-lived sign-in state (nd_st). tinyauth's cookies are on the list
+# for installs upgrading from it. A personal access key (ndk_...) is removed
+# too: with it, the app could act as its visitor on every other app. The "; "
+# left at the front when the first cookie went is dropped; an app's own cookies
+# are kept.
 (nanodeploy_hide_session) {
-	request_header Cookie "(^|;\s*)((__Host-)?nd_(s|root|wa)|tinyauth-[^=;]*)=[^;]*" ""
+	request_header Cookie "(^|;\s*)((__Host-)?nd_(s|st|root|wa)|tinyauth-[^=;]*)=[^;]*" ""
 	request_header Cookie "^;\s*" ""
 	request_header Authorization "(?i)^Bearer\s+nd[kd]_.*$" ""
 }

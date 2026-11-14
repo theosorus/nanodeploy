@@ -194,18 +194,23 @@ export const endUserSessions = (userId: string) => sql`delete from gate.sessions
 
 /* ---------- handoffs: a root session lends itself to one host, once ---------- */
 
-export async function createHandoff(root: Buffer, host: string) {
+// The code alone is not enough: the stored hash also covers the proof of the
+// state cookie held by the browser that asked to sign in on that host. A code
+// handed to another browser (a link sent to someone else) finds no row.
+const handoffHash = (code: string, state: string) => sha256(`${code}.${state}`);
+
+export async function createHandoff(root: Buffer, host: string, state: string) {
   const code = randomToken();
   await sql`
     insert into gate.handoffs (code_hash, root, host, expires_at)
-    values (${sha256(code)}, ${root}, ${host}, ${new Date(Date.now() + 60_000)})`;
+    values (${handoffHash(code, state)}, ${root}, ${host}, ${new Date(Date.now() + 60_000)})`;
   return code;
 }
 
-export const consumeHandoff = (code: string, host: string) =>
+export const consumeHandoff = (code: string, host: string, state: string) =>
   sql<{ root: Buffer }[]>`
     delete from gate.handoffs
-    where code_hash = ${sha256(code)} and host = ${host} and expires_at > now()
+    where code_hash = ${handoffHash(code, state)} and host = ${host} and expires_at > now()
     returning root`.then((r) => r[0]?.root ?? null);
 
 export const getRoot = (root: Buffer) =>

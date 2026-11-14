@@ -24,6 +24,10 @@ export const AUTH_ORIGIN = originOf(AUTH_HOST);
 export const ROOT_COOKIE = SECURE_COOKIES ? "__Host-nd_root" : "nd_root";
 export const HOST_COOKIE = SECURE_COOKIES ? "__Host-nd_s" : "nd_s";
 export const WEBAUTHN_COOKIE = SECURE_COOKIES ? "__Host-nd_wa" : "nd_wa";
+// set on an app host when it sends a browser to sign in, checked when the
+// browser comes back: a sign-in started elsewhere cannot be finished here
+export const STATE_COOKIE = SECURE_COOKIES ? "__Host-nd_st" : "nd_st";
+export const STATE_TTL = 600;
 
 // passkeys are made for the parent domain: one passkey works for the auth host
 // whatever the apps are called

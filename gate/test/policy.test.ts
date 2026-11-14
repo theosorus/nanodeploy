@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decide, normalizePath, canOpen } from "../src/policy.ts";
+import { decide, normalizePath, pathSpellings, canOpen } from "../src/policy.ts";
 import type { Identity } from "../src/policy.ts";
 import type { AppPolicy } from "../src/db.ts";
 
@@ -54,6 +54,25 @@ test("path tricks cannot dodge a protected prefix", () => {
   }
   assert.equal(normalizePath("/a/b/../c?q=1"), "/a/c");
   assert.equal(normalizePath("/api/%3F/admin"), "/api/?/admin");
+});
+
+test("a rule holds on every spelling of a path, not only on the most decoded one", () => {
+  // Decoding "%2f" and then resolving ".." reads these as paths outside the
+  // prefix, while a router that leaves "%2f" alone still dispatches them to a
+  // handler under /api/admin/ or /admin.
+  for (const uri of ["/api/admin/..%2f..%2fother", "/api/admin/users/..%2F..%2F..%2F..%2Fx", "/api/admin/a%2f..%2f..%2f..%2fpublic",
+    "/api/admin/%252e%252e%252f%252e%252e%252fother", "/api/admin/..%5c..%5cother", "/admin%2f..%2fwelcome", "/ADMIN/..%2Fwelcome"]) {
+    const anonymous = decide(guestbook, null, [], uri);
+    assert.equal(!anonymous.ok && anonymous.status, 401, uri);
+    const member = decide(guestbook, person(), [], uri);
+    assert.equal(!member.ok && member.status, 403, uri);
+    assert.equal(decide(guestbook, person(), ["moderator"], uri).ok, true, uri);
+  }
+  // what is not under a protected prefix in any spelling stays open
+  for (const uri of ["/api/messages", "/api/administrators", "/api/x/../messages", "/api/messages/..%2fmessages", "/"]) {
+    assert.equal(decide(guestbook, null, [], uri).ok, true, uri);
+  }
+  assert.deepEqual(pathSpellings("/api/admin/..%2f..%2fother"), ["/api/admin/..%2f..%2fother", "/api/admin/../../other", "/other"]);
 });
 
 test("an exact protected path does not cover its neighbours", () => {

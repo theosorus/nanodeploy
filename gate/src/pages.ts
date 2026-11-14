@@ -115,7 +115,7 @@ ${opts.script ? `<script src="${AUTH_ORIGIN}/static/gate.js" defer></script>` : 
 </html>`;
 }
 
-export function loginPage(t: T, lang: Lang, o: { to: string; appName?: string | null; consoleConfirm?: boolean; error?: string | null; login?: string }) {
+export function loginPage(t: T, lang: Lang, o: { to: string; state?: string; appName?: string | null; consoleConfirm?: boolean; error?: string | null; login?: string }) {
   const sub = o.consoleConfirm
     ? `<p class="soft">${esc(t("signInConsole"))}</p>`
     : o.appName
@@ -125,12 +125,13 @@ export function loginPage(t: T, lang: Lang, o: { to: string; appName?: string | 
     <h1>${esc(t("signIn"))}</h1>
     ${sub}
     ${o.error ? `<p class="error" role="alert">${esc(o.error)}</p>` : ""}
-    <button type="button" class="wide-btn" data-passkey-login data-to="${esc(o.to)}" aria-describedby="passkey-hint"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="9" r="5"/><path d="m12 13 8 8m-4-4 3-3m-6 0 3-3"/></svg>${esc(t("usePasskey"))}</button>
+    <button type="button" class="wide-btn" data-passkey-login data-to="${esc(o.to)}" data-st="${esc(o.state ?? "")}" aria-describedby="passkey-hint"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="9" r="5"/><path d="m12 13 8 8m-4-4 3-3m-6 0 3-3"/></svg>${esc(t("usePasskey"))}</button>
     <p class="passkey-hint" id="passkey-hint">${esc(t("passkeyHint"))}</p>
     <p class="error" id="wa-error" role="alert" hidden data-failed="${esc(t("passkeyFailed"))}" data-unsupported="${esc(t("noPasskeySupport"))}"></p>
     <div class="or">${esc(t("or"))}</div>
     <form method="post" action="/login">
       <input type="hidden" name="to" value="${esc(o.to)}">
+      <input type="hidden" name="st" value="${esc(o.state ?? "")}">
       <label for="login">${esc(t("login"))}</label>
       <input id="login" name="login" autocomplete="username webauthn" autocapitalize="none" spellcheck="false" required value="${esc(o.login ?? "")}">
       <label for="password">${esc(t("password"))}</label>

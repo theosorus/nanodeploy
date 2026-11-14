@@ -385,6 +385,23 @@ test("provisioning detects a retained database and keeps the configured server a
   assert.equal(appUrl.pathname, "/" + second.user);
 });
 
+test("an app role cannot reach the template every new database is copied from", options, async () => {
+  const s = slug();
+  const creds = await store.provisionDatabase(s);
+  databases.push(creds.user);
+  const { default: postgres } = await import("postgres");
+  const connect = async (database: string) => {
+    const target = new URL(store.databaseUrl(creds.user, creds.password));
+    target.pathname = "/" + database;
+    const client = postgres(target.href, { max: 1, connect_timeout: 5, onnotice: () => {} });
+    try { return (await client`select current_user as who`)[0].who; } finally { await client.end(); }
+  };
+  assert.equal(await connect(creds.user), creds.user);
+  // postgres refuses to copy template1 while anyone is connected to it: one idle
+  // connection from an app would block every new app database and every restore
+  for (const shared of ["template1", "postgres"]) await assert.rejects(connect(shared), { code: "42501" }, shared);
+});
+
 async function request(path: string, init: RequestInit = {}) {
   api ??= (await import("../src/index.ts")).app;
   return api.request(`https://deploy.apps.audit.invalid${path}`, init);

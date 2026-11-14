@@ -143,17 +143,47 @@ test("malformed personal-key scopes never silently become unrestricted", options
 
 test("password login issues single-use handoffs and host-bound sessions", options, async () => {
   const to = `https://${appHost}/secret`;
-  const res = await request("/login", { form: { login: "member", password, to }, headers: { "x-nanodeploy-client-ip": "192.0.2.2" } });
+  // the app host starts the sign-in and remembers which browser asked
+  const start = await request("/_nd/login?rd=/secret", { host: appHost });
+  assert.equal(start.status, 302);
+  const state = cookie(start, "__Host-nd_st");
+  const login = new URL(start.headers.location!);
+  assert.equal(login.origin + login.pathname, `${origin}/login`);
+  assert.equal(login.searchParams.get("to"), to);
+  const st = login.searchParams.get("st")!;
+  assert.match(st, /^[A-Za-z0-9_-]{43}$/);
+  assert.ok(!start.headers.location!.includes(state.split("=")[1]), "the state cookie itself never leaves the app host");
+  assert.ok((await request(login.pathname + login.search)).body.includes(`name="st" value="${st}"`));
+
+  const res = await request("/login", { form: { login: "member", password, to, st }, headers: { "x-nanodeploy-client-ip": "192.0.2.2" } });
   assert.equal(res.status, 303);
   rootCookie = cookie(res, "__Host-nd_root");
   const destination = new URL(res.headers.location!);
   assert.equal(destination.hostname, appHost);
-  const callback = await request(destination.pathname + destination.search, { host: appHost });
+  assert.equal(destination.pathname, "/_nd/callback");
+  const callbackPath = destination.pathname + destination.search;
+  // a link to this callback opened in another browser signs nobody in: it holds
+  // no state cookie, or its own
+  for (const stranger of [undefined, "__Host-nd_st=" + "A".repeat(43)]) {
+    const refused = await request(callbackPath, { host: appHost, cookie: stranger });
+    assert.equal(refused.status, 302);
+    assert.match(refused.headers.location!, /\/login\?to=/);
+    assert.ok(!(refused.headers["set-cookie"] ?? []).some((c) => c.startsWith("__Host-nd_s=")), "no session for a browser that did not ask");
+  }
+  const callback = await request(callbackPath, { host: appHost, cookie: state });
   assert.equal(callback.status, 302);
   assert.equal(callback.headers.location, "/secret");
   hostCookie = cookie(callback, "__Host-nd_s");
-  const replay = await request(destination.pathname + destination.search, { host: appHost });
+  const replay = await request(callbackPath, { host: appHost, cookie: state });
   assert.match(replay.headers.location!, /\/login\?to=/);
+  // a sign-in that did not start on the app host gets no code: the host starts
+  // it over with its own state, then the existing root session answers at once
+  const direct = await request(`/login?to=${encodeURIComponent(to)}`, { cookie: rootCookie });
+  assert.equal(direct.status, 302);
+  assert.equal(direct.headers.location, `https://${appHost}/_nd/login?rd=%2Fsecret`);
+  const again = await request(`/login?to=${encodeURIComponent(to)}&st=${st}`, { cookie: rootCookie });
+  assert.match(again.headers.location!, /^https:\/\/private-app\.apps\.audit\.invalid\/_nd\/callback\?code=/);
+
   const headers = { "x-forwarded-host": appHost, "x-forwarded-uri": "/api/items", "x-forwarded-method": "GET" };
   const check = await request("/verify?app=private-app", { host: appHost, cookie: hostCookie, headers });
   assert.equal(check.status, 200);
@@ -162,10 +192,48 @@ test("password login issues single-use handoffs and host-bound sessions", option
     headers: { ...headers, "x-forwarded-host": "other-app.apps.audit.invalid" } })).status, 401);
   assert.equal((await request("/verify?app=private-app", { host: appHost, cookie: hostCookie,
     headers: { ...headers, "x-forwarded-uri": "/api/admin/test" } })).status, 403);
+  // an encoded separator cannot walk a request out of the protected prefix
+  assert.equal((await request("/verify?app=private-app", { host: appHost, cookie: hostCookie,
+    headers: { ...headers, "x-forwarded-uri": "/api/admin/..%2f..%2fitems" } })).status, 403);
+});
+
+test("a sibling origin cannot open a WebSocket with a visitor's session", options, async () => {
+  const socket = { "x-forwarded-host": appHost, "x-forwarded-uri": "/api/live", "x-forwarded-method": "GET",
+    "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==", "sec-websocket-version": "13" };
+  const verify = (headers: Record<string, string>) => request("/verify?app=private-app", { host: appHost, cookie: hostCookie, headers });
+  assert.equal((await verify({ ...socket, origin: "https://other-app.apps.audit.invalid", "sec-fetch-site": "same-site" })).status, 403);
+  assert.equal((await verify({ ...socket, origin: "https://evil.invalid" })).status, 403);
+  assert.equal((await verify(socket)).status, 403, "a handshake without an Origin is not a browser page of this app");
+  const own = await verify({ ...socket, origin: `https://${appHost}` });
+  assert.equal(own.status, 200);
+  assert.equal(own.headers["remote-sub"], "member");
+  // an ordinary read from another origin is still what CORS decides, not gate
+  const { "sec-websocket-key": _key, "sec-websocket-version": _version, ...plain } = socket;
+  assert.equal((await verify({ ...plain, origin: "https://other-app.apps.audit.invalid" })).status, 200);
+});
+
+test("a control character in a profile cannot break the identity headers", options, async () => {
+  await store.sql`update gate.users set display_name = ${"Audit\u0007 Mem\u007fber"}, email = ${"audit\u001f@audit.invalid"} where id = 'member'`;
+  try {
+    const headers = { "x-forwarded-host": appHost, "x-forwarded-uri": "/api/items", "x-forwarded-method": "GET" };
+    const res = await request("/verify?app=private-app", { host: appHost, cookie: hostCookie, headers });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers["remote-name"], "Audit  Mem ber");
+    assert.equal(res.headers["remote-email"], "audit @audit.invalid");
+    // gate is still up for the next request
+    assert.equal((await request("/login")).status, 200);
+  } finally {
+    await store.sql`update gate.users set display_name = 'Audit Member', email = '' where id = 'member'`;
+  }
 });
 
 test("signing out from an app invalidates both its host session and the root", options, async () => {
-  assert.equal((await request("/_nd/logout", { host: appHost, cookie: hostCookie })).status, 302);
+  // a link or an image on another origin does not sign anyone out
+  for (const site of ["cross-site", "same-site"]) {
+    assert.equal((await request("/_nd/logout", { host: appHost, cookie: hostCookie, headers: { "sec-fetch-site": site } })).status, 302);
+    assert.equal((await request("/_nd/me", { host: appHost, cookie: hostCookie })).body.includes('"anonymous":false'), true);
+  }
+  assert.equal((await request("/_nd/logout", { host: appHost, cookie: hostCookie, headers: { "sec-fetch-site": "same-origin" } })).status, 302);
   assert.equal((await request("/_nd/me", { host: appHost, cookie: hostCookie })).body.includes('"anonymous":true'), true);
   assert.equal((await request("/account", { cookie: rootCookie })).status, 303);
 });

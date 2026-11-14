@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { recentlyAuthenticated, safeRedirectPath, sameRequestOrigin } from "../src/request-security.ts";
+import { initiatedByOwnPage, isWebSocketHandshake, recentlyAuthenticated, safeRedirectPath, sameRequestOrigin, signInState } from "../src/request-security.ts";
 import { take } from "../src/ratelimit.ts";
 import { decide } from "../src/policy.ts";
 import { hashPassword, passwordNeedsRehash, PasswordBusyError, verifyPassword } from "../src/crypto.ts";
@@ -18,6 +18,34 @@ test("same-site sibling origins cannot use an application's session to mutate it
   assert.equal(sameRequestOrigin(undefined, undefined, expected), false);
   assert.equal(sameRequestOrigin("https://notes.apps.audit.invalid", "same-origin", expected), true);
   assert.equal(sameRequestOrigin("http://notes.apps.audit.invalid", "same-origin", expected), false);
+});
+
+test("a WebSocket handshake is recognised whatever the proxy kept of it", () => {
+  assert.equal(isWebSocketHandshake("websocket", "dGhlIHNhbXBsZSBub25jZQ=="), true);
+  assert.equal(isWebSocketHandshake("WebSocket", undefined), true);
+  assert.equal(isWebSocketHandshake("h2c, websocket", undefined), true);
+  // a proxy that drops hop-by-hop headers still forwards the key
+  assert.equal(isWebSocketHandshake(undefined, "dGhlIHNhbXBsZSBub25jZQ=="), true);
+  assert.equal(isWebSocketHandshake(undefined, undefined), false);
+  assert.equal(isWebSocketHandshake("h2c", undefined), false);
+  assert.equal(isWebSocketHandshake("not-websocket", ""), false);
+});
+
+test("only a page of the host itself, or the address bar, signs a visitor out", () => {
+  assert.equal(initiatedByOwnPage("same-origin"), true);
+  assert.equal(initiatedByOwnPage("none"), true);
+  // browsers without Fetch Metadata keep working
+  assert.equal(initiatedByOwnPage(undefined), true);
+  assert.equal(initiatedByOwnPage("same-site"), false);
+  assert.equal(initiatedByOwnPage("cross-site"), false);
+});
+
+test("a sign-in state is exactly one 256-bit base64url value", () => {
+  const proof = "A".repeat(43);
+  assert.equal(signInState(proof), proof);
+  for (const bad of [undefined, null, "", "A".repeat(42), "A".repeat(44), "A".repeat(42) + "/", ["A".repeat(43)], 43]) {
+    assert.equal(signInState(bad), null, JSON.stringify(bad));
+  }
 });
 
 test("a long-lived root session needs fresh proof before managing credentials", () => {

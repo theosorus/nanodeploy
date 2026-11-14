@@ -25,12 +25,14 @@ import {
   RP_NAME,
   SCHEME,
   SECURE_COOKIES,
+  STATE_COOKIE,
+  STATE_TTL,
   WEBAUTHN_COOKIE,
   hostOfSlug,
   originOf,
   slugOfHost,
 } from "./config.js";
-import { burnTime, hashPassword, PasswordBusyError, passwordNeedsRehash, passwordProblem, sha256, verifyPassword } from "./crypto.js";
+import { burnTime, hashPassword, PasswordBusyError, passwordNeedsRehash, passwordProblem, randomToken, sha256, verifyPassword } from "./crypto.js";
 import * as db from "./db.js";
 import { ago, pickLang, translator } from "./i18n.js";
 import type { Lang } from "./i18n.js";
@@ -38,7 +40,7 @@ import { accountPage, forbiddenPage, loginPage, messagePage, tokenPage } from ".
 import { canOpen, decide, effectiveRoles } from "./policy.js";
 import type { Identity } from "./policy.js";
 import * as limit from "./ratelimit.js";
-import { recentlyAuthenticated, safeRedirectPath, sameRequestOrigin } from "./request-security.js";
+import { initiatedByOwnPage, isWebSocketHandshake, recentlyAuthenticated, safeRedirectPath, sameRequestOrigin, signInState } from "./request-security.js";
 
 await db.waitForSchema();
 
@@ -85,8 +87,10 @@ const wantsHtml = (c: Context, method: string) =>
 
 // Header values travel as bytes. Node only takes latin1 strings, so a name with
 // any other character is sent as its UTF-8 bytes, which is what the gateway
-// sent before gate existed: apps decode Remote-Name as UTF-8.
-const headerSafe = (s: string) => Buffer.from(s.replace(/[\r\n]/g, " "), "utf8").toString("latin1");
+// sent before gate existed: apps decode Remote-Name as UTF-8. Control characters
+// are replaced: node refuses them in a header, and one stray byte in a display
+// name would turn every request of that person into a 500.
+const headerSafe = (s: string) => Buffer.from(s.replace(/[\u0000-\u001f\u007f]/g, " "), "utf8").toString("latin1");
 
 // Every state-changing request on the auth host must come from one of its own
 // pages. Browsers send Origin on POST, form or fetch alike.
@@ -188,11 +192,23 @@ function allow(c: Context, id: Identity | null, roles: string[]) {
   return c.body(null, 200);
 }
 
+// What travels through the sign-in page is the hash of the state cookie: the
+// cookie itself never leaves the app's host.
+const stateProof = (state: string) => sha256(state).toString("base64url");
+
+// Where an app host sends a browser to sign in. The state cookie ties the
+// answer to this browser: /_nd/callback only accepts a code issued for it, so
+// nobody can finish their own sign-in in someone else's browser with a link.
+// A pending state is reused: two tabs signing in at once both finish.
+function signInUrl(c: Context, host: string, path: string, fresh = false) {
+  const state = signInState(getCookie(c, STATE_COOKIE)) ?? randomToken();
+  setCookie(c, STATE_COOKIE, state, { ...cookieBase, maxAge: STATE_TTL });
+  const to = encodeURIComponent(originOf(host) + path);
+  return `${AUTH_ORIGIN}/login?to=${to}&st=${stateProof(state)}${fresh ? "&fresh=1" : ""}`;
+}
+
 function challenge(c: Context, host: string, uri: string, method: string, fresh = false) {
-  if (wantsHtml(c, method)) {
-    const to = encodeURIComponent(originOf(host) + safePath(uri));
-    return c.redirect(`${AUTH_ORIGIN}/login?to=${to}${fresh ? "&fresh=1" : ""}`, 302);
-  }
+  if (wantsHtml(c, method)) return c.redirect(signInUrl(c, host, safePath(uri), fresh), 302);
   return c.json({ error: "sign in first", login: "/_nd/login" }, 401);
 }
 
@@ -213,8 +229,11 @@ app.get("/verify", async (c) => {
   const { id, session } = await identify(c, host);
 
   // Sibling apps are same-site. SameSite cookies alone do not stop a
-  // compromised app from submitting a form with another app's session.
-  if (id?.via === "session" && !["GET", "HEAD", "OPTIONS"].includes(method) &&
+  // compromised app from submitting a form with another app's session, or
+  // from opening a WebSocket with it.
+  const actsOnSession = !["GET", "HEAD", "OPTIONS"].includes(method) ||
+    isWebSocketHandshake(c.req.header("upgrade"), c.req.header("sec-websocket-key"));
+  if (id?.via === "session" && actsOnSession &&
       !sameRequestOrigin(c.req.header("origin"), c.req.header("sec-fetch-site"), originOf(host))) {
     return c.json({ error: "cross-origin request refused" }, 403);
   }
@@ -242,11 +261,7 @@ app.get("/verify", async (c) => {
 
 /* ---------- helpers served on every app host ---------- */
 
-app.get("/_nd/login", (c) => {
-  const host = hostOf(c);
-  const to = encodeURIComponent(originOf(host) + safePath(c.req.query("rd")));
-  return c.redirect(`${AUTH_ORIGIN}/login?to=${to}`, 302);
-});
+app.get("/_nd/login", (c) => c.redirect(signInUrl(c, hostOf(c), safePath(c.req.query("rd"))), 302));
 
 // The auth host lent a root session to this host: turn the one-time code into
 // a session that only this host accepts.
@@ -254,11 +269,12 @@ app.get("/_nd/callback", async (c) => {
   const host = hostOf(c);
   const code = c.req.query("code") ?? "";
   const path = safePath(c.req.query("path"));
-  const rootHash = code ? await db.consumeHandoff(code, host) : null;
+  // the code only opens a session in the browser that asked for it: the one
+  // holding the state cookie its hash was issued with
+  const state = signInState(getCookie(c, STATE_COOKIE));
+  const rootHash = code && state ? await db.consumeHandoff(code, host, stateProof(state)) : null;
   const root = rootHash ? await db.getRoot(rootHash) : null;
-  if (!rootHash || !root) {
-    return c.redirect(`${AUTH_ORIGIN}/login?to=${encodeURIComponent(originOf(host) + path)}`, 302);
-  }
+  if (!rootHash || !root) return c.redirect(signInUrl(c, host, path), 302);
   const isConsole = slugOfHost(host) === CONSOLE;
   const expires = isConsole
     ? new Date(Math.min(new Date(root.authenticated_at).getTime() + CONSOLE_FRESH, new Date(root.expires_at).getTime()))
@@ -272,6 +288,7 @@ app.get("/_nd/callback", async (c) => {
     userAgent: c.req.header("user-agent") ?? "",
   });
   setCookie(c, HOST_COOKIE, raw, { ...cookieBase, maxAge: Math.max(60, Math.floor((expires.getTime() - Date.now()) / 1000)) });
+  deleteCookie(c, STATE_COOKIE, { path: "/", secure: SECURE_COOKIES });
   return c.redirect(path, 302);
 });
 
@@ -279,6 +296,8 @@ app.get("/_nd/callback", async (c) => {
 // session made from it go together.
 app.get("/_nd/logout", async (c) => {
   const host = hostOf(c);
+  // a link or an image on another origin must not sign anyone out everywhere
+  if (!initiatedByOwnPage(c.req.header("sec-fetch-site"))) return c.redirect("/", 302);
   const session = await db.findSession(getCookie(c, HOST_COOKIE), host);
   if (session) {
     await db.endFamily(session.parent ?? session.id_hash);
@@ -341,12 +360,16 @@ async function startRoot(c: Context, user: db.User) {
 
 // Where to send a signed-in browser: the auth host itself, or another host
 // through a one-time code that host exchanges for its own session.
-async function destination(rootHash: Buffer, target: URL | null): Promise<string> {
+async function destination(rootHash: Buffer, target: URL | null, state: string | null): Promise<string> {
   if (!target) return "/account";
   const host = target.hostname.toLowerCase();
   if (host === AUTH_HOST) return target.pathname + target.search;
-  const code = await db.createHandoff(rootHash, host);
   const path = encodeURIComponent(target.pathname + target.search);
+  // A sign-in that did not start on that host (a bookmark of this page, a link)
+  // carries no proof of the browser: the host starts it over with its own
+  // state, and comes straight back here since the root session now exists.
+  if (!state) return `${originOf(host)}/_nd/login?rd=${path}`;
+  const code = await db.createHandoff(rootHash, host, state);
   return `${originOf(host)}/_nd/callback?code=${code}&path=${path}`;
 }
 
@@ -361,13 +384,15 @@ const needsFresh = (target: URL | null) => Boolean(target && slugOfHost(target.h
 
 app.get("/login", async (c) => {
   const target = safeTarget(c.req.query("to"));
+  const state = signInState(c.req.query("st"));
   const root = await rootSession(c);
   if (root && c.req.query("fresh") !== "1" && (!needsFresh(target) || isFresh(root.authenticated_at))) {
-    return c.redirect(await destination(root.id_hash, target), 302);
+    return c.redirect(await destination(root.id_hash, target, state), 302);
   }
   return c.html(
     loginPage(tOf(c), langOf(c), {
       to: target?.href ?? "",
+      state: state ?? "",
       appName: await appNameFor(target),
       consoleConfirm: Boolean(root) && needsFresh(target),
       login: root?.user.username,
@@ -383,9 +408,10 @@ app.post("/login", async (c) => {
   const login = String(form.login ?? "").trim().slice(0, 200);
   const password = String(form.password ?? "");
   const target = safeTarget(String(form.to ?? ""));
+  const state = signInState(form.st);
   const keys = [`ip:${ipOf(c)}`, `login:${login.toLowerCase()}`];
   const render = async (error: string, status: 401 | 429) =>
-    c.html(loginPage(t, lang, { to: target?.href ?? "", appName: await appNameFor(target), error, login }), status);
+    c.html(loginPage(t, lang, { to: target?.href ?? "", state: state ?? "", appName: await appNameFor(target), error, login }), status);
 
   const wait = limit.waitSeconds(keys);
   if (wait > 0) return render(t("tooMany", { s: wait }), 429);
@@ -403,7 +429,7 @@ app.post("/login", async (c) => {
   await db.markPasswordUsed(user.id);
   await db.audit(user.id, "login", "password", { ip: ipOf(c) });
   const rootHash = await startRoot(c, user);
-  return c.redirect(await destination(rootHash, target), 303);
+  return c.redirect(await destination(rootHash, target, state), 303);
 });
 
 app.post("/logout", async (c) => {
@@ -467,7 +493,7 @@ app.post("/webauthn/login/verify", async (c) => {
   limit.succeeded(keys);
   await db.audit(user.id, "login", "passkey", { ip: ipOf(c) });
   const rootHash = await startRoot(c, user);
-  return c.json({ redirect: await destination(rootHash, safeTarget(body?.to)) });
+  return c.json({ redirect: await destination(rootHash, safeTarget(body?.to), signInState(body?.st)) });
 });
 
 // Registering a passkey needs to know whose it is: the signed-in account, or the

@@ -50,6 +50,33 @@ updating. Automatic updates read the same `.env` setting. New installations
 keep the Docker 28+ default; plan an OS/engine upgrade to leave compatibility
 mode.
 
+## Security update: 14 November 2026
+
+An ordinary update: `./install.sh`, or the automatic updater. Nothing changes in
+the database or in `.env`, and everyone stays signed in. A sign-in that was in
+progress during the update starts over once.
+
+One step is left to you, at a quiet moment. Earlier versions removed and
+recreated `.builds` and `.staging` at every start of the control plane, which
+silently dropped the empty mounts Caddy keeps over them. The control plane no
+longer does that, but the mounts only come back when the gateway container is
+created again:
+
+```bash
+docker compose up -d --force-recreate caddy
+docker compose restart control-plane
+```
+
+The second command matters: a new gateway container is not attached to the
+private network of each app until the control plane reconciles, a few seconds
+after it starts. Backends answer 502 in between. Nothing is exposed while the
+mounts are missing (Caddy only serves `<slug>/current/dist`); they are a second
+barrier, and a reboot restores them just as well.
+
+Apps that open a WebSocket with the visitor's session cookie must do it from
+their own origin. A socket opened from another origin is now refused, like any
+other state-changing request; scripts use a personal access key.
+
 ## Security upgrade: 7 November 2026
 
 Install this upgrade manually the first time. It changes the storage format of

@@ -30,7 +30,7 @@ async function signIn(button: HTMLElement) {
   try {
     const optionsJSON = await post("/webauthn/login/options", {});
     const response = await startAuthentication({ optionsJSON });
-    const { redirect } = await post("/webauthn/login/verify", { response, to: button.dataset.to ?? "" });
+    const { redirect } = await post("/webauthn/login/verify", { response, to: button.dataset.to ?? "", st: button.dataset.st ?? "" });
     location.assign(redirect);
   } catch (err) {
     console.error(err);
