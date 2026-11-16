@@ -10,6 +10,9 @@
     "typecheck": "tsc --noEmit",
     "build": "vite build && esbuild server/index.ts --bundle --platform=node --target=node24 --format=esm --outfile=server.js --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\"",
     "db:generate": "drizzle-kit generate",
+    "doctor": "node scripts/doctor.mjs",
+    "check": "npm run typecheck && npm test && npm run build && node scripts/doctor.mjs",
+    "zip": "npm run check && node scripts/zip.mjs",
     "deploy": "npm run build && node scripts/deploy.mjs"
   },
   "dependencies": {

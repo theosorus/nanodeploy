@@ -1,393 +1,189 @@
 ---
 name: nanodeploy-app
-description: "Build, change, and deploy applications hosted on Nanodeploy, a self-hosted platform with scale-to-zero, shared Postgres, and gateway authentication. Use for web apps, internal tools, dashboards, trackers, and mini SaaS projects meant for Nanodeploy or the user's own server, including app.yaml, Sablier wake-up behavior, and the app template. If the hosting target is unclear, confirm it is Nanodeploy. For changes to the Nanodeploy platform itself, follow its platform deployment instructions."
+description: "Builds, changes and ships web apps for Nanodeploy, a self-hosted platform where apps sleep when idle, share one Postgres and get their users from a sign-in gateway. Covers the bundled app template, app.yaml, the code rules that keep a sleeping app working, and both ways to ship: a ZIP archive (built here, dropped on the dashboard or uploaded with a deploy key) or a GitHub/GitLab repository the server builds on every push. Use when the user wants to create, modify, fix or deploy a web app, internal tool, dashboard, tracker or mini SaaS for Nanodeploy or their own server, asks for a zip to deploy, wants to make a repository or existing project deployable on Nanodeploy, or mentions app.yaml, deploy keys (ndd_), Sablier or the app template. Not for installing or operating the platform itself: use nanodeploy-setup."
+compatibility: "Needs Node.js 24+ and npm with access to the npm registry. Git deployments also need git, and the gh or glab CLI to open pull requests."
+license: MIT
 ---
 
 # Nanodeploy app
 
-Nanodeploy deploys apps on a self-hosted Linux server or VPS (x86-64 or ARM64),
-typically starting with 4 GB of RAM. The
-platform imposes one stack and a few hard constraints. An app that ignores them
-deploys fine, then breaks silently after its first sleep.
+Nanodeploy runs small web apps on one self-hosted Linux server. Each app gets
+`https://<slug>.<domain>`, a Postgres database and signed-in users. It is
+stopped when nobody uses it and restarted by the next request. An app that
+ignores this deploys fine, then breaks on its second visit.
 
-Two things decide whether the result is any good: the platform rules below, and
-the art direction. Skipping the second produces a working app that looks like
-every other app an AI has ever generated. Do not skip it.
+This file says what to do and in which order. The details are in
+`references/`. When a step says **Read**, open that file and read all of it
+before doing the step. Do not fill gaps with habits from other platforms.
 
-## Start by framing, in one round
+`SKILL_DIR` below means the folder that holds this SKILL.md.
 
-Before writing a line, ask the user one grouped set of questions. One round, not
-a drip feed. Then build, stating the assumptions you made for anything they left
-open.
+## 1. Decide the task and the delivery mode
 
-Ask about:
+Answer both questions first, then tell the user your two answers in one line.
 
-1. **Purpose and users.** What is it for, who opens it, only them or other
-   people too. This decides the access mode and whether rows need an owner.
-2. **Data and lifetime.** Which entities, which fields, what must survive, what
-   can be lost. Changing this later means a migration.
-3. **Access.** Private, restricted to a group, or public on the internet.
-   `private` is the default. Never choose `public` on your own; if they ask for
-   it, say plainly that the app will be open to the whole internet.
-4. **Platform constraints that change the design.** Anything periodic, real
-   time, large-file, or calling a paid external API. Each one forces a different
-   shape, and some force `idle.warm: true`.
-5. **Art direction.** See below. Offer three named directions and let them pick.
+**Task**
 
-If the request already answers a question, do not ask it again. If the request
-answers everything, skip straight to the art direction, which is never
-answered by default.
+| The user wants | Task | Read |
+|---|---|---|
+| a new app | **Create** | [references/build-the-app.md](references/build-the-app.md) |
+| a change to an app already running on Nanodeploy | **Change** | [references/change-an-app.md](references/change-an-app.md) |
+| an existing project (repository, folder, zip) to run on Nanodeploy | **Adapt** | [references/deploy-git.md](references/deploy-git.md), section "Adapt an existing project" |
 
-## Art direction
+**Delivery mode**: how the app reaches the server.
 
-The user is not buying a working app, they are buying an app that looks like
-someone decided how it should look. Derive the direction from the subject, not
-from a house style.
+| Situation | Mode | Read |
+|---|---|---|
+| Nobody gave you a deploy key, or you cannot reach the server. **The default.** Always the case on claude.ai. | **ZIP hand-over**: you build, then give the user two zip files | [references/deploy-zip.md](references/deploy-zip.md) |
+| The user gave you `NANODEPLOY_URL` and a deploy key `ndd_...` | **ZIP upload**: `npm run deploy` | [references/deploy-zip.md](references/deploy-zip.md) |
+| The app is (or must be) in a GitHub or GitLab repository connected to Nanodeploy | **Git**: commit and push, the server builds | [references/deploy-git.md](references/deploy-git.md) |
 
-**Offer three named directions, derived from this app's subject.** One line
-each, contrasted on more than colour: they should differ in density, in type
-treatment, in how structure is expressed. Name them with a word from the
-subject's world. The user picks one and adjusts it; you then restate the chosen
-direction in five lines before writing any code.
+If you hesitate between ZIP and Git, ask the user once. Never ship one app
+both ways: a Git-connected app is replaced by its next push.
 
-Derive them from the material the app is about. A gym log, a wine cellar, a
-reading list and a server monitor should not receive the same three options. The
-subject's own artifacts, instruments and vocabulary are where a real direction
-comes from.
+## 2. Learn the platform once
 
-**Check every direction against the defaults before offering it.** AI-generated
-design currently clusters around three looks, and they show up whatever the
-subject:
+**Read [references/platform.md](references/platform.md)** before writing any
+code in this conversation. It explains the request path, sleep and wake-up,
+identity, the server-side container and its limits. Every rule below comes
+from it. [references/manifest.md](references/manifest.md) is the full
+`app.yaml` reference.
 
-- warm cream background near `#F4F1EA`, high-contrast serif display, terracotta
-  accent;
-- near-black background, one acid-green or vermilion accent;
-- broadsheet layout, hairline rules, zero border radius, dense columns.
+## 3. Create an app: the workflow
 
-Each is legitimate for a brief that calls for it. None is a choice when it
-arrives by default. If one of your three directions lands there without the
-subject demanding it, replace it and say why.
+Copy this checklist into your reply and tick the boxes as you go. Do the steps
+in this order. Do not skip one.
 
-Then, while building:
-
-- **Typography carries the personality.** Pick a display face and a body face on
-  purpose, set a real scale, use weight and spacing deliberately. Self-hosting a
-  `.woff2` is expected for anything that should feel finished: put the file next
-  to the app and declare `@font-face` in `theme.css`. Never load a font from a
-  third-party CDN: the app must keep working on a home server, and it must not
-  leak its visitors to someone else's analytics.
-- **Spend boldness in one place.** Pick a single signature element that the app
-  is remembered by, and keep everything around it quiet. Then remove one thing.
-- **Structure must mean something.** Numbered markers, eyebrows and dividers
-  earn their place only when the content really is a sequence or a hierarchy.
-- **Match effort to the direction.** A dense direction needs precision in
-  alignment; a spare one needs precision in spacing. Elegance is executing the
-  chosen direction well, not adding to it.
-- **Write the words as carefully as the layout.** Buttons name what happens
-  ("Add", not "Submit"), an action keeps the same word through the whole
-  flow, errors say what went wrong and what to do, an empty screen invites the
-  first action. Generic copy makes a design feel templated as fast as generic
-  colour does.
-
-## What every app shares, and what it does not
-
-`src/styles.css` is the shared rhythm: spacing scale, type scale, interaction
-states, focus rings, reduced motion, responsive floor. **Use it unchanged in
-every app.** It holds no colour, no typeface and no shape.
-
-`src/theme.css` is the art direction: colours, faces, radius, line weight,
-density, the signature. **Rewrite it entirely for every app.** Copying an app
-and keeping its theme means shipping the same app twice.
-
-Two apps on the same server should look nothing alike and still feel built by
-the same hand. That is the split.
-
-Quality floor, never negotiable, regardless of direction: usable down to
-375 px, visible keyboard focus, `prefers-reduced-motion` respected, real text
-contrast, controls at least 44 px tall, every interactive element reachable by
-keyboard.
-
-## The stack, non-negotiable
-
-| Layer | Choice |
-|---|---|
-| Frontend | Vite + React + TypeScript, built to static files in `dist/` |
-| Backend | Hono on Node 24, bundled by esbuild into a single `server.js` |
-| Database | shared Postgres, accessed through Drizzle ORM |
-| Auth | not a single line in the app, the gateway injects the identity |
-| API routes | everything under `/api/*`, the rest is served statically by Caddy |
-| API calls | always through `src/client.ts`, never a bare `fetch` |
-
-Never propose Next.js, Express, Prisma, Mongo, NextAuth, Passport, Redis or a
-different ORM. Each breaks a part of the platform. Tailwind is not used either:
-the split between shared rhythm and per-app theme is the design system.
-
-## The six scale-to-zero constraints
-
-The container is stopped after `idle.timeout` and restarted on the first
-request. So, in the code you generate:
-
-1. **No in-memory state.** No local cache, no session in RAM, no global counter,
-   no Map shared between requests. Everything goes to the database.
-2. **No `setInterval`, no long `setTimeout`, no internal cron.** A sleeping app
-   runs nothing. If a periodic task is genuinely required, say so and set
-   `idle.warm: true`, explaining that the app will then run permanently for
-   about 40 MB.
-3. **No websockets.** Waking cuts the connection. Use polling, or SSE with
-   automatic reconnection.
-4. **Boot under a second.** No warm-up, no model loading, no migration at start.
-5. **Postgres pool at `max: 3`.** The database is shared by every app and each
-   connection is a forked backend process.
-6. **Uploads go to `/data`, nowhere else.** The container filesystem is
-   read-only; only `/data` (a dedicated persistent volume) and `/tmp` (16 MB,
-   wiped on every wake) are writable.
-
-A reboot is not a special case: an app asleep and an app killed by a power cut
-are the same state. Code must survive being killed at any moment without losing
-data, so write to the database before answering, not after.
-
-## The API client
-
-The first call that wakes a sleeping app is answered by Sablier's waiting page
-(HTML) instead of the backend's JSON. The request never reached the server.
-Every frontend call goes through `src/client.ts`, which detects that page and
-retries. A bare `fetch` breaks silently on the first wake, especially on a POST.
-Never bypass the client.
-
-Use its `onWaking` hook to show a real "waking up" state. On a cold app the
-first visit is the slow one, and a silent spinner reads as a broken app:
-
-```typescript
-api<Note[]>("/api/notes", undefined, { onWaking: () => setStatus("waking") });
+```
+- [ ] 1. Frame the app with the user (one round of questions)
+- [ ] 2. Art direction: three named directions, the user picks one
+- [ ] 3. Copy the template, run npm ci
+- [ ] 4. app.yaml: name, slug, access, roles, env
+- [ ] 5. src/theme.css rewritten for the chosen direction
+- [ ] 6. server/schema.ts, then npm run db:generate
+- [ ] 7. server/index.ts: every route under /api/
+- [ ] 8. src/: the interface, with loading, waking, empty and error states
+- [ ] 9. npm run check until it reports 0 errors
+- [ ] 10. Deliver with the mode chosen in section 1
+- [ ] 11. Report to the user (section 6)
 ```
 
-## User identity
+**Step 1. Frame.** Ask one grouped set of questions, in one message, then
+wait. Skip a question the request already answers. Ask about:
 
-The app does not handle login. The gateway (gate) checks access, then injects
-`Remote-Sub`, `Remote-Email`, `Remote-Name`, `Remote-Groups` and
-`Remote-Roles`. Read them through `server/auth.ts`, never by hand: it also
-decodes names written in any script.
+1. Purpose and users: what it is for, who opens it (only them, family, a
+   team, the whole internet).
+2. Data: which things it stores, which fields, what must never be lost.
+3. Access: `private` (accounts of the server, the default), `groups` (chosen
+   groups), or `public` (anyone on the internet). Never pick `public` yourself.
+   If they ask for it, say plainly that anyone on the internet can open it.
+4. Constraints that change the design: anything periodic, real time, large
+   files, or a paid external API.
+5. The art direction (step 2), which no request answers by default.
 
-```typescript
-const user = tryGetUser(c);   // null when the request carries no identity
-requireRole(c, "moderator");  // 401 if signed out, 403 without the role
+If the user says "just build it", choose sensible answers, state them as
+assumptions in one list, and go on.
+
+**Step 2. Art direction.** **Read [references/art-direction.md](references/art-direction.md)**,
+offer three named directions, let the user pick, then restate the choice in
+five lines before writing code.
+
+**Step 3. Copy the template.** The template ships inside this skill at
+`SKILL_DIR/assets/app-template/` (in the Nanodeploy repository,
+`templates/app-template/` is the same). Copy it to a new folder named after
+the slug, outside `SKILL_DIR`. This command works on Linux, macOS and Windows:
+
+```bash
+node -e "require('fs').cpSync(process.argv[1], process.argv[2], { recursive: true })" "SKILL_DIR/assets/app-template" "./my-slug"
+cd my-slug
+npm ci
 ```
 
-On a `public` app, a visitor who is not signed in has no identity header, and a
-signed-in one does. Every route that needs a user therefore answers 401 when
-`tryGetUser` returns null; that is what avoids a cascade of 500s. `getUser(c)`,
-which throws, is only justified in an app that will always stay private.
+npm warnings about install scripts (esbuild) are harmless. Then **read
+[references/build-the-app.md](references/build-the-app.md)** for steps 4 to 8.
 
-### Deploying from a repository
+**Step 9. Check.** Run `npm run check` (types, tests, build, then
+`npm run doctor`). Read every `ERROR`, fix it, run it again. Continue only at
+0 errors. Read each `WARN` and fix it unless you can say why it does not apply.
 
-When the app lives in a GitHub or GitLab repository connected to the server
-(the dashboard's Git tab), do not deploy with `npm run deploy`: commit and push.
-A push to the connected branch builds and deploys; a pull request gets a preview
-at `<slug>--pr-<n>.<domain>`, for accounts of the server only, with its own empty
-database. Work on a branch, open a pull request, give the preview URL, and let
-the user merge. The commit status on the forge (green or red, with the build
-log) tells you whether the build passed.
+**Step 10. Deliver.** Follow the reference for your mode, completely.
 
-The server runs `npm ci` (or `npm install`) then `npm run build`, which must leave
-`dist/`, `server.js` and `migrations/` exactly where `npm run deploy` packs them.
-Commit `package-lock.json`. Change the commands in `app.yaml` (`build.install`,
-`build.command`) only when the template's do not fit. Never change `slug` in a
-connected repository: the build fails on purpose.
+## 4. Change or adapt an app
 
-### Page views
+- **Change**: read [references/change-an-app.md](references/change-an-app.md)
+  first. Get the current source before touching anything, keep the slug, and
+  work inside the app's existing look.
+- **Adapt**: read [references/deploy-git.md](references/deploy-git.md),
+  section "Adapt an existing project", then
+  [references/build-the-app.md](references/build-the-app.md) for the rules the
+  code must follow.
 
-The platform counts visits on its own, from the gateway's log: never add an
-analytics script, a tracking pixel or a third-party SDK. In a single-page app,
-call `trackPage()` from `src/analytics.ts` after each client-side route change
-(not on the first render, which the gateway already counted).
+When something fails, look up the exact message in
+[references/troubleshooting.md](references/troubleshooting.md) before
+guessing.
 
-### Public app, managed by a few people
+## 5. Rules that are never broken
 
-The common case: anyone can read and post, a few trusted people moderate or
-edit. Never build a login, an admin password or a "secret admin URL" for that.
-Declare a role and the paths it guards in `app.yaml`:
+Each one comes from how the platform works. Breaking it does not fail the
+deploy; it breaks the app later, silently.
 
-```yaml
-access: public
-roles: [moderator]
-protect:
-  - { path: /api/admin/*, role: moderator }
+1. **Use the template's stack**: Vite + React + TypeScript, Hono on Node 24,
+   Drizzle on the shared Postgres. No Next.js, Express, Prisma, Mongo, Redis,
+   socket.io, Tailwind or auth library.
+2. **Every API route is under `/api/`.** Caddy sends only `/api/*` to the
+   backend; everything else is a file from `dist/`.
+3. **Every frontend call to `/api` goes through `api()` from `src/client.ts`.**
+   The first call after a sleep gets an HTML waiting page; `api()` retries it.
+4. **No state in memory, no timers, no websockets, no cron.** The process is
+   stopped at any moment. Everything that matters goes to Postgres first.
+5. **No login code at all.** The gateway signs people in. Read the user with
+   `tryGetUser(c)` from `server/auth.ts`; answer 401 when it returns null.
+6. **Every user-owned table has `ownerId`, and every read, update and delete
+   filters on it.** That filter is the whole authorisation model.
+7. **Validate every input and bound every list** (type, length, `limit`).
+8. **Secrets: names in `env` in app.yaml, values typed by the user in the
+   dashboard.** Never in code, Git, the frontend or a zip.
+9. **The server is one bundled file.** The image has no `node_modules`: no
+   native packages (bcrypt, sharp, sqlite), no files read next to the code.
+10. **Files go to `/data`**, the only persistent writable folder.
+11. **Outbound calls: public HTTPS only**, through the platform proxy (Node's
+    `fetch` does it). No SMTP, no LAN, no raw TCP.
+12. **Schema changes are new migration files**, generated with
+    `npm run db:generate`. Never edit or rename one that was deployed.
+
+## 6. Report to the user
+
+End every task with this report, in the user's language. Fill in what applies,
+drop what does not.
+
+```
+What I built: <one sentence>
+Assumptions: <list, or "none">
+Delivery:
+  ZIP hand-over: <slug>-deploy.zip (deploy) and <slug>-source.zip (keep it), plus the dashboard steps
+  ZIP upload: live at <url>, version <n>
+  Git: branch <b>, pull request <link>, preview <url> once the build is green
+Still to do in the dashboard: <env values to type, roles to give, access to change>
+Checks: npm run check passed (0 errors); warnings left on purpose: <list or none>
 ```
 
-- The gateway refuses a protected path to anyone without the role, before the
-  request reaches the app. The route still calls `requireRole(c, "moderator")`:
-  two locks, so a mistyped rule never opens it.
-- Who is a moderator is decided in the dashboard (the app's panel, Roles), not
-  in code. Administrators hold every role.
-- In the frontend, `src/identity.ts` gives `getMe()` (`/_nd/me`), `hasRole()`,
-  `loginUrl()` and `logoutUrl`. Show a discreet "sign in" link (footer) to
-  anonymous visitors, and the moderation controls only when
-  `hasRole(me, "moderator")`. Hiding a button is comfort; the server check is
-  the security.
-- Put moderation endpoints under the protected prefix (`/api/admin/...`), and
-  keep the public endpoints outside it.
+Never write "deployed" unless you saw the platform's answer saying so. Never
+call it done while `npm run check` reports an error.
 
-Every user-owned table carries an `ownerId` column filled with `user.id`, and
-**every read filters on it**. That filter is the entire authorisation model:
-forget it once and one account reads another's rows. It is also what makes a
-single account usable across every app.
+## 7. Style
 
-Never create a `users` table, a login page, a signup form, password handling or
-JWTs inside an app.
+Talk to the user in their language. Interface text follows the user's language.
+Code comments in English, only where they explain a platform constraint or a
+non-obvious decision.
 
-## Security rules for the code you write
+## References
 
-The platform isolates apps from each other and from the host. It cannot protect
-an app from itself.
-
-- **Validate every input at the edge.** Check the type, then bound the length of
-  every string. The body is whatever the network sent, not what the frontend
-  meant to send.
-- **Bound every query.** A `limit` on every list route. One shared 4 GB machine,
-  no pagination, and one user with 50 000 rows is an outage.
-- **Never build SQL by string concatenation.** Drizzle parameterises; if raw SQL
-  is unavoidable, use the placeholder form.
-- **Never render HTML from user input.** No `dangerouslySetInnerHTML`. React
-  escapes by default; keep it that way.
-- **Secrets are declared, never written down.** Put the name in `env` in the
-  manifest, the user types the value in the dashboard. Never a key in the repo,
-  never a key in the frontend bundle: everything in `dist/` is public even for a
-  private app, since only the gateway stands in front of it.
-- **Trust no client-supplied identity.** The only identity is the `Remote-*`
-  headers, which the gateway strips from inbound requests and re-injects itself.
-  Never accept a user id from a request body or a query string.
-- **Check ownership on write, not just on read.** An update or a delete matches
-  on both the row id and `ownerId`.
-- **Outbound calls are a decision.** An app that calls an external API sends
-  data off the machine. Say so, and keep the key server-side.
-
-## The manifest
-
-`app.yaml` at the root is the only contract with the platform.
-
-```yaml
-name: Expenses
-slug: depenses          # becomes depenses.<domain>, [a-z0-9-] only
-                        # deploy, auth, id and www are reserved by the platform
-access: private         # public | private | groups, used when the app is created;
-                        # later changes are made in the dashboard, not here
-groups: []
-roles: []               # e.g. [moderator]; given to people in the dashboard
-protect: []             # e.g. - { path: /api/admin/*, role: moderator }
-frontend: true
-backend:
-  entry: server.js
-  port: 3000
-database:
-  enabled: true
-  migrations: ./migrations
-idle:
-  timeout: 10m
-  warm: false           # true only if the app must run continuously
-env: [OPENAI_API_KEY]   # names only, values are typed in the dashboard
-```
-
-## Procedure
-
-1. **Frame it.** The questions above, in one round.
-2. **Copy the template.** `cp -R templates/app-template ../<slug>` from the Nanodeploy
-   repo, or reproduce its exact structure if the repo is not around.
-3. **Write `app.yaml` first**, it frames everything else.
-4. **Write `theme.css`**, the chosen art direction, before any component. Design
-   decisions made after the fact turn into decoration.
-5. **Define the schema** in `server/schema.ts` with Drizzle, `ownerId` included.
-6. **Generate the migrations**: `npm run db:generate`. They are produced on the
-   development machine, never on the server, and applied once at deploy time.
-7. **Write the routes** in `server/index.ts`, all under `/api/*`, validated.
-8. **Write the frontend** in `src/`, with no authentication logic, and with its
-   loading, waking, empty and error states written from the start.
-9. **Deploy**: `npm run deploy`. That builds the frontend, bundles the server,
-   zips `dist/ server.js app.yaml migrations/` and posts it to the control
-   plane. Needs `NANODEPLOY_URL` and `NANODEPLOY_TOKEN` in the environment.
-   The token must be a **deploy key** (`ndd_...`) for this app's slug: ask the
-   user to create one in the dashboard (the app's panel, or "deploy key for a
-   new app" before the first deploy). Never ask for the server's
-   `DEPLOY_TOKEN`: it controls the whole machine, a deploy key only this app. A
-   `403` saying the key "is for" another app means `app.yaml` and the key
-   disagree on the slug.
-
-The instance URL comes from the user or their project environment, never from
-the maintainer's deployment. If no instance exists yet, use the repository's
-`docs/INSTALL.md` (or `docs/INSTALL.fr.md`); `./install.sh --local` provides a
-local trial. Platform changes and platform deployments are a separate task:
-do not infer an SSH host, user or server path from this skill.
-
-After a successful deploy, give the URL and list the environment variables still
-waiting for a value, if any.
-
-## Changing an existing app
-
-A failed deployment changes nothing: the running version stays live. Every
-deploy is a numbered version; deploy with `npm run deploy -- -m "what changed"`
-so the history says why. If a deploy broke the app, go back to the previous
-version (`GET /api/apps/<slug>/releases`, then
-`POST /api/apps/<slug>/releases/<id>/rollback` with the same deploy key), then fix
-forward. Changing
-`access` in `app.yaml` has no effect on an existing app, say so and point the user
-to the dashboard instead.
-
-A deployment replaces the image and the container, but **never the database**. A
-schema change therefore goes through a new migration: edit `server/schema.ts`,
-run `npm run db:generate`, read the generated SQL, then deploy. Never edit a
-migration that has already been deployed, and never drop a column without saying
-so explicitly.
-
-Write migrations that **expand, then contract**: add a nullable column or a new
-table, ship the code that uses it, and only remove the old one in a later
-deploy. That way the previous version still runs against the new schema, and
-going back to it never needs to restore the database (which would lose what was
-written since). The platform snapshots the database before each migration and
-restores it if a migration fails, but that is the safety net, not the plan.
-
-When changing an existing app, read its `theme.css` first and work inside its
-direction. Do not quietly restyle an app that already has one.
-
-## Patterns that keep coming up
-
-Reach for these rather than reinventing them; each one was paid for once.
-
-- **A view per URL, with the hash.** Anything with a list-then-detail shape needs
-  the phone's back button to work. Ten lines around `location.hash` and a
-  `hashchange` listener do it; a router is more code than the feature.
-- **Optimistic writes on anything tapped.** A checkbox that waits for a round
-  trip feels broken on a weak connection. Apply the change locally, send it, and
-  put it back if the server refuses. Re-sort locally with the same rule the
-  server uses, or the row jumps when the list is next fetched.
-- **Keep the focus after adding to a list.** People add five things in a row,
-  not one per visit.
-- **Never let a client-supplied value reach a style or a class.** Colours,
-  themes, icons: accept a key from a fixed set and map it in the frontend. A
-  free-form string in a `style` attribute is an injection waiting to happen.
-- **Cascade in the schema, not in the handler.** Deleting a parent and then its
-  children is two statements, and the container can be stopped between them. A
-  foreign key with `onDelete: "cascade"` is one atomic act.
-- **Bound the list before it grows.** A `limit` on every query and a cap on how
-  many rows one account can create.
-
-## Before saying it is done
-
-- [ ] no module-level variable mutated between two requests
-- [ ] no timer, no cron, no websocket
-- [ ] `max: 3` on the Postgres pool
-- [ ] every route under `/api/*`
-- [ ] every user-owned table filtered by `ownerId`, on reads and on writes
-- [ ] every input type-checked and length-bounded, every list query limited
-- [ ] no authentication code in the app; moderation through `roles` and
-      `protect`, with `requireRole` on each protected route
-- [ ] every API call through `src/client.ts`
-- [ ] loading, waking, empty and error states all written
-- [ ] slug unique, lowercase, no underscore, not a reserved name
-- [ ] secrets declared in `env`, never hardcoded, never in the frontend
-- [ ] `theme.css` rewritten for this app, `styles.css` untouched
-- [ ] usable at 375 px, keyboard focus visible, reduced motion respected
-
-## Code style
-
-Comments in English, explaining a platform constraint or a non-obvious decision,
-never restating the next line. Interface copy follows the language the user
-writes to you in. No comment that repeats the code.
+- [references/platform.md](references/platform.md): how Nanodeploy works, end to end
+- [references/manifest.md](references/manifest.md): every `app.yaml` field, with rules and examples
+- [references/build-the-app.md](references/build-the-app.md): writing the app from the template, file by file
+- [references/art-direction.md](references/art-direction.md): choosing and applying a visual direction
+- [references/deploy-zip.md](references/deploy-zip.md): ZIP hand-over and ZIP upload
+- [references/deploy-git.md](references/deploy-git.md): Git deployments, previews, adapting an existing project
+- [references/change-an-app.md](references/change-an-app.md): changing a live app, migrations, rollback
+- [references/troubleshooting.md](references/troubleshooting.md): exact error messages, causes and fixes
+- `assets/app-template/`: the app template, identical to `templates/app-template/` in the Nanodeploy repository

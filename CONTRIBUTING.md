@@ -49,6 +49,8 @@ npm --prefix gate ci
 npm --prefix templates/app-template ci
 node --test scripts/install.test.mjs scripts/update-security.test.mjs
 node scripts/check-public.mjs
+node scripts/check-skills.mjs              # agent skills: format, sizes, links
+node scripts/sync-skill-template.mjs --check  # the skill copy of the app template
 node --test scripts/check-dashboard.test.mjs
 node scripts/check-dashboard.mjs
 ```
@@ -65,6 +67,11 @@ npm run typecheck && npm test && npm run build
 cd ../templates/app-template
 npm run typecheck && npm test && npm run build
 ```
+
+After any change under `templates/app-template/`, run
+`node scripts/sync-skill-template.mjs` from the repository root: the
+`nanodeploy-app` skill carries a copy of the template so it works outside this
+repository, and CI fails when the copy drifts.
 
 Run the remaining commands from the repository root.
 

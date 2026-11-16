@@ -1,0 +1,8 @@
+node_modules/
+dist/
+server.js
+*.zip
+.env
+.env.*
+!.env.example
+.DS_Store

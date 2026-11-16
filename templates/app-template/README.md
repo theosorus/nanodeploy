@@ -6,7 +6,7 @@ or server address in the template.
 
 ## First deployment
 
-You need a Nanodeploy instance, Node.js 24, npm and `zip`. In the Nanodeploy
+You need a Nanodeploy instance, Node.js 24 and npm. In the Nanodeploy
 repository, `docs/INSTALL.md` and `docs/INSTALL.fr.md` explain server setup;
 `./install.sh --local` runs a local trial.
 
@@ -36,6 +36,26 @@ Use your own domain. For a local instance, use
 `NANODEPLOY_URL=http://deploy.apps.localhost:8080`. Open the URL printed by the
 deployment and sign in. Notes belong to the signed-in user and survive sleep.
 
+No terminal access to the server, or no deploy key? Make the archives instead:
+
+```bash
+npm run zip
+```
+
+It checks the code, builds, and writes two files next to `app.yaml`:
+
+- `<slug>-deploy.zip`: `app.yaml`, `dist/`, `server.js` and `migrations/` at the
+  top level. Drop it in the console under **New application → ZIP archive**, or
+  on an existing app's panel to publish a new version.
+- `<slug>-source.zip`: the project inside a `<slug>/` folder, without
+  `node_modules`, build output or `.env`. Keep it to change the app later or to
+  push it to Git. The console refuses it on purpose.
+
+`npm run zip -- --out-dir <dir>` writes them elsewhere. The archives are made in
+Node itself, so no `zip` program is needed on Windows. Never zip the folder by
+hand: an archive whose `app.yaml` sits inside a folder, or whose paths use `\`,
+is refused.
+
 Do not copy the platform's root `DEPLOY_TOKEN` into your app or CI. An app deploy
 key is limited to its own slug. Declare external API secret **names** in the
 manifest; set their **values** in the console, never in frontend source or Git.
@@ -63,19 +83,24 @@ an earlier release can still run against the current database.
 ## Checks and Git deployments
 
 ```bash
-npm run typecheck
-npm test
-npm run build
+npm run check    # typecheck, tests, build, then npm run doctor
 ```
 
-The build produces `dist/` and a bundled `server.js`. `npm run deploy` archives
-those together with `app.yaml` and `migrations/`. Commit the source, lockfile
-and migrations; generated builds, `.env` and ZIP files are ignored.
+`npm run doctor` reads the code for what breaks on the platform: timers,
+websockets, a bare `fetch` to `/api`, an unbundled or native dependency, an
+environment variable missing from `app.yaml`, a font from a CDN. An `ERROR`
+must be fixed; a `WARN` deserves a look.
 
-For a repository connected in Nanodeploy's Git deployments tab, commit and push
-instead of calling `npm run deploy`. The platform builds the connected branch
-and can create private pull-request previews with separate databases and
-separate environment variables.
+The build produces `dist/` and a bundled `server.js`. `npm run deploy` and
+`npm run zip` archive those together with `app.yaml` and `migrations/`. Commit
+the source, lockfile and migrations; generated builds, `.env` and ZIP files are
+ignored.
+
+For a repository connected in Nanodeploy's Git deployments tab, run
+`npm run check`, then commit and push instead of calling `npm run deploy`. The
+platform runs `npm ci` and `npm run build` on the connected branch and can
+create private pull-request previews with separate databases and separate
+environment variables.
 
 Apps may stop at any time. Store state in Postgres or `/data`, keep the pool at
 three connections, and avoid in-memory sessions or background timers. The

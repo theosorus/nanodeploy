@@ -1,0 +1,41 @@
+{
+  "name": "nanodeploy-app",
+  "private": true,
+  "license": "MIT",
+  "engines": { "node": ">=24" },
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"vite\" \"tsx watch server/index.ts\"",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "vite build && esbuild server/index.ts --bundle --platform=node --target=node24 --format=esm --outfile=server.js --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\"",
+    "db:generate": "drizzle-kit generate",
+    "doctor": "node scripts/doctor.mjs",
+    "check": "npm run typecheck && npm test && npm run build && node scripts/doctor.mjs",
+    "zip": "npm run check && node scripts/zip.mjs",
+    "deploy": "npm run build && node scripts/deploy.mjs"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.6",
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.13.17",
+    "postgres": "^4.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "overrides": {
+    "esbuild": "$esbuild"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^18.3.17",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^6.2.1",
+    "concurrently": "^10.0.7",
+    "drizzle-kit": "^0.31.11",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.6"
+  }
+}
