@@ -20,7 +20,7 @@ cloud n'est nécessaire. Le code et la documentation sont sous
   outils Linux.
 - Pour publier sur Internet : votre domaine, un DNS wildcard et un reverse
   proxy ou tunnel qui termine HTTPS. Le fournisseur est libre.
-- **Node.js 24, npm et `zip` uniquement sur le poste qui développe les apps**.
+- **Node.js 24 et npm uniquement sur le poste qui développe les apps**.
   Le serveur utilise le Node fourni par les images Docker.
 
 Suivez les guides officiels pour [Docker](https://docs.docker.com/engine/install/)
@@ -197,7 +197,7 @@ vous-même leurs liens d'invitation.
 
 ## Déployer votre première app
 
-Sur votre poste de développement, avec Node.js 24 et `zip` :
+Sur votre poste de développement, avec Node.js 24 :
 
 ```bash
 cp -R templates/app-template ../my-app

@@ -86,8 +86,11 @@ npm run deploy
 
 For ZIP deployments, your machine compiles the app. The server receives the
 archive, builds a small runtime image, runs migrations once and puts the
-container back to sleep. No terminal?
-Choose **New application → ZIP archive** and drop your zip there.
+container back to sleep. No deploy key, or no terminal on the server?
+`npm run zip` checks and builds the app, then writes `<slug>-deploy.zip`:
+choose **New application → ZIP archive** and drop it there. It also writes
+`<slug>-source.zip`, the project to keep. No `zip` program is needed, on
+Windows either.
 
 The token is a **deploy key**: made in an application's **Settings**, or under
 **New application → Terminal & agents** before its first deploy, it deploys that
@@ -308,24 +311,37 @@ key; a code-only rollback to the old plaintext format is incompatible.
 
 "Build me an app" fails with a chatbot because there are a thousand ways to
 build it. Here there is one: fixed frontend, backend, database, auth, deploy.
-Nothing to get wrong. So Nanodeploy ships a skill in the open
-[Agent Skills](https://agentskills.io/specification) format,
-[`.agents/skills/nanodeploy-app/SKILL.md`](.agents/skills/nanodeploy-app/SKILL.md),
-with the whole contract built in. If your agent does not discover
-`.agents/skills/` automatically, point it at that file. Then describe what you
-want:
+Nothing to get wrong. So Nanodeploy ships two skills in the open
+[Agent Skills](https://agentskills.io/specification) format:
+
+- [`nanodeploy-app`](.agents/skills/nanodeploy-app/SKILL.md) builds, changes
+  and ships apps. It carries its own copy of the app template, so it also
+  works outside this repository (claude.ai, another machine). It ships either
+  way: two zip files you drop on the dashboard (or uploads them with a deploy
+  key), or a Git repository with pull-request previews. It can also adapt an
+  existing project.
+- [`nanodeploy-setup`](.agents/skills/nanodeploy-setup/SKILL.md) installs
+  and runs the platform: local trial, server, DNS and HTTPS, GitHub and
+  GitLab, backups, updates, troubleshooting.
+
+If your agent does not discover `.agents/skills/` automatically, point it at
+those files, or upload each skill folder (zipped) to claude.ai. Then describe
+what you want:
 
 > **You:** build me something to track shared expenses with my flatmates
 
 It asks the questions that change the result — who it's for, what data, and
 **three named art directions** so it doesn't look like every other generated app
-— then writes the schema, API, frontend and manifest and deploys it. You get a
-URL. It also knows what quietly breaks a sleeping app (no in-memory state, no
-timers, the first-wake retry, an `ownerId` filter on every query), so the result
-survives its second visit.
+— then writes the schema, API, frontend and manifest, runs `npm run check`
+(types, tests, build, and a doctor that knows what quietly breaks a sleeping
+app: in-memory state, timers, a bare first-wake `fetch`, native packages, a
+server that crashes at boot), and hands you the zip, a URL, or a pull request
+with its preview.
 
 Prefer to write it yourself? [`app-template/`](templates/app-template) is the
-same starting point: `cp -r`, edit, `npm run deploy`.
+same starting point: `cp -r`, edit, `npm run zip` or `npm run deploy`.
+After changing the template, run `node scripts/sync-skill-template.mjs` so the
+skill's copy follows; CI checks it.
 
 ## What it does not do
 

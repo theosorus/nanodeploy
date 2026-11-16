@@ -1,7 +1,7 @@
 node_modules/
 dist/
 server.js
-bundle.zip
+*.zip
 .env
 .env.*
 !.env.example

@@ -1,0 +1,53 @@
+/* THIS FILE IS THE ART DIRECTION. Replace it entirely for every new app.
+   styles.css holds the rhythm every app shares; this file holds everything that
+   should be different: colour, typefaces, shape, density, the one signature
+   move. If you copy an app and keep this file, you have made the same app twice.
+
+   The direction shipped here, for the notes demo, is "instrument panel":
+   a pale cool ground, ink text, every number and label set in mono so columns
+   line up, one reserved deep blue for the single action that matters, square-ish
+   corners and 1px rules instead of shadows. It suits a small personal tool that
+   is read at a glance. It suits almost nothing else, which is the point. */
+
+:root {
+  color-scheme: light;
+
+  --bg: #e7eae8;
+  --field: #f3f5f3;
+  --fg: #1a201e;
+  --muted: #5e6b66;
+  --line: #c2cac6;
+  --accent: #1f4b8f;
+  --accent-ink: #f3f5f3;
+  --danger: #8f2f26;
+
+  --line-width: 1px;
+  --radius: 2px;
+
+  /* No webfont here: a self-hosted face is a per-app decision, and one that
+     matters. Drop the .woff2 next to the app, declare @font-face in this file,
+     and never load a font from a third-party CDN: an app must keep working on a
+     home server behind a tunnel, and it must not leak its visitors to Google. */
+  --font-display: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-body: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+
+  /* The signature of this direction: labels are small, uppercase, mono and
+     tracked out, so the interface reads like a panel rather than a document. */
+  --label-spacing: 0.08em;
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--t-caption);
+  letter-spacing: var(--label-spacing);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Rules, never shadows: this direction has no depth on purpose. */
+.ruled > * + * {
+  border-top: var(--line-width) solid var(--line);
+  padding-top: var(--s3);
+  margin-top: var(--s3);
+}

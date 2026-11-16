@@ -20,7 +20,7 @@ Already running Nanodeploy? Read [UPGRADING.md](UPGRADING.md) before updating.
 | Resources | Plan for **4 GB RAM** and **20 GB SSD storage**; Git builds may need more. Actual usage depends on your apps. Docker images, release files, databases and backups all consume space. |
 | Server tools | Git, Bash, OpenSSL. Python 3, curl and `flock` are also needed for optional automatic updates; the backup script needs Linux tools and Bash 4+. |
 | Public hosting | A domain you control, wildcard DNS, and a reverse proxy or tunnel that provides HTTPS. Any provider works. |
-| App development | **Node.js 24**, npm and `zip` on your development machine. Node is included in the platform images; it is not required on the server. |
+| App development | **Node.js 24** and npm on your development machine. Node is included in the platform images; it is not required on the server. |
 
 Install Docker using the [official Engine instructions](https://docs.docker.com/engine/install/)
 and [Compose plugin instructions](https://docs.docker.com/compose/install/linux/).
@@ -239,7 +239,7 @@ Nanodeploy does not send email: hand each person their one-use invitation link.
 
 ## Deploy your first app
 
-On your **development machine**, install Node.js 24 and `zip`, then:
+On your **development machine**, install Node.js 24, then:
 
 ```bash
 cp -R templates/app-template ../my-app

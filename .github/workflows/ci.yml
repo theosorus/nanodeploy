@@ -105,6 +105,9 @@ jobs:
         with:
           node-version: 24
       - run: node scripts/check-public.mjs
+      # the agent skills: spec rules, links, and the template copy they carry
+      - run: node scripts/check-skills.mjs
+      - run: node scripts/sync-skill-template.mjs --check
 
   installation:
     runs-on: ${{ matrix.runner }}
