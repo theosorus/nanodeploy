@@ -138,8 +138,13 @@ must support proxy variables. Consequences:
 - Before applying migrations to an existing database, the platform dumps it.
   If a migration fails, the database is restored and the live version is left
   as it was.
-- Deleting an app keeps its database on purpose but deletes its `/data`
-  files. Pull-request previews get their own empty database.
+- Each app has its own database, so two apps may use the same table, index
+  and constraint names. Inside one app, index names are shared by all its
+  tables: prefix them with the table name (`items_owner_idx`).
+- Deleting an app deletes everything: its database and role, its `/data`
+  files, its images and versions. Only the server backups keep a copy. A new
+  app with the same slug starts empty. Pull-request previews get their own
+  empty database.
 
 ## What a deploy does
 

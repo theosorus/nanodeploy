@@ -26,6 +26,10 @@ backups; apps writing to both SQL and `/data` should be stopped during the
 backup if those two stores need a single consistent point in time. Protect and
 encrypt off-host copies. Periodically test restoration on a spare host.
 
+Deleting an app from the console deletes its Postgres database and role, its
+`/data` volume, its images and its versions at once. A backup taken before is
+then the only copy of its data.
+
 ## Restore a backup
 
 Use a **replacement host with no existing Nanodeploy data**, the same CPU

@@ -59,6 +59,7 @@ again: the platform's messages say what to change.
 | `protect /x needs role "y", which is not in roles` | Role missing | Add it to `roles`. |
 | `access: groups requires a non-empty groups list` | `groups: []` with `access: groups` | List the groups. |
 | `migration failed (...); the database was restored from the snapshot taken just before` | The SQL failed (often `NOT NULL` without a default, or a duplicate) | Fix the newest migration (it was not recorded), deploy again. |
+| `migration failed (<file>: relation "x" already exists. The database already has what this file creates...)` | A deployed migration was renamed, deleted or regenerated (drizzle-kit picks a new random file name), so the platform sees a new file that creates existing tables | Restore the deployed migration files unchanged from Git or the last source zip, then run `npm run db:generate` for the changes only. Never regenerate migrations of a live app. |
 | `this bundle is for "x", not "y"` | Dropped on another app's panel | Drop it on the right app. |
 | `env X is declared but not set yet` (log line, not an error) | No value typed yet | The user types it in Settings. |
 | `WARNING: <host> does not resolve` | No wildcard DNS for the domain | Server owner adds `*.<domain>` to DNS or the tunnel. |
