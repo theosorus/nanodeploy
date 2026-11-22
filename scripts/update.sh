@@ -9,7 +9,8 @@
 #  3. back up everything (scripts/backup.sh);
 #  4. fast-forward and run ./install.sh (secrets, networks, images, restart);
 #  5. check the console answers and still lists at least as many apps;
-#     otherwise go back to the previous commit and restart it.
+#     otherwise go back to the previous commit and restart it;
+#  6. drop untagged images and build cache older than a week.
 set -euo pipefail
 umask 077
 cd "$(dirname "$0")/.."
@@ -93,6 +94,15 @@ before=$(apps_count) || {
 say "${current:0:7} -> ${next:0:7}, $before app(s) before"
 ./scripts/backup.sh
 
+# Every update rebuilds the platform images. On a small disk the untagged
+# images and build cache they leave pile up until Postgres cannot write.
+# Docker never removes an image a container uses, tagged app releases are not
+# dangling, and the newest cache keeps the next rebuild fast.
+prune_docker() {
+  docker image prune -f --filter "until=168h" >/dev/null 2>&1 || say "could not prune old images"
+  docker builder prune -f --filter "until=168h" >/dev/null 2>&1 || say "could not prune old build cache"
+}
+
 rollback() {
   echo "$next" >"$FAILED_MARK"
   # Ciphertext replaces the old plaintext JSON in apps.env. Older binaries
@@ -126,6 +136,7 @@ for _ in $(seq 1 "$HEALTH_TRIES"); do
   if [ -n "$after" ] && [ "$after" -ge "$before" ]; then
     rm -f "$FAILED_MARK"
     say "now at ${next:0:7}, $after app(s)"
+    prune_docker
     exit 0
   fi
   sleep 5

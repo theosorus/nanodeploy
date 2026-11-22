@@ -107,6 +107,10 @@ Use the [upgrade guide](UPGRADING.md), including its migration notes. Back up
 before manual updates. Do not point an automatic updater at a branch you do
 not trust: platform code and Docker access have host administrator power.
 
+After a successful automatic update, the updater removes untagged images and
+build cache older than a week (`docker image prune` and `docker builder prune`
+with `until=168h`). Images used by a container and tagged app releases stay.
+
 Use `docker compose stop` for a temporary shutdown, and `docker compose up -d`
 to resume. External networks persist independently of Compose. App databases
 and volumes are not deleted by a normal deployment. Commands such as
