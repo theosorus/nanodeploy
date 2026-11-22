@@ -407,7 +407,9 @@ test("deleting an app's database removes the database and its role", options, as
   const creds = await store.provisionDatabase(s);
   databases.push(creds.user);
   await store.upsertApp({ slug: s, name: "Deletion fixture", db_user: creds.user, db_password: creds.password });
+  // same order as removeApp: the database, then the app row
   await store.dropAppDatabase(s);
+  await store.deleteApp(s);
   assert.equal((await store.sql`select 1 from pg_database where datname = ${creds.user}`).length, 0);
   assert.equal((await store.sql`select 1 from pg_roles where rolname = ${creds.user}`).length, 0);
   // the next app with this slug starts from an empty database
