@@ -612,7 +612,11 @@ export async function runBuilder(opts: {
       // fill the server disk, poison another build, or plant host symlinks.
       ReadonlyRootfs: true,
       Tmpfs: {
-        "/work": "rw,nosuid,nodev,size=1g,uid=1000,gid=1000",
+        // Docker mounts a tmpfs noexec unless "exec" is given. Builds must run
+        // the native tools npm installs in /work (esbuild, rolldown,
+        // lightningcss); the build already runs arbitrary code through sh and
+        // node, so noexec here only broke real builds without adding isolation.
+        "/work": "rw,exec,nosuid,nodev,size=1g,uid=1000,gid=1000",
         "/tmp": "rw,nosuid,nodev,size=64m,uid=1000,gid=1000",
         "/cache": "rw,nosuid,nodev,size=128m,uid=1000,gid=1000",
       },

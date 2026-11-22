@@ -1,0 +1,5 @@
+# Reviewed false positives. The CI scans the whole history, so a fixed line
+# stays flagged in its original commit: list its fingerprint here.
+
+# RFC 6455 sample WebSocket nonce ("the sample nonce" in base64) in a test, not a key.
+4fe7ddf50ba0b4a36da2877b9008746ea6b0a885:control-plane/test/gate-http.test.ts:generic-api-key:202

@@ -144,6 +144,14 @@ test("Git builds run non-root on bounded tmpfs, without host mounts or server se
   assert.equal(await readFile(join(destination, "dist/index.html"), "utf8"), "sandboxed");
 });
 
+test("Git builds can run native tools installed in /work (esbuild, rolldown, lightningcss)", options, async () => {
+  // npm ci puts native binaries under /work; a noexec mount fails every
+  // Vite or esbuild build with EACCES before the app's own build starts.
+  const { result } = await builder(`cp /bin/true ./native-tool && ./native-tool && echo "native tool ran"`, false);
+  assert.equal(result.exitCode, 0, result.logs);
+  assert.match(result.logs, /native tool ran/);
+});
+
 test("a build cannot export symlinks or share a poisoned npm cache with the next build", options, async () => {
   await assert.rejects(builder("mkdir dist; ln -s /proc/self/environ dist/index.html"), /links/);
   assert.equal((await builder("touch /cache/poison", false)).result.exitCode, 0);
