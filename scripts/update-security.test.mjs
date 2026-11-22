@@ -79,6 +79,8 @@ for (const mode of ['green', 'pending', 'red', 'absent', 'unreachable', 'baselin
       await writeFile(join(work, '.env'), `APPS_DOMAIN=apps.fixture.invalid\nDEPLOY_TOKEN=${token}\nCADDY_PORT=${server.address().port}\nUPDATE_HEALTH_TRIES=1\nUPDATE_BRANCH=main\nGITHUB_API_URL=https://github.fixture.invalid\n`);
       const scripts = {
         'bin/flock': '#!/bin/sh\nexit 0\n',
+        // never the real Docker: the updater prunes images after a success
+        'bin/docker': '#!/bin/sh\nprintf "%s\\n" "$*" >> "$NANODEPLOY_UPDATE_FIXTURE/docker-calls"\n',
         'scripts/backup.sh': '#!/bin/sh\nprintf "backup\\n" >> "$NANODEPLOY_UPDATE_FIXTURE/actions"\nprintf private > "$NANODEPLOY_UPDATE_FIXTURE/backup-private"\n',
         'install.sh': '#!/bin/sh\nprintf "install\\n" >> "$NANODEPLOY_UPDATE_FIXTURE/actions"\nprintf private > "$NANODEPLOY_UPDATE_FIXTURE/installer-secret"\n',
         'bin/git': `#!/usr/bin/env node
@@ -116,6 +118,12 @@ console.log(JSON.stringify({ check_runs: checks }));
         throw error;
       });
       assert.deepEqual(actions.trim().split('\n').filter(Boolean), mode === 'green' ? ['backup', 'merge', 'install'] : []);
+      const dockerCalls = await readFile(join(work, 'docker-calls'), 'utf8').catch((error) => {
+        if (error.code === 'ENOENT') return '';
+        throw error;
+      });
+      assert.deepEqual(dockerCalls.trim().split('\n').filter(Boolean), mode === 'green'
+        ? ['image prune -f --filter until=168h', 'builder prune -f --filter until=168h'] : []);
       if (mode === 'green') {
         assert.equal((await stat(join(work, 'checkout-source'))).mode & 0o777, 0o644);
         for (const path of ['backup-private', 'installer-secret']) assert.equal((await stat(join(work, path))).mode & 0o777, 0o600);
