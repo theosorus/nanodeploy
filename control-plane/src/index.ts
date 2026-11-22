@@ -624,9 +624,10 @@ app.post("/api/apps/:slug/env", async (c) => {
   });
 });
 
-// Removes an app with everything the platform made for it. The postgres
-// database survives on purpose, the /data volume does not: the dashboard says
-// both out loud before asking. A pull request preview loses its database too.
+// Removes an app with everything the platform made for it: container, images
+// (pruneAll below), network, /data volume, Postgres database and role,
+// releases and their snapshots, keys, grants, analytics and route. The
+// dashboard says so before asking; scripts/backup.sh copies are all that stay.
 async function removeApp(slug: string, dropDatabase: boolean): Promise<{ routeDropped: boolean } | null> {
   // re-validate the slug against the database: the rm below must never run
   // against a path that is not a real app directory
@@ -653,7 +654,7 @@ app.delete("/api/apps/:slug", async (c) => {
   if (!slug) return c.json({ error: "unknown app" }, 404);
   return runLocked(slug, async () => {
     const preview = Boolean((await store.getApp(slug)) && isPreviewSlug(slug));
-    const out = await removeApp(slug, preview);
+    const out = await removeApp(slug, true);
     if (!out) return c.json({ error: "unknown app" }, 404);
     if (!out.routeDropped) {
       // dropping the file broke the whole config, so it was put back: the route
@@ -666,7 +667,7 @@ app.delete("/api/apps/:slug", async (c) => {
         502,
       );
     }
-    return c.json({ ok: true, note: preview ? "preview removed with its database" : "postgres database kept, drop it manually if needed" });
+    return c.json({ ok: true, note: preview ? "preview removed with its database" : "app removed with its database, files and images" });
   });
 });
 

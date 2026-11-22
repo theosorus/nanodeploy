@@ -224,6 +224,10 @@ check "$(docker inspect -f '{{.State.Status}}' app-smoke)" "exited" "container r
 
 check "$(code -H "Host: deploy.$DOM" -H "$AUTH" -X DELETE "$BASE"/api/apps/smoke)" "200" "delete"
 check "$(code -H "Host: smoke.$DOM" "$BASE"/)" "404" "unknown subdomain -> 404"
+check "$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -c '^nanodeploy/smoke:')" "0" "images deleted with the app"
+pg() { docker compose exec -T postgres psql -U postgres -Atc "$1" </dev/null; }
+check "$(pg "select count(*) from pg_database where datname = 'app_smoke'")" "0" "database deleted with the app"
+check "$(pg "select count(*) from pg_roles where rolname = 'app_smoke'")" "0" "database role deleted with the app"
 
 echo
 echo "== RESULT: $PASS passed / $FAIL failed =="

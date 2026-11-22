@@ -402,6 +402,40 @@ test("an app role cannot reach the template every new database is copied from", 
   for (const shared of ["template1", "postgres"]) await assert.rejects(connect(shared), { code: "42501" }, shared);
 });
 
+test("deleting an app's database removes the database and its role", options, async () => {
+  const s = slug();
+  const creds = await store.provisionDatabase(s);
+  databases.push(creds.user);
+  await store.upsertApp({ slug: s, name: "Deletion fixture", db_user: creds.user, db_password: creds.password });
+  // same order as removeApp: the database, then the app row
+  await store.dropAppDatabase(s);
+  await store.deleteApp(s);
+  assert.equal((await store.sql`select 1 from pg_database where datname = ${creds.user}`).length, 0);
+  assert.equal((await store.sql`select 1 from pg_roles where rolname = ${creds.user}`).length, 0);
+  // the next app with this slug starts from an empty database
+  const again = await store.provisionDatabase(s);
+  assert.equal(again.existed, false);
+});
+
+test("a migration that recreates an existing table names its file and the likely cause", options, async () => {
+  const s = slug();
+  const creds = await store.provisionDatabase(s);
+  databases.push(creds.user);
+  const dbUrl = store.databaseUrl(creds.user, creds.password);
+  const dir = await mkdtemp(join(work, "migrations-"));
+  await writeFile(join(dir, "0000_first_name.sql"), 'CREATE TABLE "notes" ("id" serial PRIMARY KEY);');
+  assert.deepEqual(await store.runMigrations(dir, dbUrl), ["0000_first_name.sql"]);
+  // what drizzle-kit produces when a live app's migrations are regenerated
+  await rm(join(dir, "0000_first_name.sql"));
+  await writeFile(join(dir, "0000_regenerated.sql"), 'CREATE TABLE "notes" ("id" serial PRIMARY KEY);');
+  await assert.rejects(store.runMigrations(dir, dbUrl), (err: any) => {
+    assert.equal(err.code, "42P07");
+    assert.match(err.message, /^0000_regenerated\.sql: relation "notes" already exists/);
+    assert.match(err.message, /renamed or regenerated/);
+    return true;
+  });
+});
+
 async function request(path: string, init: RequestInit = {}) {
   api ??= (await import("../src/index.ts")).app;
   return api.request(`https://deploy.apps.audit.invalid${path}`, init);

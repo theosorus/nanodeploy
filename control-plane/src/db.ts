@@ -297,7 +297,9 @@ export async function pendingMigrations(dir: string, url: string | null): Promis
   }
 }
 
-// Previews only: a production app's database survives its deletion on purpose.
+// Deleting an app (or a preview) takes its database and role with it. A kept
+// database was silently reused by the next app with that slug, whose fresh
+// migrations then failed with "relation ... already exists".
 export async function dropAppDatabase(slug: string) {
   const app = await getApp(slug);
   const user = app?.db_user;
@@ -312,6 +314,12 @@ export async function disconnectDatabase(db: string) {
     select pg_terminate_backend(pid) from pg_stat_activity
     where datname = ${db} and pid <> pg_backend_pid()`;
 }
+
+// duplicate table/index/sequence, constraint or type, column, function, schema
+const DUPLICATE_OBJECT = new Set(["42P07", "42710", "42701", "42723", "42P06"]);
+const DUPLICATE_HINT = ". The database already has what this file creates: a deployed migration was " +
+  "renamed or regenerated (drizzle-kit names files at random), so keep the deployed files and add a " +
+  "new one; or the database was left by an earlier app with this slug";
 
 // migrations run here, once per deploy, never at app boot
 export async function runMigrations(dir: string, url: string) {
@@ -334,10 +342,15 @@ export async function runMigrations(dir: string, url: string) {
     for (const file of files) {
       if (done.has(file)) continue;
       const body = await readFile(join(dir, file), "utf8");
-      await sql.begin(async (tx) => {
-        await tx.unsafe(body);
-        await tx`insert into _migrations (name) values (${file})`;
-      });
+      try {
+        await sql.begin(async (tx) => {
+          await tx.unsafe(body);
+          await tx`insert into _migrations (name) values (${file})`;
+        });
+      } catch (err: any) {
+        err.message = `${file}: ${err.message}${DUPLICATE_OBJECT.has(err?.code) ? DUPLICATE_HINT : ""}`;
+        throw err;
+      }
       applied.push(file);
     }
   } finally {

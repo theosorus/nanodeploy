@@ -304,7 +304,7 @@ app.post("/api/summary", async (c) => {
 - Bound the size before reading the body (`hono/body-limit`, e.g. 5 MB), and
   check the content type against a short allow-list.
 - The container has 256 MB of memory: stream large files, never buffer them.
-- Deleting the app deletes `/data`. Say so if the files matter.
+- Deleting the app deletes `/data` and the database. Say so if the data matters.
 
 ## Patterns worth reusing
 
